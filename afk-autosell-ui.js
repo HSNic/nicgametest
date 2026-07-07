@@ -33,6 +33,17 @@
  *       只包 setAutoSellOverride/deleteAutoSellOverride,本檔繞過那兩個函式直接呼叫
  *       openAutoSellRules,所以要自己做一份,兩邊不會互相干擾)。
  *
+ * E7(2026-07-08 使用者回報修正):
+ *   - bug:改變「全部分類」「全部物品」下拉會看起來「點了沒反應」——原函式
+ *     refreshAutoSellItemOptions() 確實有依新篩選重建 #as-item(隱藏的資料來源)的
+ *     <option>,但畫面上看到的是 #as-item-checklist(核取清單),之前只有初次開窗
+ *     (enableMultiSelect)會渲染一次,搜尋/分類/範圍改變後沒有同步重繪清單,导致
+ *     使用者看到的畫面一直是舊的。修法:抽出 refreshChecklistUI(),
+ *     installRefreshWrap 的 wrapper 在 filterAddPicker() 之後也呼叫它,搜尋/分類/
+ *     範圍每次改變都會重新渲染 #as-item-checklist。
+ *   - 需求:「預覽符合物品/儲存規則」旁邊加一顆「關閉」,不用滾回最上面點右上角
+ *     的 Close。
+ *
  * (E2 按鈕順序:「立即賣出廢品」在原作本體裡本來就已經排在「依目前方式整理」左邊,
  *  不需要調整,這裡不處理。)
  *
@@ -206,6 +217,14 @@
     countEl.textContent = '已選 ' + selectedCount() + ' 個';
   }
 
+  // 重新渲染核取清單(供初次建立與搜尋/分類/範圍變動後共用同一份邏輯)
+  function refreshChecklistUI() {
+    var select = document.getElementById('as-item');
+    var listBox = document.getElementById('as-item-checklist');
+    var countEl = document.getElementById('as-multi-count');
+    if (select && listBox && countEl) renderChecklist(select, listBox, countEl);
+  }
+
   function enableMultiSelect(box) {
     var select = document.getElementById('as-item');
     if (!select) return;
@@ -245,6 +264,21 @@
     });
   }
 
+  // E7(2026-07-08 使用者追加):底部「預覽符合物品/儲存規則」旁邊加一顆「關閉」,
+  //   不用再滾回最上面點右上角的 Close。
+  function addBottomCloseButton(box) {
+    var actions = box.querySelector('.as-actions');
+    if (!actions || actions.querySelector('.afk-close-btn')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'afk-close-btn';
+    btn.textContent = '關閉';
+    btn.addEventListener('click', function () {
+      if (typeof closeAutoSellRules === 'function') closeAutoSellRules();
+    });
+    actions.appendChild(btn);
+  }
+
   function enhance() {
     var box = document.querySelector('#autosell-rule-modal .as-box');
     if (!box) return;
@@ -254,6 +288,7 @@
     addOverrideSearch(box);
     filterAddPicker();
     enableMultiSelect(box);
+    addBottomCloseButton(box);
   }
 
   function install() {
@@ -274,7 +309,7 @@
     var orig = window.refreshAutoSellItemOptions;
     var wrapped = function () {
       var ret = orig.apply(this, arguments);
-      try { filterAddPicker(); } catch (e) { console.warn('[AFK-autosell-ui] 過濾新增例外選單失敗', e); }
+      try { filterAddPicker(); refreshChecklistUI(); } catch (e) { console.warn('[AFK-autosell-ui] 過濾新增例外選單失敗', e); }
       return ret;
     };
     wrapped.__afkAutosellUiWrapped = true;
