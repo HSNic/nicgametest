@@ -349,3 +349,11 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
    (`gh api repos/pp771007/idle-lineage-class/pages/builds/latest --jq '{status,commit}'` 可當輔助參考,但不要當唯一判準。)
 3. 背景輪詢回報「BUILT」後**才**通知使用者「已上線、可重整看到新版」(訊息從 Telegram 來就用 `reply`)。
 - GitHub Pages 站台:`https://pp771007.github.io/idle-lineage-class/`(本 fork,非原作者 shines871)。
+
+### 🔴 push 上線後,主動接著問/做「打 tag + 開 GitHub Release」,不要等使用者提醒(2026-07-08 使用者明訂)
+
+**踩過**:合併一批功能(同步+介面優化+光圈特效)push 上線後,只回報「已上線」就結束,沒有主動接著走 `../發布上架/發布Release流程.md` 的打 tag/開 Release 流程,被使用者問「github一樣要有版本,怎麼沒有提示我」才想起來。
+
+- **判準**:凡是「一批功能/修改完成、確認上線沒問題」的時間點(不是每次小 commit 都要,但只要使用者說「完成」「可以上線」這種收尾語氣,或這批改動明顯是一個階段性成果),**主動**做完 `發布Release流程.md` 步驟 1-2(確認 build 版本號、本機建 `git tag -a v<build> -m "..."`,這兩步不需要密碼、我自己做),然後**主動**告訴使用者接下來換他做步驟 3-4(push tag、開網頁 Release),附上完整指令與內文草稿(可以直接從版本異動紀錄玩家版複製),不要只講「push 完成了」就停在那裡等使用者自己想起來還有 tag/Release 這回事。
+- 使用者確認 Release 開好後,**主動**用 `curl "https://api.github.com/repos/<owner>/<repo>/releases/latest"` 驗證 `tag_name`/`body` 正確,回報確認結果。
+- 這條跟上面「push 後等 GitHub Pages 重建」是同一個精神的延伸:**上線不是 push 完就結束,還有 tag+Release 這一步,要主動走完整套流程、不要漏講。**
