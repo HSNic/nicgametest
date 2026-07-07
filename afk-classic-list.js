@@ -20,6 +20,7 @@
  * 2026-07-07 使用者實測後追加:
  *   - 分頁背景改透明，跟「能力」分頁共用 .panel 底色，不再是純黑。
  *   - 角色不能裝備/不能學習的物品列(紅字 [無法裝備]/[無法學習])整列疊淡紅色提示。
+ *   - 每列底色調淡(#12141a → #262b36)，原本太深看不清楚。
  */
 (function () {
   var ENABLED = true;
@@ -36,7 +37,7 @@
     // viewport:拿掉方格 grid／絕對定位，改成直向清單，捲動交回外層分頁容器負責。
     + '.classic-inventory-viewport{position:static!important;left:auto!important;top:auto!important;width:100%!important;height:auto!important;display:flex!important;flex-direction:column!important;grid-template-columns:none!important;gap:4px!important;overflow:visible!important;background:none!important;padding-top:28px!important;box-sizing:border-box!important;}'
     // 每一列:方格 → 橫列(圖示在左、內容靠左延伸)。
-    + '.classic-inventory-viewport>.list-item{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;width:100%!important;height:auto!important;min-height:36px!important;margin:0!important;padding:4px 8px!important;border:1px solid #3a3f4b!important;border-radius:4px!important;background:#12141a!important;box-shadow:none!important;gap:8px!important;}'
+    + '.classic-inventory-viewport>.list-item{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;width:100%!important;height:auto!important;min-height:36px!important;margin:0!important;padding:4px 8px!important;border:1px solid #3a3f4b!important;border-radius:4px!important;background:#262b36!important;box-shadow:none!important;gap:8px!important;}'
     // 8 格皮膚用來補滿方格的空白格，橫列式不需要。
     + '.classic-inventory-viewport>.classic-grid-empty{display:none!important;}'
     // 圖示縮小成固定小方塊，不再撐滿整格。
