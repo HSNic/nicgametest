@@ -1,8 +1,11 @@
 /* ============================================================================
- * afk-warehouse-skill.js — 倉庫技能書「可學」註記
+ * afk-warehouse-skill.js — 共用倉庫技能書「可學」註記(背包／倉庫兩側都標)
  *
  * 範圍:
- *   - 只包裝 renderWarehouseNPC(),在原版倉庫清單畫完後補上視覺標籤。
+ *   - 只包裝 renderWarehouseNPC(),在原版倉庫視窗畫完後補上視覺標籤。
+ *   - 「倉庫」side(#wh-store-list,data-tip-src="wh")與「背包」side
+ *     (#wh-inv-list,data-tip-src="inv")都標,判定邏輯共用同一份 canLearnNow()。
+ *     2026-07-07 使用者實測發現原本只標了倉庫側,背包側漏標,故補上。
  *   - 不改倉庫資料、不改背包資料、不自動取出或學習技能。
  *
  * 判定:
@@ -39,6 +42,11 @@
     }
   }
 
+  function getInvItems() {
+    if (typeof player === 'undefined' || !player || !Array.isArray(player.inv)) return [];
+    return player.inv;
+  }
+
   function canLearnNow(item) {
     if (!item || !item.id || typeof DB === 'undefined' || !DB.items || !DB.skills) return false;
     if (typeof player === 'undefined' || !player) return false;
@@ -58,19 +66,16 @@
     return true;
   }
 
-  function markWarehouseSkillBooks() {
-    injectStyle();
-
-    var list = document.getElementById('wh-store-list');
+  function markSkillBookNotes(listId, srcAttr, items) {
+    var list = document.getElementById(listId);
     if (!list) return;
 
-    var items = getWarehouseItems();
     var byUid = {};
     for (var i = 0; i < items.length; i++) {
       if (items[i] && items[i].uid) byUid[items[i].uid] = items[i];
     }
 
-    var buttons = list.querySelectorAll('button[data-tip-src="wh"][data-tip-uid]');
+    var buttons = list.querySelectorAll('button[data-tip-src="' + srcAttr + '"][data-tip-uid]');
     for (var b = 0; b < buttons.length; b++) {
       var btn = buttons[b];
       var old = btn.querySelector('.' + NOTE_CLASS);
@@ -84,6 +89,12 @@
       note.textContent = '可學';
       btn.appendChild(note);
     }
+  }
+
+  function markWarehouseSkillBooks() {
+    injectStyle();
+    markSkillBookNotes('wh-store-list', 'wh', getWarehouseItems());
+    markSkillBookNotes('wh-inv-list', 'inv', getInvItems());
   }
 
   function install() {

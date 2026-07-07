@@ -19,4 +19,6 @@ afk-history.js,離線掛機歷史紀錄,"localStorage afk_hist_<slot>,AFK_SETTIN
 afk-mobname.js,怪物名稱顯示模式,"body class/localStorage,AFK_SETTINGS","首頁設定選單、怪物名稱 CSS","寫入 afk_mobname_mode",低,"測三種模式與重新整理後保留"
 afk-training.js,木人場 DPS 測試,"tick,killMob,spawnMob,killPlayer,applyAreaBackground,calcStats,renderMobs,updateUI","訓練 HUD、怪物選擇 modal、戰鬥畫面","寫入木人場偏好與位置;刻意不包 saveGame",高,"測進入/退出木人場、讀檔回村、離線不結算"
 afk-analytics.js,Cloudflare Web Analytics,"正式站台環境、script 注入","head/body script","不碰存檔",低,"確認只在正式站台送出,本機不干擾"
+afk-warehouse-skill.js,共用倉庫技能書「可學」註記(背包/倉庫兩側),"renderWarehouseNPC,loadWarehouse,player.inv,DB.items,DB.skills,skillReqLv","#wh-store-list,#wh-inv-list(共用倉庫視窗)","唯讀讀倉庫/背包資料,不寫入",中,"開共用倉庫,確認背包與倉庫兩側技能書都正確標「可學」,已學會/等級不足則不標"
+afk-classic-list.js,道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫),"decorateClassicInventoryTab 產生的 .classic-inventory-*/.classic-item-*/.classic-sort-* class 名稱","tab-items,tab-weapons,tab-armors,tab-equip","不碰存檔",中,"開道具/武器/防具/裝備分頁,確認名稱/狀態文字/鎖頭/廢品顯示正常、雙擊裝備使用與排序選單仍正常"
 afk-skin.js,加掛版品牌標記與外掛區外框,"main-menu,creation-screen,AFK_SETTINGS","首頁、外掛區、品牌 badge","不碰存檔",中,"測外掛入口排序、modal、首頁版面"
