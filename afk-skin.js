@@ -112,8 +112,23 @@
     ''
   ].join('');
 
-  // 📢 公告跑馬燈文字
-  var MARQUEE_TEXT = '伺服器永久開放，但不再跟進原作者版本';
+  // 📢 公告跑馬燈文字:改顯示目前的加掛版版本號(讀根目錄 version.json 的 build 欄位,
+  //   由 scripts/stamp-sw-version.mjs 每次改動後自動覆寫)。讀不到就退回通用文字,不影響遊戲。
+  //   2026-07-07 使用者要求:拿掉原本「伺服器永久開放，但不再跟進原作者版本」的固定文字
+  //   (本專案持續同步原作者版本,這句話不適用),改成動態版本號。
+  var MARQUEE_TEXT = '加掛版';   // 版本號讀取前/讀取失敗的預設文字
+
+  function updateMarqueeVersion() {
+    if (!/^https?:$/.test(location.protocol)) return;   // file:// 無法 fetch(CORS),維持預設文字
+    fetch('version.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.build) return;
+        var segs = document.querySelectorAll('#afk-marquee .afk-mq-seg');
+        for (var i = 0; i < segs.length; i++) segs[i].textContent = '加掛版 build ' + j.build;
+      })
+      .catch(function () { /* 讀不到就維持預設文字 */ });
+  }
 
   function injectCss() {
     if (document.getElementById('afk-skin-css')) return;
@@ -151,6 +166,7 @@
     }
     mq.appendChild(track);
     menu.insertBefore(mq, menu.firstChild);
+    updateMarqueeVersion();
   }
 
   // ---- 手機:外掛外框(inline,現況良好、勿動)------------------------------
