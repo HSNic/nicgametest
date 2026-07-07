@@ -16,6 +16,15 @@
  *     分類/範圍重建這個下拉選單),原函式跑完後把 value 已存在 getAutoSellRules().overrides
  *     的 <option> 移掉;openAutoSellRules() 第一次開窗時 #as-item 是直接內嵌在模板字串裡
  *     (不經過 refreshAutoSellItemOptions),所以 enhance() 也會呼叫同一個過濾函式。
+ * E6(2026-07-08 使用者追加):#as-item 改成 multiple(可 Ctrl/⌘/Shift 一次選多個),
+ *     「永遠保留」「永遠販賣」兩顆按鈕改接管成:讀取全部勾選的 option 一次寫入
+ *     getAutoSellRules().overrides,不再是原函式 setAutoSellOverride(v) 那種一次只認
+ *     #as-item.value(單一值)的行為——多選時 .value 只會回傳第一個選取項,原函式無法
+ *     批次處理,所以這裡直接接管按鈕的 click(移除原本 inline onclick,改
+ *     addEventListener),自己重現「_readAutoSellForm() → 寫入 overrides → openAutoSellRules()」
+ *     這段流程,搜尋/分類/範圍篩選狀態也自己 capture/restore(邏輯比照 afk-autosell-fix.js,
+ *     但那支只包 setAutoSellOverride/deleteAutoSellOverride,本檔繞過那兩個函式直接呼叫
+ *     openAutoSellRules,所以要自己做一份,兩邊不會互相干擾)。
  *
  * (E2 按鈕順序:「立即賣出廢品」在原作本體裡本來就已經排在「依目前方式整理」左邊,
  *  不需要調整,這裡不處理。)
@@ -45,7 +54,10 @@
       '#autosell-rule-modal details.as-sec>*:not(summary){padding-left:12px;padding-right:12px;}' +
       '#autosell-rule-modal details.as-sec>*:last-child{padding-bottom:12px;}' +
       '#as-overrides{max-height:220px;overflow-y:auto;}' +
-      '#as-ov-search{width:100%;box-sizing:border-box;margin-bottom:6px;}';
+      '#as-ov-search{width:100%;box-sizing:border-box;margin-bottom:6px;}' +
+      '#as-item[multiple]{height:160px;width:min(100%,390px);flex-basis:100%;}' +
+      '#as-item[multiple] option{padding:3px 6px;}' +
+      '.afk-multi-hint{font-size:12px;color:#94a3b8;margin:2px 0 6px;flex-basis:100%;}';
     document.head.appendChild(s);
   }
 
@@ -122,6 +134,64 @@
     }
   }
 
+  // E6:新增例外的搜尋/分類/範圍狀態(比照 afk-autosell-fix.js 的 captureState/restoreState,
+  //   但這裡繞過 setAutoSellOverride,呼叫端要自己 capture/restore)
+  function captureAddPickerState() {
+    var searchEl = document.getElementById('as-item-search');
+    var typeEl = document.getElementById('as-item-type');
+    var scopeEl = document.getElementById('as-item-scope');
+    var box = document.querySelector('#autosell-rule-modal .as-box');
+    return {
+      search: searchEl ? searchEl.value : '',
+      type: typeEl ? typeEl.value : 'all',
+      scope: scopeEl ? scopeEl.value : 'all',
+      scrollTop: box ? box.scrollTop : 0,
+    };
+  }
+  function restoreAddPickerState(state) {
+    if (!state) return;
+    var searchEl = document.getElementById('as-item-search');
+    var typeEl = document.getElementById('as-item-type');
+    var scopeEl = document.getElementById('as-item-scope');
+    if (searchEl) searchEl.value = state.search;
+    if (typeEl) typeEl.value = state.type;
+    if (scopeEl) scopeEl.value = state.scope;
+    if (typeof refreshAutoSellItemOptions === 'function') refreshAutoSellItemOptions();
+    var box = document.querySelector('#autosell-rule-modal .as-box');
+    if (box) box.scrollTop = state.scrollTop;
+  }
+
+  // E6:#as-item 改 multiple,接管「永遠保留」「永遠販賣」按鈕一次寫入全部勾選的物品
+  function enableMultiSelect(box) {
+    var select = document.getElementById('as-item');
+    if (!select) return;
+    select.multiple = true;
+    select.removeAttribute('size');
+    if (!select.nextElementSibling || !select.nextElementSibling.classList || !select.nextElementSibling.classList.contains('afk-multi-hint')) {
+      var hint = document.createElement('div');
+      hint.className = 'afk-multi-hint';
+      hint.textContent = '可按住 Ctrl(Mac 為 ⌘)或 Shift 一次選取多個物品,再點下方按鈕一次設定。';
+      select.parentNode.insertBefore(hint, select.nextSibling);
+    }
+    var keepBtn = box.querySelector('.as-keep-btn');
+    var sellBtn = box.querySelector('.as-sell-btn');
+    [[keepBtn, 'keep'], [sellBtn, 'sell']].forEach(function (pair) {
+      var btn = pair[0], v = pair[1];
+      if (!btn) return;
+      btn.removeAttribute('onclick');
+      btn.addEventListener('click', function () {
+        var ids = Array.prototype.slice.call(select.selectedOptions).map(function (o) { return o.value; }).filter(Boolean);
+        if (!ids.length) return;
+        var state = captureAddPickerState();
+        if (typeof _readAutoSellForm === 'function') _readAutoSellForm();
+        var rules = getAutoSellRules();
+        ids.forEach(function (id) { rules.overrides[id] = v; });
+        if (typeof openAutoSellRules === 'function') openAutoSellRules();
+        setTimeout(function () { restoreAddPickerState(state); }, 0);
+      });
+    });
+  }
+
   function enhance() {
     var box = document.querySelector('#autosell-rule-modal .as-box');
     if (!box) return;
@@ -130,6 +200,7 @@
     collapseSections(box);
     addOverrideSearch(box);
     filterAddPicker();
+    enableMultiSelect(box);
   }
 
   function install() {
