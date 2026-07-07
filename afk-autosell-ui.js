@@ -11,6 +11,11 @@
  *     可收合結構,預設全部收合;使用者展開/收合的狀態會記住,重繪(存/取消例外)不會
  *     把使用者剛展開的區塊又收回去。
  * E4. 文字修正:「個別例外」→「各別例外」(標題與空清單提示都要改)。
+ * E5(2026-07-08 使用者追加):「新增例外」下拉選單(#as-item)排除已經在各別例外
+ *     清單中的物品——monkey-patch window.refreshAutoSellItemOptions(原函式依搜尋/
+ *     分類/範圍重建這個下拉選單),原函式跑完後把 value 已存在 getAutoSellRules().overrides
+ *     的 <option> 移掉;openAutoSellRules() 第一次開窗時 #as-item 是直接內嵌在模板字串裡
+ *     (不經過 refreshAutoSellItemOptions),所以 enhance() 也會呼叫同一個過濾函式。
  *
  * (E2 按鈕順序:「立即賣出廢品」在原作本體裡本來就已經排在「依目前方式整理」左邊,
  *  不需要調整,這裡不處理。)
@@ -101,6 +106,22 @@
     });
   }
 
+  // E5:「新增例外」下拉選單排除已經在各別例外清單中的物品
+  function filterAddPicker() {
+    var select = document.getElementById('as-item');
+    if (!select) return;
+    var overrides = (typeof getAutoSellRules === 'function') ? (getAutoSellRules().overrides || {}) : {};
+    Array.prototype.slice.call(select.options).forEach(function (opt) {
+      if (opt.value && overrides.hasOwnProperty(opt.value)) opt.remove();
+    });
+    if (!select.options.length) {
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '沒有符合的物品(已在各別例外清單中)';
+      select.appendChild(placeholder);
+    }
+  }
+
   function enhance() {
     var box = document.querySelector('#autosell-rule-modal .as-box');
     if (!box) return;
@@ -108,6 +129,7 @@
     fixWording(box);
     collapseSections(box);
     addOverrideSearch(box);
+    filterAddPicker();
   }
 
   function install() {
@@ -123,12 +145,31 @@
     return true;
   }
 
-  if (install()) {
-    console.log('[AFK-autosell-ui] hooks OK — 自動販賣規則視窗:各別例外加捲動+搜尋、三區塊可收合、文字修正。');
+  function installRefreshWrap() {
+    if (typeof window.refreshAutoSellItemOptions !== 'function' || window.refreshAutoSellItemOptions.__afkAutosellUiWrapped) return false;
+    var orig = window.refreshAutoSellItemOptions;
+    var wrapped = function () {
+      var ret = orig.apply(this, arguments);
+      try { filterAddPicker(); } catch (e) { console.warn('[AFK-autosell-ui] 過濾新增例外選單失敗', e); }
+      return ret;
+    };
+    wrapped.__afkAutosellUiWrapped = true;
+    window.refreshAutoSellItemOptions = wrapped;
+    return true;
+  }
+
+  function installAll() {
+    var a = install();
+    var b = installRefreshWrap();
+    return a && b;
+  }
+
+  if (installAll()) {
+    console.log('[AFK-autosell-ui] hooks OK — 自動販賣規則視窗:各別例外加捲動+搜尋、三區塊可收合、文字修正、新增例外排除已設定物品。');
   } else {
     document.addEventListener('DOMContentLoaded', function () {
-      if (install()) console.log('[AFK-autosell-ui] hooks OK — 自動販賣規則視窗:各別例外加捲動+搜尋、三區塊可收合、文字修正。');
-      else console.warn('[AFK-autosell-ui] 找不到 openAutoSellRules,自動販賣視窗優化停用。');
+      if (installAll()) console.log('[AFK-autosell-ui] hooks OK — 自動販賣規則視窗:各別例外加捲動+搜尋、三區塊可收合、文字修正、新增例外排除已設定物品。');
+      else console.warn('[AFK-autosell-ui] 找不到 openAutoSellRules/refreshAutoSellItemOptions,自動販賣視窗優化停用。');
     }, { once: true });
   }
 })();
