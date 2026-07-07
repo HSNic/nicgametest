@@ -4,7 +4,7 @@
 
 ## ▶ 立即遊玩
 
-### 👉 https://pp771007.github.io/idle-lineage-class/
+### 👉 https://hsnic.github.io/nicgametest/
 
 用電腦或手機的瀏覽器點開網址就能玩，不用安裝、不用註冊。
 
