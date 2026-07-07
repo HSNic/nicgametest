@@ -1,5 +1,5 @@
 /*
- * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(仿共用倉庫)
+ * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(下拉選單,2026-07-08 由按鈕組改版)
  *
  * 背景:js/10-ui-tabs.js(原作者本體,不可修改)的 renderTabs(force) 只把物品分流到
  *   tab-weapons/tab-armors/tab-items 三個分頁容器,沒有子分類篩選 UI;子分類的分類邏輯
@@ -39,10 +39,10 @@
     var s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent =
-      '.afk-subfilter-bar{display:flex;flex-wrap:wrap;gap:4px;padding:4px 2px;}' +
-      '.afk-subfilter-btn{padding:2px 9px;font-size:12px;border-radius:999px;border:1px solid #475569;background:#1e293b;color:#cbd5e1;cursor:pointer;white-space:nowrap;}' +
-      '.afk-subfilter-btn:hover{border-color:#94a3b8;}' +
-      '.afk-subfilter-btn.active{background:#92400e;border-color:#f59e0b;color:#fde68a;font-weight:bold;}';
+      '.afk-subfilter-bar{padding:4px 2px;}' +
+      '.afk-subfilter-select{width:100%;padding:5px 8px;font-size:13px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#cbd5e1;cursor:pointer;}' +
+      '.afk-subfilter-select:hover{border-color:#94a3b8;}' +
+      '.afk-subfilter-select:focus{outline:none;border-color:#f59e0b;}';
     document.head.appendChild(s);
   }
 
@@ -93,17 +93,16 @@
     var options = subCatOptions(cat);
     var bar = document.createElement('div');
     bar.className = 'afk-subfilter-bar';
-    var html = '<button type="button" data-sub="" class="afk-subfilter-btn' + (!_subFilterState[cat] ? ' active' : '') + '">全部</button>';
+    var html = '<select class="afk-subfilter-select"><option value=""' + (!_subFilterState[cat] ? ' selected' : '') + '>全部</option>';
     html += options.map(function (o) {
-      return '<button type="button" data-sub="' + o.key + '" class="afk-subfilter-btn' + (_subFilterState[cat] === o.key ? ' active' : '') + '">' + o.name + '</button>';
+      return '<option value="' + o.key + '"' + (_subFilterState[cat] === o.key ? ' selected' : '') + '>' + o.name + '</option>';
     }).join('');
+    html += '</select>';
     bar.innerHTML = html;
-    bar.addEventListener('click', function (ev) {
-      var btn = ev.target.closest('[data-sub]');
-      if (!btn) return;
-      _subFilterState[cat] = btn.getAttribute('data-sub') || '';
+    var select = bar.querySelector('.afk-subfilter-select');
+    select.addEventListener('change', function () {
+      _subFilterState[cat] = select.value || '';
       var buckets = categorizedInv();
-      bar.querySelectorAll('.afk-subfilter-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
       applyOne(tabId, cat, buckets[cat]);
     });
     var shell = tabDiv.querySelector('.classic-inventory-shell');

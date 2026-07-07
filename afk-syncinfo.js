@@ -1,11 +1,11 @@
 /* ============================================================================
- * afk-syncinfo.js — 首頁顯示「原作者 + 加掛版版本號」
+ * afk-syncinfo.js — 外掛工具面板文字精簡(2026-07-08 起不再顯示內容)
  *
- * 首頁(#main-menu)保留原作者署名與正版連結,並顯示這份加掛版自己的版本號,
- * 讀根目錄 version.json 的 build 欄位(由 scripts/stamp-sw-version.mjs 每次
- * 改動後自動覆寫,不需要額外的發版腳本),玩家回報問題時能講出所在版本。
- *   - 純讀取 version.json,讀不到就只藏版本列,不影響遊戲。
+ * 原本這裡顯示「原作者+正版連結」與「巴哈討論串/LINE/Discord」連結,使用者要求
+ * 精簡外掛工具面板文字(A1),把這兩塊整段移除;加掛版版本號改由 afk-skin.js 顯示在
+ * 標題下方(A3),不再放這裡。
  *   - 檔名沿用歷史名稱(原本顯示「原版最後同步時間」),避免改名折騰快取與引用。
+ *   - 保留檔案與 hooks OK log(smoke test 仍會檢查),只是不再對 DOM 做任何輸出。
  *
  * 掛接:在 index.html 的 </body> 前加一行 <script src="afk-syncinfo.js"></script>
  * ========================================================================== */
@@ -17,51 +17,10 @@
     else fn();
   }
 
-  function injectCSS() {
-    if (document.getElementById('afk-syncinfo-style')) return;
-    var s = document.createElement('style');
-    s.id = 'afk-syncinfo-style';
-    s.textContent =
-      '#afk-syncinfo,#afk-syncinfo-links{color:#64748b;font-size:12px;text-align:center;letter-spacing:.3px;line-height:1.6;}' +
-      '.afk-si-row{margin-top:1px;}' +
-      '.afk-si-link{color:#7dd3fc;text-decoration:underline;}' +
-      // 原作者名:彩虹漸層流動(會動)
-      '.afk-si-name{font-weight:bold;background:linear-gradient(90deg,#f472b6,#fb923c,#fde047,#34d399,#22d3ee,#a78bfa,#f472b6);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:afk-si-flow 6s linear infinite;}' +
-      '@keyframes afk-si-flow{to{background-position:220% 0;}}';
-    document.head.appendChild(s);
-  }
-
   function init() {
     var menu = document.getElementById('main-menu');
-    if (!menu) { console.warn('[AFK-syncinfo] 找不到 #main-menu,原作者/最後同步資訊不顯示。'); return; }
-    if (document.getElementById('afk-syncinfo')) return;
-    injectCSS();
-    // 頂部:原作者 + 正版最後同步(各自一列;afk-skin 會把這塊排到外掛框最上方)
-    var foot = document.createElement('div');
-    foot.id = 'afk-syncinfo';
-    foot.innerHTML =
-      '<div class="afk-si-row"><span class="afk-si-author">原作者：<span class="afk-si-name">秋玥</span> <a class="afk-si-link" href="https://shines871.github.io/idle-lineage-class/" target="_blank" rel="noopener">(正版連結)</a></span></div>' +
-      '<div class="afk-si-row afk-si-verrow"><span class="afk-si-ver"></span></div>';
-    menu.appendChild(foot);
-    // 連結:巴哈討論串 + 加入Line群(各自一列;afk-skin 會排到框內較下方)
-    var links = document.createElement('div');
-    links.id = 'afk-syncinfo-links';
-    links.innerHTML =
-      '<div class="afk-si-row"><a class="afk-si-link" href="https://forum.gamer.com.tw/C.php?bsn=84452&amp;snA=8362" target="_blank" rel="noopener">巴哈討論串</a>（本加掛版發布在 <a class="afk-si-link" href="https://forum.gamer.com.tw/Co.php?bsn=84452&amp;sn=37297" target="_blank" rel="noopener">301</a> 樓）</div>' +
-      '<div class="afk-si-row"><a class="afk-si-link" href="https://line.me/ti/g2/RRXPx6rMc8ZhxiuNSSziKtcjnhc2AXEPuIOpVA?utm_source=invitation&amp;utm_medium=link_copy&amp;utm_campaign=default" target="_blank" rel="noopener">[加入Line群討論]</a> <a class="afk-si-link" href="https://discord.com/invite/xyWDYknDj" target="_blank" rel="noopener">[加入Discord討論]</a></div>';
-    menu.appendChild(links);
-    console.log('[AFK-syncinfo] hooks OK — 首頁顯示原作者與加掛版版本號。');
-
-    var verRow = foot.querySelector('.afk-si-verrow'), verEl = foot.querySelector('.afk-si-ver');
-    verRow.style.display = 'none';   // 讀到版本才顯示,讀不到整列不佔位
-    // file:// 無法 fetch(CORS,origin null)→ 直接降級藏版本列,避免 console 噴紅字;http(s) 才去抓
-    if (!/^https?:$/.test(location.protocol)) return;
-    fetch('version.json', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (j && j.build) { verEl.textContent = '加掛版 build ' + j.build; verRow.style.display = ''; }
-      })
-      .catch(function () { /* 讀不到就維持隱藏 */ });
+    if (!menu) { console.warn('[AFK-syncinfo] 找不到 #main-menu。'); return; }
+    console.log('[AFK-syncinfo] hooks OK — 面板文字已精簡(不再顯示原作者/社群連結)。');
   }
 
   ready(init);
