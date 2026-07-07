@@ -32,7 +32,7 @@
     <title>放置天堂 - 以血為盟</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=8c2e5160e7">
+    <link rel="stylesheet" href="css/style.css?v=5919894972">
     <link rel="stylesheet" href="css/floating-ui.css?v=cef1e683d5">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -468,6 +468,18 @@
         </div>
     </div>
 
+    <!-- 🏺 遺物收集冊 全螢幕書頁 -->
+    <div id="relic-book" class="hidden fixed inset-0 z-[45] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3" onclick="relicBookBackdrop(event)">
+        <div class="w-full max-w-5xl max-h-[92vh] flex flex-col bg-slate-900/95 rounded-2xl border-2 border-sky-700/60 shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700 bg-gradient-to-b from-[#0b2e40] to-[#08222e]">
+                <h2 class="text-2xl font-bold c-relic tracking-wide">🏺 遺物收集冊</h2>
+                <button onclick="closeRelicBook()" class="btn px-3 py-1.5 bg-slate-700 hover:bg-slate-600 border-slate-500 text-slate-200 font-bold">✕ 關閉</button>
+            </div>
+            <div id="relic-book-tabs" class="flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-slate-700 bg-slate-900/80"></div>
+            <div id="relic-book-body" class="flex-1 overflow-y-auto p-4"></div>
+        </div>
+    </div>
+
     <!-- 📦 收藏面板（裝備 / 道具 / 怪物 三大入口）-->
     <div id="collection-panel" class="hidden fixed inset-0 z-[46] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="collectionPanelBackdrop(event)">
         <div class="w-full max-w-sm flex flex-col bg-slate-900/95 rounded-2xl border-2 border-amber-700/60 shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden">
@@ -479,6 +491,7 @@
                 <button onclick="collectionOpenEquip()" class="btn py-5 text-xl font-bold" style="background: linear-gradient(135deg, #10283a, #1d4ed8); color: #bfdbfe; border-color: #3b82f6;">🗡️ 裝備</button>
                 <button onclick="collectionOpenMisc()" class="btn py-5 text-xl font-bold" style="background: linear-gradient(135deg, #3a2f12, #b3850e); color: #fde68a; border-color: #d4a017;">🧰 道具</button>
                 <button onclick="collectionOpenCard()" class="btn py-5 text-xl font-bold" style="background: linear-gradient(135deg, #3a1230, #a21caf); color: #f5d0fe; border-color: #c026d3;">🎴 怪物</button>
+                <button onclick="collectionOpenRelic()" class="btn py-5 text-xl font-bold" style="background: linear-gradient(135deg, #0b2e40, #0284c7); color: #bae6fd; border-color: #38bdf8;">🏺 遺物</button>
             </div>
         </div>
     </div>
@@ -501,27 +514,28 @@
     })();
     </script>
 
-<script src="js/00-data.js?v=94824c933a"></script>
-<script src="js/01-drops-config.js?v=3769329db7"></script>
-<script src="js/02-stats-recompute.js?v=c1999f01be"></script>
-<script src="js/03-combat-core.js?v=2d87cd68d3"></script>
-<script src="js/04-combat-attack.js?v=bdf56cdfb0"></script>
+<script src="js/00-data.js?v=536da32cec"></script>
+<script src="js/01-drops-config.js?v=ca0fdf35bf"></script>
+<script src="js/02-stats-recompute.js?v=8a75304f91"></script>
+<script src="js/03-combat-core.js?v=57da21fc33"></script>
+<script src="js/04-combat-attack.js?v=642022c4f1"></script>
 <script src="js/05-kill-progression.js?v=3eb685e591"></script>
-<script src="js/06-status-allies.js?v=381d19ba8e"></script>
+<script src="js/06-status-allies.js?v=279ff88510"></script>
 <script src="js/07-skills-cast.js?v=6180375ee1"></script>
-<script src="js/08-items-equip.js?v=7395c7001d"></script>
+<script src="js/08-items-equip.js?v=1489041a38"></script>
 <script src="js/09-vfx-render.js?v=14f8349cae"></script>
-<script src="js/10-ui-tabs.js?v=25b26ab1e7"></script>
-<script src="js/11-world-map.js?v=bcd1f96a5e"></script>
-<script src="js/12-npc-quests.js?v=ea15c1b3e3"></script>
-<script src="js/13-shop-save.js?v=b40e7acaa2"></script>
-<script src="js/14-craft-pandora.js?v=f9b50448a9"></script>
+<script src="js/10-ui-tabs.js?v=1ba6c74a7d"></script>
+<script src="js/11-world-map.js?v=836672bd55"></script>
+<script src="js/12-npc-quests.js?v=642ab0058b"></script>
+<script src="js/13-shop-save.js?v=84d489fc69"></script>
+<script src="js/14-craft-pandora.js?v=7cb5058f9e"></script>
 <script src="js/15-cards.js?v=0f2366cab9"></script>
-<script src="js/16-equip-book.js?v=82681c63f6"></script>
+<script src="js/16-equip-book.js?v=7ebd259198"></script>
 <script src="js/18-misc-book.js?v=6db7f79af5"></script>
 <script src="js/17-audio.js?v=8236e90c30"></script>
-<script src="js/19-equipment-window.js?v=287541ac90"></script>
+<script src="js/19-equipment-window.js?v=71cca65001"></script>
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
+<script src="js/21-relic-book.js?v=c83d828767"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline.js?v=20260707a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->

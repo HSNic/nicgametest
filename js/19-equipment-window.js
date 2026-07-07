@@ -23,6 +23,7 @@
             { k: 'pet',     x: 52.9, y: 53.4, w: 11.1, h: 9.1 },
             { k: 'arrow',   x: 83.9, y: 49.0, w: 11.7, h: 9.7 },
             { k: 'ring4',   x: 83.0, y: 59.4, w: 11.5, h: 9.5 },
+            { k: 'shin',    x: 69.4, y: 45.6, w: 11.6, h: 9.1 },
             { k: 'doll',    x: 82.3, y: 84.9, w: 11.8, h: 10.0 }
         ]
     ];
@@ -207,9 +208,8 @@
                     badge.textContent = '+' + item.en;
                     slot.appendChild(badge);
                 }
-                const fullName = document.createElement('span');
-                fullName.innerHTML = getItemFullName(item);
-                slot.title = fullName.textContent || fullName.innerText || data.n || item.id;
+                slot.classList.add('tip-host');
+                slot.setAttribute('data-tip-uid', item.uid); slot.setAttribute('data-tip-src', 'eq');   // 🖱️ hover 即時顯示已裝備物品完整資訊 tooltip
                 slot.onclick = function () {
                     clearTimeout(clickTimer);
                     clickTimer = setTimeout(function () {
@@ -260,8 +260,8 @@
             const d = DB.items[item.id];
             const row = document.createElement('button');
             row.type = 'button';
-            row.className = 'equipment-side-item' + (checkCanEquip(item) ? '' : ' cannot-equip');
-            row.title = plainItemName(item);
+            row.className = 'equipment-side-item tip-host' + (checkCanEquip(item) ? '' : ' cannot-equip');
+            row.setAttribute('data-tip-uid', item.uid); row.setAttribute('data-tip-src', 'inv');   // 🖱️ hover 即時顯示完整資訊 tooltip
             const icon = document.createElement('img');
             icon.src = getIconUrl(d);
             icon.alt = '';

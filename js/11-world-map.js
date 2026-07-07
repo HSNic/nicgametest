@@ -914,6 +914,7 @@ function doBianAttr(slotKey, ele) {
     if (!item) { logSys('該欄位沒有裝備武器。'); return; }
     let d = DB.items[item.id];
     if (!d || d.type !== 'wpn') { logSys('只能對武器賦予屬性。'); return; }
+    if (isRelic(d)) { logSys('<span class="c-relic">遺物無法賦予屬性。</span>'); return; }   // 🏺 遺物：無法賦予屬性
     let cfg = ATTR_SCROLLS[ele]; if (!cfg) return;
     let sc = player.inv.find(i => i.id === cfg.id);
     if (!sc || sc.cnt < 1) { logSys(`<span class="text-red-400">缺少 ${cfg.n}。</span>`); return; }

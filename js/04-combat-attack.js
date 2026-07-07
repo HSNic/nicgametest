@@ -59,6 +59,13 @@ function playerAttack() {
                 return;
             }
         }
+        // 🏺 遺物武器即死 proc（強韌的大腿骨：20% 對「等級 maxLv 以下」的指定 tag 生物即死）
+        if (wpn && wpn.procInstakill) {
+            let _pk = wpn.procInstakill;
+            if ((!_pk.maxLv || target.lv <= _pk.maxLv) && tryInstakill(target, { p: _pk.p, tag: _pk.tag || null }, wpn.n, mapState.targetIdx)) return;
+        }
+        // 🏺 遺物 隱蔽的死亡草葉：一般攻擊命中「滿血」非BOSS怪，instakillFull 機率即死（斗篷授予·此處 target.curHp 為命中前值）
+        if (player.d.instakillFull && target.curHp === target.hp && tryInstakill(target, { p: player.d.instakillFull, tag: null }, '隱蔽的死亡草葉', mapState.targetIdx)) return;
         // === 騎士被動：看破 / 殺戮 / 屠殺（僅對近距離普攻生效，兩者獨立判定，可同時觸發）===
         let killPrefix = '';
         if (player.cls === 'knight' && !result.ranged && !player.classicMode) {   // 🎮 經典模式：騎士無看破/殺戮被動
@@ -629,6 +636,42 @@ function illusionMagicDmg(dmg, isSkill) {
     return dmg;
 }
 
+// 🏺 遺物 白螞蛋殼：受到傷害時，對自身施展不消耗 MP 的初級治癒術（每 5 秒最多 1 次·物理/魔法受擊共用）
+function _relicOnDamageHeal() {
+    if (!player.d.onDmgHeal) return;
+    if (state.ticks < (player._shellHealCd || 0)) return;
+    let hsk = DB.skills[player.d.onDmgHeal]; if (!hsk || !hsk.healDice) return;
+    let amt = Math.max(1, Math.floor((rollDice(hsk.healDice[0], hsk.healDice[1]) + (hsk.healBase || 0)) * (1 + 3 * (player.d.magicDmg || 0) / 16)));
+    player.hp = Math.min(player.mhp, player.hp + amt);
+    player._shellHealCd = state.ticks + 50;   // 5 秒冷卻（10 ticks/秒）
+    logCombat(`<span class="font-bold" style="color:#86efac;">【白螞蛋殼】</span>受擊自癒，恢復 ${amt} 點 HP。`, 'heal');
+    updateUI();
+}
+// 💥 遺物 爆彈花蕊（頭盔）：受到傷害時，對自己與全體敵人各造成 hurtExplode 點火屬性魔法傷害（受魔法傷害影響）。
+//    自傷只扣 player.hp、不在此呼叫 killPlayer——由呼叫端既有死亡檢查統一結算（避免 loop 中 killMob 與玩家死亡交錯）。
+function bombFlowerExplode() {
+    if (!player.d.hurtExplode) return;
+    let base = player.d.hurtExplode;
+    let coef = 1 + 3 * (player.d.magicDmg || 0) / 16;   // 受魔法傷害影響（同一般魔攻係數）
+    let uids = mapState.mobs.filter(m => m && m.curHp > 0).map(m => m.uid);   // uid 快照·避免 killMob 改索引
+    let hitAny = false;
+    uids.forEach(function (uid) {
+        let t = mapState.mobs.find(m => m && m.uid === uid && m.curHp > 0);
+        if (!t) return;
+        let effMr = (t.st && t.st.mrhalf > 0) ? (t.mr / 2) : t.mr;
+        let dd = Math.floor(base * coef * mrMult(effMr)) - (t.dr || 0);
+        dd = Math.max(1, Math.floor(Math.max(1, dd) * fragileMult(t) * elementCounterMult('fire', t.e)));
+        if (t.st && t.st.mrhalf > 0) t.st.mrhalf = 0;
+        t.curHp -= dd; t.justHit = 'fire'; mobWake(t);
+        logCombat(`<span class="font-bold" style="color:#fca5a5;text-shadow:0 0 6px #dc2626;">【爆彈花蕊】</span>爆裂波及 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dd} 點火屬性魔法傷害。`, 'player-special');
+        if (t.curHp <= 0) { let ri = mapState.mobs.findIndex(m => m && m.uid === uid); if (ri !== -1) killMob(ri); }
+        hitAny = true;
+    });
+    let self = Math.max(1, Math.floor(base * coef));   // 對自己（自傷·不經 MR/剋制/dr）
+    player.hp -= self;
+    logCombat(`<span class="font-bold" style="color:#fca5a5;">【爆彈花蕊】</span>爆裂反噬，你受到 ${self} 點火屬性魔法傷害。`, 'player');
+    if (hitAny && !state.ff) renderMobs();
+}
 function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = null) {   // atkDmg/atkDb：連擊技覆寫骰子/加值（如鐮刀劍氣斬 9×3D70+99，與一般攻擊不同）
     if(player.dead) return;
     if(inAbsBarrier()) return;   // 🛡️ 絕對屏障：不受任何傷害（敵方一般/連擊攻擊完全無效，亦不觸發反擊）
@@ -726,6 +769,7 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
           if (player.buffs.sk_set_dragonscion > 0) _drMult *= 0.85;      // 🐉 龍血·龍裔：-15%
           if (player._setFury5) _drMult *= (1 - furyRageRatio());        // 😡 狂怒 5/5：依失血最多 -20%
           _drMult *= teamDmgReduceMult();                                // 🛡️ 鋼鐵防護：全隊受傷 -5%（玩家自身也套）
+          if (heavy && player.d.crushDr > 0) _drMult *= (1 - Math.min(80, player.d.crushDr) / 100);   // 🏺 遺物 妖魔的兜襠布：受到重擊(敵人骰20)時傷害 -crushDr%（上限 80%）
           totalDmg = Math.max(0, Math.floor(totalDmg * _drMult)); }
 
         // 常駐被動：看破（敵人版）— 命中時依機率造成兩倍傷害（5 + 等級/10 %）
@@ -788,6 +832,14 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
             if(mob.curHp <= 0) { killMob(idx); if(player.hp <= 0) killPlayer(); return; }
             if(hasMastery('k_rebound')) reboundExtraAttack(mob);   // 🏅 反彈精通：觸發忍耐被動→額外普攻
         }
+        if(player.d.thornsDmg > 0 && mob && mob.curHp > 0 && totalDmg > 0) {   // 🦔 遺物 犰狳尖刺頭盔：受擊時對攻擊者造成固定反傷（不乘脆弱·固定值）
+            let _th = player.d.thornsDmg;
+            mob.curHp -= _th; mob.justHit = 'magic'; mobWake(mob);
+            logCombat(`<span class="font-bold" style="color:#a3a3a3;">【尖刺】</span>尖刺回擊，對 <span class="${getMobColor(mob.lv)}">${mob.n}</span> 造成 ${_th} 點傷害。`, 'magic');
+            if(mob.curHp <= 0) { killMob(idx); if(player.hp <= 0) killPlayer(); return; }
+        }
+        if(player.d.hurtExplode > 0 && totalDmg > 0) { bombFlowerExplode(); if(player.hp <= 0) { killPlayer(); return; } }   // 💥 遺物 爆彈花蕊：受物理傷害時爆裂（自傷可致死→補死亡結算）
+        if(totalDmg > 0) _relicOnDamageHeal();   // 🏺 遺物 白螞蛋殼：受擊自癒（5 秒節流·可救回 <=0 血）
 
         let atkMsg = `${mobInsightPrefix}<span class="${getMobColor(mob.lv)}">${mob.n}</span> 擊中你，造成 ${totalDmg} 點傷害。`;
         if(heavy) atkMsg += " (重擊!)";
@@ -1323,6 +1375,7 @@ function applyMobMagic(mob, sk) {
 
         dmg = dollDamageReduced(dmg);   // 🪆 魔法娃娃：受傷機率傷害減免（史巴托/巫妖）
         player.hp -= dmg;
+        if (dmg > 0) _relicOnDamageHeal();   // 🏺 遺物 白螞蛋殼：受魔法傷害時亦觸發受擊自癒（5 秒節流·physical/magic 共用冷卻）
         if (dmg > 0 && typeof applyPlayerHitstun === 'function') applyPlayerHitstun();   // ⚔️ 天堂職業硬直：被魔法直接命中→延遲下次攻擊
         if (dmg > 0) { try { playSfx('hurt'); } catch(e){} }   // 🔊 音效：玩家受到魔法傷害
         if (player._setIron5 && dmg > 0 && player.hp > 0) ironGuardSweep();   // 🔮 鐵衛 5/5：受到（魔法）傷害時亦觸發（每 tick 節流）
@@ -1425,6 +1478,7 @@ function applyMobMagic(mob, sk) {
             if(mob.curHp <= 0) { let _ri = mapState.mobs.findIndex(m => m && m.uid === mob.uid); if(_ri !== -1) killMob(_ri); }
         }
 
+        if(player.d.hurtExplode > 0 && dmg > 0) bombFlowerExplode();   // 💥 遺物 爆彈花蕊：受魔法傷害時亦爆裂（自傷由下方死亡檢查結算）
         if(player.hp <= 0) killPlayer();
         else updateUI();
     }
@@ -1450,7 +1504,7 @@ function pledgeBonusDrop(mob) {
     let id = getWeightedGachaResult(true);   // 🔧 血盟野外＋攻城敵人：權重 1 以外的物品以 2 倍權重抽取（權重100→200）
     let d0 = DB.items[id];
     if (!d0) return;
-    let isEquip = ((d0.type === 'wpn' && !d0.isArrow) || d0.type === 'arm' || d0.type === 'acc');
+    let isEquip = ((d0.type === 'wpn' && !d0.isArrow) || d0.type === 'arm' || d0.type === 'acc') && !isRelic(d0);   // 🏺 遺物不會祝福
     let item;
     if (isEquip) {
         // 🔧 詞綴改走新制（同 gainItem/rollAffixesNew）：只可能獲得「祝福的」1%；屬性/遠古不再隨機掉落（改由象牙塔『碧恩』取得）

@@ -502,6 +502,7 @@ function doDemonKingCraft(idx) {
     else if ((src.cnt || 1) > 1) src.cnt -= 1; else player.inv = player.inv.filter(i => i.uid !== src.uid);   // 消耗 1 把來源惡魔武器（背包）
     let inst = { id: r.result, uid: uid(), cnt: 1, en: inherit.en, attr: inherit.attr, bless: inherit.bless, anc: inherit.anc, seteff: inherit.seteff, lock: false };
     player.inv.push(inst);
+    if (typeof registerEquipObtained === 'function') registerEquipObtained(inst.id);   // 🗡️ 客製製作直推 inv（未經 gainItem）→ 需手動登錄裝備收集冊，否則圖鑑保持暗直到重登(ensureEquipBook 補登)
     logSys(`<span class="text-amber-200 font-bold">炎魔之影</span> 製作完成：<span class="${getItemColor(inst)} font-bold">${getItemFullName(inst)}</span>${inherit.seteff ? '（繼承席琳套裝效果）' : ''}`);
     updateUI(); renderTabs(true); saveGame();
     renderUniversalCraft(document.getElementById('interaction-content'), 'npc_flame_shadow');
@@ -564,6 +565,7 @@ function doLumielCraft(idx) {
     else if ((src.cnt || 1) > 1) src.cnt -= 1; else player.inv = player.inv.filter(i => i.uid !== src.uid);   // 消耗 1 件來源戰士團裝備（背包）
     let inst = { id: r.result, uid: uid(), cnt: 1, en: inherit.en, attr: inherit.attr, bless: inherit.bless, anc: inherit.anc, seteff: inherit.seteff, lock: false };
     player.inv.push(inst);
+    if (typeof registerEquipObtained === 'function') registerEquipObtained(inst.id);   // 🗡️ 客製製作直推 inv（未經 gainItem）→ 需手動登錄裝備收集冊，否則圖鑑保持暗直到重登(ensureEquipBook 補登)
     logSys(`<span class="text-amber-200 font-bold">琉米埃爾</span> 製作完成：<span class="${getItemColor(inst)} font-bold">${getItemFullName(inst)}</span>`);
     updateUI(); renderTabs(true); saveGame();
     renderUniversalCraft(document.getElementById('interaction-content'), 'npc_lumiel');
@@ -1091,6 +1093,8 @@ function refreshGachaTicketCount() {
     ['wpn_dragonslayer','wpn_baless'].forEach(_id => { if (DB.items[_id]) DB.items[_id].gachaWeight = 1; });   // 🔧 屠龍劍／巴列斯魔杖：固定權重 1
     ['hlm_icequeen_charm','amr_icequeen_charm','bot_icequeen_charm'].forEach(_id => { if (DB.items[_id]) DB.items[_id].gachaWeight = 1; });   // ❄️👸 冰之女王魅力套裝：雖兼任寒冰製作素材(會被 craftMatSet 設0)，仍強制黑市權重 1
     [['hlm_official',10],['amr_official',10],['wpn_baranka_claw',10],['wpn_assassin_mark',10],['wpn_priest_wand',10],['wpn_laia_wand',1],['shd_priest_book',5]].forEach(([_id,_w]) => { if (DB.items[_id]) DB.items[_id].gachaWeight = _w; });   // 🔧 BOSS掉落但指定較高潘朵拉權重（不套用 BOSS專屬→1）；🔧 v2.6.67 蕾雅魔杖 10→1（傳說級稀有度對齊）
+    // 🏺 遺物（relic:true）：永不進潘朵拉黑市／抽獎／10連抽／血盟野外特殊掉落／時空裂痕獎勵池。最後執行→覆蓋以上所有權重規則（含 BOSS→1）；四個抽獎池皆已排除 gachaWeight<=0。
+    for (let _rid in DB.items) { if (DB.items[_rid] && DB.items[_rid].relic) DB.items[_rid].gachaWeight = 0; }
 })();
 
 // ==========================================
@@ -1738,6 +1742,7 @@ window.onload = () => {
     function findTipItem(src, uidv){
         try {
             if(src === 'wh'){ let w = loadWarehouse(); return ((w && w.items) || []).find(x => x.uid === uidv) || null; }
+            if(src === 'eq'){ let e = (typeof player !== 'undefined' && player && player.eq) || {}; for(let k in e){ if(e[k] && e[k].uid === uidv) return e[k]; } return null; }   // 🖱️ 已裝備物品（裝備視窗格）：從 player.eq 找實例
             return (player.inv || []).find(x => x.uid === uidv) || null;
         } catch(e){ return null; }
     }
@@ -1746,7 +1751,7 @@ window.onload = () => {
         let ic = document.getElementById('interaction-content');
         let eb = document.getElementById('equip-book');
         // 技能頁 host（data-tip-skill）與收集冊 host（data-tip-id）不限於 NPC 互動面板；其餘 host 仍限定於 interaction-content
-        let ok = host && ((ic && ic.contains(host)) || (eb && !eb.classList.contains('hidden') && eb.contains(host)) || host.hasAttribute('data-tip-skill') || host.hasAttribute('data-tip-id'));
+        let ok = host && ((ic && ic.contains(host)) || (eb && !eb.classList.contains('hidden') && eb.contains(host)) || host.hasAttribute('data-tip-skill') || host.hasAttribute('data-tip-id') || host.hasAttribute('data-tip-uid'));   // 🖱️ data-tip-uid（背包/裝備欄實例物品）不限面板，任何處 hover 即顯示完整資訊 tooltip
         if(!ok){ hideTip(); return; }
         let el = getTip();
         let tSkill = host.getAttribute('data-tip-skill');
