@@ -88,6 +88,13 @@
             0%, 100% { filter: drop-shadow(0 0 4px rgba(56,189,248,0.75)); }
             50%      { filter: drop-shadow(0 0 9px rgba(56,189,248,1)) drop-shadow(0 0 16px rgba(37,99,235,0.7)); }
         }
+        /* 🏺 遺物：海藍色名稱＋海藍色圖示呼吸光芒 */
+        .c-relic { color: #38bdf8 !important; font-weight: bold; text-shadow: 0 0 4px rgba(56,189,248,0.7), 0 0 10px rgba(2,132,199,0.5); }
+        .relic-glow { animation: relicGlow 2s ease-in-out infinite; }
+        @keyframes relicGlow {
+            0%, 100% { filter: drop-shadow(0 0 4px rgba(56,189,248,0.75)); }
+            50%      { filter: drop-shadow(0 0 9px rgba(56,189,248,1)) drop-shadow(0 0 16px rgba(2,132,199,0.7)); }
+        }
         /* 🔮 席琳套裝效果：鮮綠名稱＋呼吸式綠光（凌駕其他詞綴顏色；動態光暈為非詞綴類專屬特效） */
         .c-sherine { color: #4ade80 !important; animation: sherineName 2.2s ease-in-out infinite; }
         @keyframes sherineName {

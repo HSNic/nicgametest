@@ -21,30 +21,24 @@
   'use strict';
 
   // 外掛入口的「顯示順序」(都是 #main-menu 的子孫;依此序排入 Modal/外框)。
-  //   原作者+正版最後同步(#afk-syncinfo)置頂,接掉落查詢/小百科,再巴哈/Line(#afk-syncinfo-links),最後設定。
-  var FRAME_ORDER = ['#afk-syncinfo', '.m-dex-entry-row', '.m-wiki-entry-row', '#afk-syncinfo-links', '#afk-stg-wrap'];
+  //   2026-07-08 起 afk-syncinfo.js 不再輸出 DOM(A1 面板文字精簡),原本置頂的
+  //   #afk-syncinfo / 排在後段的 #afk-syncinfo-links 已從順序移除,只剩查詢/小百科/設定。
+  var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row', '#afk-stg-wrap'];
 
   function isMobileNow() { return document.body.classList.contains('m-mobile'); }
 
   // ---- CSS ----------------------------------------------------------------
   var CSS = [
-    /* 右上「加掛版」浮動副標 + 半透明裝飾底(圓角膠囊;之後可換雲形) */
-    /* 浮在副標下方、置中、絕對定位(不佔版面、不把按鈕往下推);內層 afk-brand-inner 負責上下飄 */
-    '#afk-brand-badge{position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);z-index:6;pointer-events:none;}',
-    '#afk-brand-badge .afk-brand-inner{position:relative;display:inline-block;padding:9px 26px 7px;animation:afkBrandFloat 3.2s ease-in-out infinite;}',
-    '#afk-brand-badge .afk-brand-text{position:relative;z-index:1;font-size:15px;font-weight:800;letter-spacing:2px;color:#fde68a;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.4);white-space:nowrap;}',
-    /* ☁️ 雲朵底:body(膠囊)+ 兩團 puff(圓),全用「同色不透明」疊出輪廓→無接縫,再對整層 opacity 半透明 */
-    '#afk-brand-badge .afk-cloud{position:absolute;left:0;right:0;top:30%;bottom:10%;opacity:.5;filter:drop-shadow(0 2px 5px rgba(0,0,0,.4));}',
-    '#afk-brand-badge .afk-cloud,#afk-brand-badge .afk-cloud::before,#afk-brand-badge .afk-cloud::after{background:#e6ecf7;border-radius:999px;}',
-    '#afk-brand-badge .afk-cloud::before{content:"";position:absolute;width:38%;height:155%;left:11%;top:-82%;border-radius:50%;}',
-    '#afk-brand-badge .afk-cloud::after{content:"";position:absolute;width:50%;height:180%;right:7%;top:-100%;border-radius:50%;}',
-    '@keyframes afkBrandFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}',
+    /* 標題下方兩行副標:「(加掛版)」+ 加掛版版本號(A2 移除舊的雲朵 icon、A3 改成純文字兩行,同字體同色) */
+    /* 浮在標題區下方、置中、絕對定位(不佔版面、不把按鈕往下推) */
+    '#afk-brand-badge{position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;}',
+    '#afk-brand-badge .afk-brand-line{font-size:14px;font-weight:800;letter-spacing:1.5px;color:#fde68a;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.4);white-space:nowrap;line-height:1.5;}',
     /* 桌機:作者藝術舞台的標題層(#login-title-layer,text-center)是獨立圖層,原本 absolute
-       bottom:-34px 會讓雲朵懸空、脫離標題看起來很怪 → 改成正常流、置中排在副標下方,像標題的一部分。
+       bottom:-34px 會讓副標懸空、脫離標題看起來很怪 → 改成正常流、置中排在標題下方,像標題的一部分。
        (手機維持 absolute;現況良好、勿動) */
     'body:not(.m-mobile) #afk-brand-badge{position:static;left:auto;bottom:auto;transform:none;display:block;margin:6px auto 0;text-align:center;}',
     /* 手機(body.m-mobile;此版用 viewport=1180 縮放,純寬度 media query 失效,故靠 m-mobile class)：字略縮一點 */
-    'body.m-mobile #afk-brand-badge .afk-brand-text{font-size:13px;letter-spacing:1px;}',
+    'body.m-mobile #afk-brand-badge .afk-brand-line{font-size:12px;letter-spacing:1px;}',
 
     /* 外掛區外框(半透明、像遊戲內面板) */
     '#afk-plugin-frame{position:relative;width:100%;max-width:20rem;margin:8px auto 0;padding:20px 14px 16px;',
@@ -118,6 +112,8 @@
   //   (本專案持續同步原作者版本,這句話不適用),改成動態版本號。
   var MARQUEE_TEXT = '加掛版';   // 版本號讀取前/讀取失敗的預設文字
 
+  // 2026-07-08(A3):版本號改到標題下方顯示,這裡暫時停用(不再呼叫);若之後要恢復跑馬燈顯示版本號,
+  // 把 ensureMarquee() 裡的呼叫加回來即可。
   function updateMarqueeVersion() {
     if (!/^https?:$/.test(location.protocol)) return;   // file:// 無法 fetch(CORS),維持預設文字
     fetch('version.json', { cache: 'no-store' })
@@ -136,17 +132,29 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
-  // ---- 右上副標 -----------------------------------------------------------
+  // ---- 標題下方兩行副標(A2 移除雲朵 icon、A3 改「(加掛版)」+ 加掛版版本號)--------
   function ensureBadge() {
     var cs = document.getElementById('creation-screen'); if (!cs) return;
     if (document.getElementById('afk-brand-badge')) return;
-    // 錨定在「標題區(h1+副標 的容器)」的右下角=使用者示意圖框的位置(副標右側、標題下方、分隔線上方)。
+    // 錨定在「標題區(h1+副標 的容器)」下方(桌機/手機一致)。
     var h1 = cs.querySelector('h1');
     var header = h1 ? h1.parentElement : cs;
     header.style.position = 'relative';   // 讓 badge 以這塊為定位基準(桌機/手機一致)
     var b = document.createElement('div'); b.id = 'afk-brand-badge';
-    b.innerHTML = '<span class="afk-brand-inner"><span class="afk-cloud"></span><span class="afk-brand-text">加掛版</span></span>';
+    b.innerHTML = '<div class="afk-brand-line">(加掛版)</div><div class="afk-brand-line afk-brand-ver"></div>';
     header.appendChild(b);
+    updateBrandVersion();
+  }
+
+  // 純版本號(取自 version.json 的 build 欄位,不加「加掛版」字樣——上一行已經是「(加掛版)」)。
+  function updateBrandVersion() {
+    var verEl = document.querySelector('#afk-brand-badge .afk-brand-ver');
+    if (!verEl) return;
+    if (!/^https?:$/.test(location.protocol)) return;   // file:// 無法 fetch(CORS),維持空白
+    fetch('version.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.build) verEl.textContent = j.build; })
+      .catch(function () { /* 讀不到就維持空白 */ });
   }
 
   // ---- 公告跑馬燈(首頁按鈕上方) ------------------------------------------
@@ -166,7 +174,8 @@
     }
     mq.appendChild(track);
     menu.insertBefore(mq, menu.firstChild);
-    updateMarqueeVersion();
+    // A3(2026-07-08):版本號改顯示在標題下方(見 ensureBadge/updateBrandVersion),
+    // 跑馬燈暫時不再顯示版本號,維持預設文字「加掛版」——不呼叫 updateMarqueeVersion()。
   }
 
   // ---- 手機:外掛外框(inline,現況良好、勿動)------------------------------

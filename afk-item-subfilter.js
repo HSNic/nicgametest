@@ -1,5 +1,5 @@
 /*
- * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(仿共用倉庫)
+ * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(按鈕組,仿共用倉庫;2026-07-08 曾短暫改成下拉選單,使用者反映不好用,改回按鈕組)
  *
  * 背景:js/10-ui-tabs.js(原作者本體,不可修改)的 renderTabs(force) 只把物品分流到
  *   tab-weapons/tab-armors/tab-items 三個分頁容器,沒有子分類篩選 UI;子分類的分類邏輯
