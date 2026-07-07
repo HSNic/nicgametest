@@ -76,6 +76,7 @@ const PLUGINS = [
   { file: 'afk-classic-list.js', comment: '道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫,不動原作者本體;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-item-subfilter.js', comment: '道具/武器/防具分頁加子分類篩選(下拉選單;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-uilayout.js', comment: '版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-player-ring.js', comment: '玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-skin.js', comment: '首頁「加掛版」品牌標記 + 外掛區外框(純視覺;需排在其他 afk-* 之後;可獨立維護,原作者更新後重新加回此行即可)' },
 ];
 

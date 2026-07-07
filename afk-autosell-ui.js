@@ -16,15 +16,22 @@
  *     分類/範圍重建這個下拉選單),原函式跑完後把 value 已存在 getAutoSellRules().overrides
  *     的 <option> 移掉;openAutoSellRules() 第一次開窗時 #as-item 是直接內嵌在模板字串裡
  *     (不經過 refreshAutoSellItemOptions),所以 enhance() 也會呼叫同一個過濾函式。
- * E6(2026-07-08 使用者追加):#as-item 改成 multiple(可 Ctrl/⌘/Shift 一次選多個),
- *     「永遠保留」「永遠販賣」兩顆按鈕改接管成:讀取全部勾選的 option 一次寫入
- *     getAutoSellRules().overrides,不再是原函式 setAutoSellOverride(v) 那種一次只認
- *     #as-item.value(單一值)的行為——多選時 .value 只會回傳第一個選取項,原函式無法
- *     批次處理,所以這裡直接接管按鈕的 click(移除原本 inline onclick,改
- *     addEventListener),自己重現「_readAutoSellForm() → 寫入 overrides → openAutoSellRules()」
- *     這段流程,搜尋/分類/範圍篩選狀態也自己 capture/restore(邏輯比照 afk-autosell-fix.js,
- *     但那支只包 setAutoSellOverride/deleteAutoSellOverride,本檔繞過那兩個函式直接呼叫
- *     openAutoSellRules,所以要自己做一份,兩邊不會互相干擾)。
+ * E6(2026-07-08 使用者追加,同日改版):「新增例外」一次可以選多個物品,批次設定。
+ *     **第一版用 `<select multiple>`(Ctrl/⌘/Shift 多選)——使用者反映手機觸控不好用,
+ *     原生多選 select 在手機上要長按或跳出笨重選擇器,改成核取方塊(checkbox)清單**,
+ *     桌機手機都是直接點擊,不依賴任何鍵盤修飾鍵:
+ *     - 原本的 `#as-item`(單選 select)保留但隱藏(`display:none`),當純資料來源——
+ *       仍然吃原函式 `refreshAutoSellItemOptions()` 依搜尋/分類/範圍重建的 `<option>`。
+ *     - 另建 `#as-item-checklist` 容器,依 `#as-item` 目前的 option 逐筆渲染成
+ *       `<label><input type="checkbox">名稱</label>`,勾選狀態存在模組變數
+ *       `selectedIds`(Set)——**搜尋字變動只是換一批可見選項,已勾選的 id 不會被清掉**
+ *       (讓使用者可以搜一批勾一些、換關鍵字再搜再勾,最後一次送出)。
+ *     - 「永遠保留」「永遠販賣」兩顆按鈕改接管成:讀 `selectedIds` 全部 id 一次寫入
+ *       `getAutoSellRules().overrides`,不再是原函式 `setAutoSellOverride(v)` 那種一次
+ *       只認 `#as-item.value`(單一值)的行為;送出後清空 `selectedIds`。
+ *     - 搜尋/分類/範圍篩選狀態自己 capture/restore(邏輯比照 afk-autosell-fix.js,但那支
+ *       只包 setAutoSellOverride/deleteAutoSellOverride,本檔繞過那兩個函式直接呼叫
+ *       openAutoSellRules,所以要自己做一份,兩邊不會互相干擾)。
  *
  * (E2 按鈕順序:「立即賣出廢品」在原作本體裡本來就已經排在「依目前方式整理」左邊,
  *  不需要調整,這裡不處理。)
@@ -55,9 +62,12 @@
       '#autosell-rule-modal details.as-sec>*:last-child{padding-bottom:12px;}' +
       '#as-overrides{max-height:220px;overflow-y:auto;}' +
       '#as-ov-search{width:100%;box-sizing:border-box;margin-bottom:6px;}' +
-      '#as-item[multiple]{height:160px;width:min(100%,390px);flex-basis:100%;}' +
-      '#as-item[multiple] option{padding:3px 6px;}' +
-      '.afk-multi-hint{font-size:12px;color:#94a3b8;margin:2px 0 6px;flex-basis:100%;}';
+      '#as-item-checklist{flex-basis:100%;max-height:200px;overflow-y:auto;border:1px solid #64748b;border-radius:6px;background:#020617;margin-bottom:6px;}' +
+      '#as-item-checklist label{display:flex;align-items:center;gap:8px;padding:9px 10px;min-height:36px;box-sizing:border-box;border-bottom:1px solid #1e293b;cursor:pointer;}' +
+      '#as-item-checklist label:last-child{border-bottom:none;}' +
+      '#as-item-checklist label:active,#as-item-checklist label:hover{background:#0f172a;}' +
+      '#as-item-checklist input[type=checkbox]{width:20px;height:20px;flex:0 0 auto;}' +
+      '.afk-multi-count{font-size:12px;color:#94a3b8;flex-basis:100%;margin-bottom:4px;}';
     document.head.appendChild(s);
   }
 
@@ -161,31 +171,74 @@
     if (box) box.scrollTop = state.scrollTop;
   }
 
-  // E6:#as-item 改 multiple,接管「永遠保留」「永遠販賣」按鈕一次寫入全部勾選的物品
+  // E6:核取方塊清單(桌機/手機都直接點擊,不依賴 Ctrl/⌘/Shift 等鍵盤修飾鍵)
+  var selectedIds = {};   // Set 語意用物件模擬(id -> true),避免舊瀏覽器 Set 相容疑慮
+
+  function selectedCount() { return Object.keys(selectedIds).length; }
+
+  function renderChecklist(select, listBox, countEl) {
+    listBox.innerHTML = '';
+    var opts = Array.prototype.slice.call(select.options).filter(function (o) { return o.value; });
+    if (!opts.length) {
+      var empty = document.createElement('div');
+      empty.className = 'as-muted';
+      empty.style.padding = '9px 10px';
+      empty.textContent = select.options.length ? select.options[0].textContent : '沒有符合的物品';
+      listBox.appendChild(empty);
+    } else {
+      opts.forEach(function (opt) {
+        var label = document.createElement('label');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = opt.value;
+        cb.checked = !!selectedIds[opt.value];
+        cb.addEventListener('change', function () {
+          if (cb.checked) selectedIds[opt.value] = true; else delete selectedIds[opt.value];
+          countEl.textContent = '已選 ' + selectedCount() + ' 個';
+        });
+        var span = document.createElement('span');
+        span.textContent = opt.textContent;
+        label.appendChild(cb);
+        label.appendChild(span);
+        listBox.appendChild(label);
+      });
+    }
+    countEl.textContent = '已選 ' + selectedCount() + ' 個';
+  }
+
   function enableMultiSelect(box) {
     var select = document.getElementById('as-item');
     if (!select) return;
-    select.multiple = true;
-    select.removeAttribute('size');
-    if (!select.nextElementSibling || !select.nextElementSibling.classList || !select.nextElementSibling.classList.contains('afk-multi-hint')) {
-      var hint = document.createElement('div');
-      hint.className = 'afk-multi-hint';
-      hint.textContent = '可按住 Ctrl(Mac 為 ⌘)或 Shift 一次選取多個物品,再點下方按鈕一次設定。';
-      select.parentNode.insertBefore(hint, select.nextSibling);
+    select.style.display = 'none';   // 保留當資料來源(仍吃 refreshAutoSellItemOptions 的重建),畫面上不顯示
+
+    var countEl = document.getElementById('as-multi-count');
+    var listBox = document.getElementById('as-item-checklist');
+    if (!listBox) {
+      countEl = document.createElement('div');
+      countEl.id = 'as-multi-count';
+      countEl.className = 'afk-multi-count';
+      listBox = document.createElement('div');
+      listBox.id = 'as-item-checklist';
+      select.parentNode.insertBefore(countEl, select);
+      select.parentNode.insertBefore(listBox, select);
     }
+    renderChecklist(select, listBox, countEl);
+
     var keepBtn = box.querySelector('.as-keep-btn');
     var sellBtn = box.querySelector('.as-sell-btn');
     [[keepBtn, 'keep'], [sellBtn, 'sell']].forEach(function (pair) {
       var btn = pair[0], v = pair[1];
-      if (!btn) return;
+      if (!btn || btn.__afkMultiBound) return;
+      btn.__afkMultiBound = true;
       btn.removeAttribute('onclick');
       btn.addEventListener('click', function () {
-        var ids = Array.prototype.slice.call(select.selectedOptions).map(function (o) { return o.value; }).filter(Boolean);
+        var ids = Object.keys(selectedIds);
         if (!ids.length) return;
         var state = captureAddPickerState();
         if (typeof _readAutoSellForm === 'function') _readAutoSellForm();
         var rules = getAutoSellRules();
         ids.forEach(function (id) { rules.overrides[id] = v; });
+        selectedIds = {};
         if (typeof openAutoSellRules === 'function') openAutoSellRules();
         setTimeout(function () { restoreAddPickerState(state); }, 0);
       });
