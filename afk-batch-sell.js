@@ -1,9 +1,9 @@
 /* ============================================================================
- * afk-batch-sell.js — 物品欄「批次販賣」(2026-07-08 待辦#9)
+ * afk-batch-sell.js — 物品欄「批次販賣」(2026-07-08 待辦#9;2026-07-08 使用者回饋#2 調整)
  *
- * 需求:物品欄(道具分頁 #tab-items)點單一物品彈窗裡才能「販賣/全部賣出」,勾很多件很麻煩。
- *   新增一顆「批次販賣」入口,開一個獨立清單(核取方塊,桌機/手機都好按,同
- *   afk-autosell-ui.js 新增例外的多選 UI 風格),勾選多項一次賣出。
+ * 需求:道具/武器/防具分頁點單一物品彈窗裡才能「販賣/全部賣出」,勾很多件很麻煩。
+ *   三個分頁的快速強化/快速廢品按鈕列都加一顆「批次販賣」入口,開一個獨立清單(核取
+ *   方塊,桌機/手機都好按,同 afk-autosell-ui.js 新增例外的多選 UI 風格),勾選多項一次賣出。
  *
  * 設計(重用既有邏輯,不改本體):
  *   - 賣出邏輯重用原作 `getSellPrice(item)` 算單價(不重寫算價公式,作者改公式自動跟上)。
@@ -12,23 +12,35 @@
  *     `openModal`/`closeModal`(批次情境不需要跳窗)。改成自己算完全部再一次性套用:
  *     迴圈只改 `player.gold`/`item.cnt`(歸零的從 `player.inv` 過濾掉),跑完才呼叫一次
  *     `renderTabs(true)`+`updateUI()`,並彙總成一則「共賣出 N 件、獲得 M 金幣」通知。
- *   - 只賣「道具分頁」的物品(排除武器/防具/飾品,那些另有各自的強化/裝備考量,批次販賣
- *     暫不處理),且沿用 `sellItem()` 本來就有的排除規則:上鎖(`item.lock`)、不可販售
- *     (`DB.items[id].noSell`)一律不會被列進清單。
+ *   - 分武器/防具/道具三種範圍(對齊 `renderTabs` 本身「物品分流」的判斷式:d.type==='wpn'
+ *     歸武器、'arm'/'acc' 歸防具、其餘歸道具),且沿用 `sellItem()` 本來就有的排除規則:
+ *     上鎖(`item.lock`)、不可販售(`DB.items[id].noSell`)一律不會被列進清單。裝備中的
+ *     武器/防具(`player.eq`)本來就不在 `player.inv` 裡,不會被誤賣。
  *   - 固定整批賣掉「勾選項目的全部數量」(不做部分數量選擇),跟原作「全部賣出」同粒度,
  *     介面更單純、風險更低。
  *
- * 進入點:`#tab-items` 分頁最上方(快速廢品按鈕下方)插入一顆「🧺 批次販賣」按鈕。
- *   monkey-patch `renderTabs`——真正渲染完後,若按鈕被整表重建清掉了(iDiv.innerHTML=''
- *   每次都重來),就補插回去。原作若改版拿掉 #tab-items 或整個分頁結構,插入會安靜失敗
- *   (找不到就不插),不影響遊戲本身。
+ * 進入點(2026-07-08 使用者回饋:原本獨立一顆全寬按鈕太佔位置,改成塞進「快速強化/
+ *   快速廢品」那排按鈕裡,三個分頁都要有):monkey-patch `renderTabs`——真正渲染完後,
+ *   在武器/防具/道具三個分頁各自的表頭(`buildQuickHeader` 產生)裡找「目前是未啟用快速
+ *   強化/快速廢品的那排按鈕」(class 精確比對 `flex gap-1`、且不含 `items-center`——啟用
+ *   中的兩種狀態列都帶 `items-center`,藉此分辨,只在「兩者都未啟用」時才插入,啟用中
+ *   收起自己、不佔位置),補插一顆「🧺 批次販賣」進那排。原作若改版拿掉分頁結構或改了
+ *   表頭 class,插入會安靜失敗(找不到就不插),不影響遊戲本身。
  * ========================================================================== */
 (function () {
   'use strict';
 
   var STYLE_ID = 'afk-batch-sell-style';
   var MODAL_ID = 'm-bs-modal';
+  var ENTRY_CLASS = 'm-batchsell-entry';
   var selected = {};   // uid -> true
+  var currentType = 'item';   // 目前開啟中的批次販賣範圍:'wpn' / 'arm' / 'item'
+
+  var TABS = [
+    { panelId: 'tab-weapons', type: 'wpn', label: '武器' },
+    { panelId: 'tab-armors', type: 'arm', label: '防具' },
+    { panelId: 'tab-items', type: 'item', label: '道具' }
+  ];
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -59,23 +71,31 @@
       '#' + MODAL_ID + ' .m-bs-cancel{background:#334155;border-color:#475569;color:#e2e8f0;}',
       '#' + MODAL_ID + ' .m-bs-confirm{background:#c2410c;border-color:#ea580c;color:#fed7aa;}',
       '#' + MODAL_ID + ' .m-bs-confirm:disabled{opacity:.5;cursor:not-allowed;}',
-      '#m-batchsell-entry{display:block;width:100%;}'
+      '.' + ENTRY_CLASS + '{white-space:nowrap;}'
     ].join('');
     document.head.appendChild(s);
   }
 
-  function isEligible(item) {
+  function typeLabel(type) { var t = TABS.filter(function (x) { return x.type === type; })[0]; return t ? t.label : ''; }
+
+  function typeMatches(d, type) {
+    if (type === 'wpn') return d.type === 'wpn';
+    if (type === 'arm') return d.type === 'arm' || d.type === 'acc';
+    return d.type !== 'wpn' && d.type !== 'arm' && d.type !== 'acc';
+  }
+
+  function isEligible(item, type) {
     if (!item || (item.cnt || 0) <= 0 || item.lock) return false;
     var d = DB.items[item.id];
     if (!d || d.noSell) return false;
-    if (d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') return false;   // 只處理道具分頁範圍
+    if (!typeMatches(d, type)) return false;
     if (typeof trialDropBlocked === 'function' && trialDropBlocked(item.id)) return false;   // 本職試煉道具保護,同 sellItem
     return true;
   }
 
-  function getEligibleItems() {
+  function getEligibleItems(type) {
     if (typeof player === 'undefined' || !player || !Array.isArray(player.inv)) return [];
-    return player.inv.filter(isEligible);
+    return player.inv.filter(function (item) { return isEligible(item, type); });
   }
 
   function ensureModal() {
@@ -86,7 +106,7 @@
     modal.className = 'hidden';
     modal.innerHTML =
       '<div class="m-bs-box">' +
-        '<div class="m-bs-head"><span class="m-bs-title">🧺 批次販賣</span><button type="button" class="m-bs-close" id="m-bs-close">✕</button></div>' +
+        '<div class="m-bs-head"><span class="m-bs-title" id="m-bs-title">🧺 批次販賣</span><button type="button" class="m-bs-close" id="m-bs-close">✕</button></div>' +
         '<input type="search" id="m-bs-search" placeholder="搜尋物品名稱…">' +
         '<label class="m-bs-allrow"><input type="checkbox" id="m-bs-selectall"> 全選(<span id="m-bs-selcount">0</span>/<span id="m-bs-total">0</span>)</label>' +
         '<div class="m-bs-list" id="m-bs-list"></div>' +
@@ -156,7 +176,7 @@
 
   function renderList() {
     selected = {};
-    var items = getEligibleItems();
+    var items = getEligibleItems(currentType);
     var list = document.getElementById('m-bs-list');
     list.innerHTML = '';
     document.getElementById('m-bs-total').textContent = String(items.length);
@@ -186,8 +206,10 @@
     updateSummary();
   }
 
-  function openModalUI() {
+  function openModalUI(type) {
+    currentType = type || 'item';
     ensureModal();
+    document.getElementById('m-bs-title').textContent = '🧺 批次販賣（' + typeLabel(currentType) + '）';
     renderList();
     document.getElementById('m-bs-search').value = '';
     filterList('');
@@ -200,7 +222,7 @@
     var totalItems = 0, totalGold = 0;
     uids.forEach(function (uid) {
       var item = player.inv.find(function (i) { return i.uid === uid; });
-      if (!isEligible(item)) return;   // 防禦:選取後狀態萬一變了(理論上 modal 開著時不會),跳過不賣
+      if (!isEligible(item, currentType)) return;   // 防禦:選取後狀態萬一變了(理論上 modal 開著時不會),跳過不賣
       var price = getSellPrice(item);
       var cnt = item.cnt || 0;
       totalGold += price * cnt;
@@ -215,25 +237,33 @@
     if (totalItems > 0) logSys('批次販賣：共賣出 <span class="font-bold">' + totalItems + '</span> 件物品，獲得 <span class="text-yellow-300 font-bold">' + totalGold.toLocaleString() + '</span> 金幣。');
   }
 
-  function buildEntryButton() {
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = 'm-batchsell-entry';
-    btn.className = 'classic-list-toolbar btn border-orange-700 bg-orange-900/70 hover:bg-orange-800 py-1.5 text-sm font-bold text-orange-200 rounded shadow mb-1';
-    btn.textContent = '🧺 批次販賣';
-    btn.onclick = openModalUI;
-    return btn;
+  // 快速強化/快速廢品「兩者都未啟用」的那排按鈕(buildQuickHeader 的 idle 狀態)特徵是
+  // class="flex gap-1"、不含 items-center;啟用中的兩種狀態列都帶 items-center,藉此分辨。
+  function findIdleRow(header) {
+    var row = header.querySelector(':scope > div.flex.gap-1');
+    if (row && !row.classList.contains('items-center')) return row;
+    return null;
   }
 
-  // renderTabs 每次都整表重建 #tab-items(iDiv.innerHTML=''),注入的按鈕會被清掉,渲染完後補插回去。
-  function ensureEntryButton() {
-    var panel = document.getElementById('tab-items');
+  function ensureEntryButtonForTab(panelId, type) {
+    var panel = document.getElementById(panelId);
     if (!panel) return;
-    if (document.getElementById('m-batchsell-entry')) return;
-    var header = panel.firstElementChild;   // buildQuickHeader('item') 一定是第一個子節點
-    var btn = buildEntryButton();
-    if (header) panel.insertBefore(btn, header.nextSibling);
-    else panel.insertBefore(btn, panel.firstChild);
+    var header = panel.firstElementChild;
+    if (!header) return;
+    var row = findIdleRow(header);
+    if (!row) return;   // 快速強化/快速廢品進行中:不佔位置,自己收起
+    if (row.querySelector('.' + ENTRY_CLASS)) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'flex-1 btn border-orange-700 bg-orange-900/70 hover:bg-orange-800 py-1.5 text-sm font-bold text-orange-200 rounded shadow ' + ENTRY_CLASS;
+    btn.textContent = '🧺 批次販賣';
+    btn.onclick = function () { openModalUI(type); };
+    row.appendChild(btn);
+  }
+
+  // renderTabs 每次都整表重建三個分頁(wDiv/aDiv/iDiv.innerHTML=''),注入的按鈕會被清掉,渲染完後補插回去。
+  function ensureEntryButtons() {
+    TABS.forEach(function (t) { ensureEntryButtonForTab(t.panelId, t.type); });
   }
 
   function install() {
@@ -242,13 +272,13 @@
     if (orig.__batchSellWrapped) return true;
     var wrapped = function () {
       var ret = orig.apply(this, arguments);
-      try { ensureEntryButton(); } catch (e) {}
+      try { ensureEntryButtons(); } catch (e) {}
       return ret;
     };
     wrapped.__batchSellWrapped = true;
     window.renderTabs = wrapped;
-    try { ensureEntryButton(); } catch (e) {}
-    console.log('[AFK-batch-sell] hooks OK — 物品欄批次販賣已啟用。');
+    try { ensureEntryButtons(); } catch (e) {}
+    console.log('[AFK-batch-sell] hooks OK — 武器/防具/道具批次販賣已啟用。');
     return true;
   }
 

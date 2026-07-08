@@ -807,6 +807,9 @@
 
       /* 三欄:滿寬,一次只顯示一欄,內部自行捲動 */
       'body.m-mobile .m-col-left,body.m-mobile .m-col-center,body.m-mobile .m-col-right{width:100% !important;max-width:none !important;flex:1 1 auto !important;min-height:0 !important;gap:8px !important;overflow:hidden;}',
+      /* 2026-07-08(待辦#8):背包分頁按鈕列(.tab-bar)跟下方內容(快速強化/快速廢品/物品清單)之間的間隙縮小,
+         只調 .m-col-right(背包欄)、不動戰鬥/設定欄的間距(避免波及沒被抱怨的畫面)。 */
+      'body.m-mobile .m-col-right{gap:4px !important;}',
       'body.m-mobile .m-col-left,body.m-mobile .m-col-center,body.m-mobile .m-col-right{display:none !important;}',
       'body.m-mobile.mview-battle .m-col-center{display:flex !important;}',
       'body.m-mobile.mview-config .m-col-left{display:flex !important;}',
