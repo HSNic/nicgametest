@@ -8,6 +8,11 @@
  *   回村莊/安全區(`#battle-view` 帶 `.hidden`)時隱藏。
  * 使用者實機測試回饋(2026-07-08 晚):⑤位置太靠右會擋到怪物站位,改更貼近左邊 ⑥飄浮晃動幅度
  *   加大、更明顯 ⑦娃娃外層加一圈顏色光暈(比照原本滑鼠游標熱點光點的配色邏輯,依娃娃名稱顏色)。
+ * 使用者實機測試回饋(2026-07-08 更晚,真機 iOS):⑧手機版圖片稍微縮小一點 ⑨飄浮動畫在真機上
+ *   完全不會動(CSS `@keyframes` 疑似跟 `#battle-view img{filter:contrast(1.06) saturate(1.05)}`
+ *   的動態 filter 疊加在 WebKit 上有相容性問題,桌機模擬測試看得到動、真機看不到)——改成用
+ *   `requestAnimationFrame` 手動算 transform 逐幀套用,不依賴 CSS animation,比照本專案戰鬥特效
+ *   (`js/09-vfx-render.js`)本來就是這種 rAF 手動算位置的做法,更可靠。
  *
  * 做法:
  *   1. 完全接管 window.applyDollCursor(不呼叫原函式)——裝備 player.eq.doll 時不再換游標圖/
@@ -50,19 +55,43 @@
       // 這裡補一份是防禦性寫法(原作者若改動該規則,寵物定位不會被連帶破壞),無害的重複宣告。
       '#battle-view{position:relative;}',
       // 🪆 貼近左邊(2026-07-08 實機回饋:原本 left:56px 偏太右會擋到怪物站位),用 CSS 變數
-      // --doll-pet-glow 套顏色光暈(JS 依娃娃名稱顏色設定,預設透明色不出現)。
+      // --doll-pet-glow 套顏色光暈(JS 依娃娃名稱顏色設定,預設透明色不出現)。飄浮位移改由
+      // JS(rAF)逐幀寫入 inline transform,這裡的 transform:translate(0,0) 只是初始值。
       // ⚠️ filter 要用 `!important`:css/style.css 有 `#battle-view img{filter:contrast(1.06) saturate(1.05)}`
       // (specificity 1 個 id+1 個元素,比我們單純 `#doll-pet-float`高),不加 important 會被整個蓋掉、
       // 光暈完全不出現(2026-07-08 實機測試踩過)。
-      '#doll-pet-float{position:absolute;left:8px;bottom:12px;width:64px;height:auto;pointer-events:none;z-index:5;opacity:0;transform:translate(0,0);transition:opacity .25s ease;will-change:transform;--doll-pet-glow:rgba(255,255,255,0);filter:drop-shadow(0 0 10px var(--doll-pet-glow)) drop-shadow(0 0 4px var(--doll-pet-glow)) drop-shadow(0 4px 6px rgba(0,0,0,.4)) !important;}',
-      '#doll-pet-float.active{opacity:1;animation:doll-pet-float-bob 3.6s ease-in-out infinite;}',
-      // 晃動幅度加大(2026-07-08 實機回饋:原本上下 16px/左右 6px 太不明顯)。
-      '@keyframes doll-pet-float-bob{0%{transform:translate(0,0);}25%{transform:translate(12px,-22px);}50%{transform:translate(0,-34px);}75%{transform:translate(-12px,-18px);}100%{transform:translate(0,0);}}'
+      '#doll-pet-float{position:absolute;left:8px;bottom:12px;width:64px;height:auto;pointer-events:none;z-index:5;opacity:0;transform:translate(0,0);transition:opacity .25s ease;--doll-pet-glow:rgba(255,255,255,0);filter:drop-shadow(0 0 10px var(--doll-pet-glow)) drop-shadow(0 0 4px var(--doll-pet-glow)) drop-shadow(0 4px 6px rgba(0,0,0,.4)) !important;}',
+      '#doll-pet-float.active{opacity:1;}',
+      // 手機版圖片稍微縮小(2026-07-08 實機回饋:64px 在手機小螢幕感覺偏大)。
+      'body.m-mobile #doll-pet-float{width:48px;}'
     ].join('\n');
     var style = document.createElement('style');
     style.id = 'doll-pet-float-style';
     style.textContent = css;
     document.head.appendChild(style);
+  }
+
+  // 🎞️ 飄浮動畫改用 requestAnimationFrame 手動算 transform,不依賴 CSS animation
+  //   (2026-07-08 實機回饋:CSS @keyframes 在真機 iOS 上完全不會動,疑似跟同一元素上
+  //   動態 filter 疊加有 WebKit 相容性問題;桌機模擬測試看得到動、無法重現真機情形)。
+  //   比照 js/09-vfx-render.js 既有戰鬥特效的做法,手動逐幀寫 inline transform 更可靠。
+  var bobRafId = null;
+  function startBob() {
+    if (bobRafId || !petEl) return;
+    var start = performance.now();
+    var step = function (now) {
+      if (!petEl || !petEl.classList.contains('active')) { bobRafId = null; return; }
+      var t = (now - start) / 1000;
+      var x = Math.sin(t * 1.7) * 12;
+      var y = -17 - Math.sin(t * 2.3 + 1) * 17; // 約在 0 ~ -34px 之間飄動
+      petEl.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+      bobRafId = requestAnimationFrame(step);
+    };
+    bobRafId = requestAnimationFrame(step);
+  }
+  function stopBob() {
+    if (bobRafId) { cancelAnimationFrame(bobRafId); bobRafId = null; }
+    if (petEl) petEl.style.transform = 'translate(0,0)';
   }
 
   function inBattleNow() {
@@ -99,8 +128,10 @@
       if (pet.dataset.src !== equippedDoll.src) { pet.src = equippedDoll.src; pet.dataset.src = equippedDoll.src; }
       pet.style.setProperty('--doll-pet-glow', equippedDoll.glow);
       pet.classList.add('active');
+      startBob();
     } else {
       pet.classList.remove('active');
+      stopBob();
     }
   }
 
