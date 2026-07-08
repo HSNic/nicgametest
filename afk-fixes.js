@@ -39,6 +39,10 @@
       var pending = false;
 
       var guarded = function () {
+        // 2026-07-08(效能稽核):state.ff(快轉/離線補跑)期間不可能有下拉選單被使用者打開,
+        // 直接透傳給原生 renderTabs(它自己會因 state.ff 早退),省掉每次都讀
+        // document.activeElement+closest 的成本,跟其他外掛(afk-toast/afk-autobuy)的快速通道一致。
+        if (typeof state !== 'undefined' && state && state.ff) return orig.apply(this, arguments);
         // 包住自己的偵測:萬一原作者哪天改了 DOM 害這裡丟錯,也絕不能波及遊戲的 renderTabs → 出錯就直接走原版
         try { if (selectOpenInTabs()) { pending = true; return; } } catch (e) {}
         return orig.apply(this, arguments);

@@ -288,7 +288,10 @@
     if (orig.__batchSellWrapped) return true;
     var wrapped = function () {
       var ret = orig.apply(this, arguments);
-      try { ensureEntryButtons(); } catch (e) {}
+      // 2026-07-08(效能稽核):原生 renderTabs 對 state.ff(快轉/離線補跑)已經早退零成本,
+      // 但這層 wrapper 之前沒有比照跳過,離線補跑期間(如玩家掛寵物、每 tick 觸發肉量刷新)
+      // 每次呼叫仍會做 3 分頁的 DOM 查詢,補上快速通道跟其他外掛(afk-toast/afk-autobuy)一致。
+      try { if (!(typeof state !== 'undefined' && state && state.ff)) ensureEntryButtons(); } catch (e) {}
       return ret;
     };
     wrapped.__batchSellWrapped = true;

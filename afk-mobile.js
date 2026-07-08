@@ -333,6 +333,10 @@
         finally { flushing = false; }
       }
       var wrapped = function () {
+        // 2026-07-08(效能稽核):state.ff(快轉/離線補跑)期間直接透傳給原生 renderTabs
+        // (它自己會因 state.ff 早退),省掉 detectMobile()/bagOpen() 這些檢查,跟其他外掛
+        // (afk-toast/afk-autobuy)的快速通道一致。
+        if (typeof state !== 'undefined' && state && state.ff) return origRT.apply(this, arguments);
         if (!detectMobile()) return origRT.apply(this, arguments);
         if (flushing) return origRT.apply(this, arguments);         // run() 為了觸發完整 wrapper 鏈重新呼叫進來,直接做真正的渲染,不要再套一次節流判斷
         if (!bagOpen()) { dirty = true; return; }                  // 戰鬥/設定畫面看不到背包 → 跳過,記 dirty
