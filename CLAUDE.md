@@ -294,6 +294,11 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
   - **測試要涵蓋真實觸發狀態**——存檔功能多半從**主選單(未載入角色)**觸發,就要在「未載入角色」狀態測,別只在「已載入」狀態測。
   - **斷言要看得到災情**:操作前後**比對「使用者實際會用的那一格 / 全部相關鍵」的內容有沒有被非預期改寫**,而不是只檢查自己有興趣的那格。
   - 動到存檔前,先想清楚「這個操作會不會在某狀態下覆蓋既有存檔、有沒有備份能救」;沒備份的覆蓋風險 = 上線前必須用真角色實測到放心為止。
+- **📱 使用者要在真實手機上測試(尤其手機觸控/版面類改動)時,啟動本機測試站台後要主動告知「區網 IP 網址」,讓使用者手機連過去(2026-07-08 使用者明訂,往後每次都要這樣做,不用等使用者提醒)**:`.scratch/devserver.mjs` 用 `server.listen(PORT, ...)`(沒指定 host),Node 預設就是監聽所有網路介面(`*:8000`),本來就不是只綁 `localhost`——所以不需要改程式,只要**額外查詢這台 Mac 的區網 IP 並附上完整網址**即可:
+  ```bash
+  ipconfig getifaddr en0   # 或 en1,依實際使用的網卡而定;抓不到就用 ifconfig | grep "inet " | grep -v 127.0.0.1
+  ```
+  回報格式範例:「手機要跟這台 Mac 連同一個 WiFi,瀏覽器打開 `http://<查到的IP>:8000/` 就能測試。」**每次 `preview_start` 啟動這支 devserver 後都要主動附上這個網址,不要只顧自己用 `localhost` 驗證就結束**——Claude Preview 工具本身用 `localhost` 連線沒問題,但那對使用者的手機沒用,手機必須用區網 IP。若使用者反映連不到,先確認雙方在同一 WiFi、Mac 防火牆有沒有擋掉該連接埠(`System Settings > Network > Firewall`),不要假設一定是程式問題。
 - **⚠️ 本機用 Claude Preview / 瀏覽器工具反覆改測「同一支外掛」時,若懷疑「明明改了程式碼、行為卻沒變」,先懷疑 Service Worker 快取,別急著以為改壞了(踩過 2026-07-08)**:`afk-sw.js` 註冊的 SW 對 `.js`/`.css` 走 cache-first(`CODE_CACHE`),同一個 URL(本機測試站台的 `afk-mobile.js` 沒有 `?v=` 版本號、或版本號在同一輪迭代中沒變)第二次載入會直接吃快取,即使磁碟上的檔案內容已經改了、devserver 也確實會回傳新內容,瀏覽器仍可能繼續用舊的快取版本執行,導致本機驗證測出「跟程式碼對不上」的假象(當時是背包長按 swallow 修法測出「明明改了 target 判斷,結果任何點擊都還是被吞掉」,查了老半天才發現是快取)。**判準/解法**:本機反覆迭代同一支外掛時,每次改完要驗證前,先 `(await navigator.serviceWorker.getRegistrations()).forEach(r=>r.unregister())` + `(await caches.keys())` 全部 `caches.delete()` 再 `location.reload()`,拿到保證最新的版本再下結論。**正式環境不受影響**(靠 `?v=` bump 讓請求 URL 變,SW 天然 cache miss 抓新版),這條只在本機同一 URL 反覆測試時才會踩到。
 
 ### 量測效能時:每跑一輪前「重新整理頁面」,不要用 `loadGame()` 在原地重置(會漏記憶體污染數字)
