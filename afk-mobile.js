@@ -27,6 +27,35 @@
     } catch (e) {}
   })();
 
+  // 🪆 手機關閉魔法娃娃游標特效(2026-07-08 待辦問題1):css/style.css 的
+  //   `body.has-doll-cursor *{cursor:inherit!important}` 是萬用選擇器+!important,套用範圍是全部
+  //   DOM 節點,裝娃娃是長期狀態、幾乎全程掛在 body 上——手機沒有游標可顯示(觸控裝置看不到游標圖案),
+  //   但這條規則的「選擇器成本」不受此影響,DOM 每次變動(戰鬥 tick 頻繁重繪)都要重算,疊加手機補發
+  //   合成 mousemove 拖慢點擊回饋。手機模式下直接不掛 has-doll-cursor class、不建光點,對玩家沒有
+  //   視覺損失(反正看不到)、換掉最貴的那條規則。桌機完全不受影響(僅在 m-mobile 時短路)。
+  //   （原本改在 index.html/js/02-stats-recompute.js 裡的 applyDollCursor 逐一判斷,但那是本體
+  //   程式碼、依規則不能改;改用外部 monkey-patch 包住全域函式,原作者怎麼改 css 都自動跟上。）
+  (function wrapApplyDollCursorForMobile() {
+    if (typeof window.applyDollCursor !== 'function') {
+      console.warn('[AFK-mobile] 找不到全域 applyDollCursor,魔法娃娃手機游標優化未套用。');
+      return;
+    }
+    if (window.applyDollCursor.__afkMobileWrapped) return;
+    var orig = window.applyDollCursor;
+    var wrapped = function () {
+      if (document.body && document.body.classList.contains('m-mobile')) {
+        document.body.classList.remove('has-doll-cursor');
+        document.body.style.cursor = '';
+        var glow = document.getElementById('doll-cursor-glow');
+        if (glow) glow.classList.remove('active');
+        return;
+      }
+      return orig.apply(this, arguments);
+    };
+    wrapped.__afkMobileWrapped = true;
+    window.applyDollCursor = wrapped;
+  })();
+
   function init() {
     var gs = document.getElementById('game-screen');
     if (!gs) { console.warn('[AFK-mobile] 找不到 #game-screen,手機版停用。'); return; }
@@ -339,6 +368,9 @@
         document.body.classList.remove('mlog-open');
         logsToColumn();
       }
+      // 桌機↔手機切換時立刻重算一次魔法娃娃游標狀態(見上方 wrapApplyDollCursorForMobile),
+      // 避免「切手機前已裝娃娃」殘留 has-doll-cursor、或「切回桌機」沒恢復游標特效。
+      if (typeof window.applyDollCursor === 'function') { try { window.applyDollCursor(); } catch (e) {} }
     }
 
     apply(detectMobile());
@@ -621,10 +653,25 @@
   //   工具列蓋住,頂部還會多一塊留白。維持預設讓瀏覽器自動避開系統列。
   function trackAppHeight() {
     var vv = window.visualViewport;
+    var focused = false;   // 2026-07-08(待辦問題2):輸入框聚焦中(軟鍵盤跳出/收起)凍結量測,見下方 focusin/focusout
+    function isTextInput(t) {
+      if (!t || !t.tagName) return false;
+      if (t.tagName === 'TEXTAREA') return true;
+      if (t.tagName !== 'INPUT') return false;
+      var type = (t.getAttribute('type') || 'text').toLowerCase();
+      return ['text', 'number', 'search', 'tel', 'email', 'password', 'url'].indexOf(type) !== -1;
+    }
     function set() {
+      if (focused) return;   // 鍵盤彈出/收起也會觸發 visualViewport resize,跟真正旋轉/工具列伸縮一視同仁會導致 fixed 定位的 #game-screen 高度跟著鍵盤跳動,聚焦中一律不套用
       var h = (vv && vv.height) ? vv.height : window.innerHeight;
       document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
     }
+    document.addEventListener('focusin', function (e) { if (isTextInput(e.target)) focused = true; }, true);
+    document.addEventListener('focusout', function (e) {
+      if (!isTextInput(e.target)) return;
+      focused = false;
+      setTimeout(set, 60);   // 鍵盤收起後可視高度會變回來,blur 後補量一次同步(60ms 讓鍵盤收起動畫先完成)
+    }, true);
     set();
     window.addEventListener('resize', set);
     window.addEventListener('orientationchange', function () { setTimeout(set, 250); });
@@ -1025,7 +1072,14 @@
       'body.m-mobile .anc-bless-glow{animation:none !important;filter:drop-shadow(0 0 9px rgba(243,188,72,1)) drop-shadow(0 0 20px rgba(192,132,252,.7)) brightness(1.4) saturate(1.8);}',
       'body.m-mobile .ancient-glow-strong{animation:none !important;filter:drop-shadow(0 0 10px rgba(184,104,250,1)) drop-shadow(0 0 22px rgba(150,60,235,.7)) brightness(1.4) saturate(1.8);}',
       'body.m-mobile .bless-glow-strong{animation:none !important;filter:drop-shadow(0 0 10px rgba(253,224,71,1)) drop-shadow(0 0 22px rgba(234,180,20,.7)) brightness(1.4) saturate(1.8);}',
-      'body.m-mobile .tri-glow{animation:none !important;filter:drop-shadow(0 0 10px rgba(245,158,11,1)) drop-shadow(0 0 24px rgba(239,68,68,.6)) brightness(1.5) saturate(1.9);}'
+      'body.m-mobile .tri-glow{animation:none !important;filter:drop-shadow(0 0 10px rgba(245,158,11,1)) drop-shadow(0 0 24px rgba(239,68,68,.6)) brightness(1.5) saturate(1.9);}',
+
+      /* 2026-07-08(待辦問題3):手機上藏掉原作者桌機 hover tooltip(js/14-craft-pandora.js 的 .game-tooltip,
+         只綁 mousemove、沒有延遲判斷)。手機單純點一下也會補發相容用的合成 mousemove,會讓它瞬間跳出來,
+         跟本外掛長按 1 秒才顯示的 #m-tip-modal 打架(玩家感覺「兩套 tooltip、延遲不受控」)。
+         只藏顯示、不移除 DOM——initTipPeek() 的 skillDetailHTML() 仍會借它的 innerHTML/getBoundingClientRect
+         取技能說明,隱藏不影響讀取。 */
+      'body.m-mobile .game-tooltip{display:none !important;}'
     ].join('\n');
     var s = document.createElement('style');
     s.id = 'm-style';
@@ -1192,7 +1246,7 @@
         var c = (hostKind === 'item') ? resolve(host) : resolveTitle(host);
         if (!c) return;        // 解析不出內容 → 不開卡,維持一般操作
         open(c); arm();
-      }, 500);   // 2026-07-08(待辦#3):350ms 太快易誤觸,依使用者要求拉長到 500ms
+      }, 1000);   // 2026-07-08(待辦問題3):使用者要求統一拉長到 1 秒(350ms→500ms→1000ms),搭配上方 .game-tooltip 隱藏,手機上只剩這一套 tooltip
     }, { passive: true });
     document.addEventListener('touchmove', function (e) {
       if (timer === null) return;
