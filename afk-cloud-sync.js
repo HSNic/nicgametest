@@ -39,7 +39,10 @@
 
   // ----- 可調參數 -----------------------------------------------------------
   var CLIENT_ID = '452592311770-io65beqsrnb9vt25bpk360pnv9o2agef.apps.googleusercontent.com';
-  var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+  // drive.appdata:讀寫 App 專屬資料夾;userinfo.email:登入後查 email 比對白名單用
+  //   （2026-07-09 踩過:只申請 drive.appdata 的話, token 沒有權限打 userinfo API,
+  //   會被 Google 拒絕(403),表現成「登入失敗:讀取帳號資訊失敗」，要兩個 scope 一起要）。
+  var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email';
   // 測試白名單 email（小寫比對）：家人各自帳號直接加進這個陣列即可，例如 ['a@gmail.com','b@gmail.com']。
   //   ⚠ 這是「我們自己的」第二層白名單，跟 Google Cloud Console 的 OAuth 同意畫面「測試使用者」名單是
   //   兩件事，兩邊都要加同一批 email 才能登入成功（Console 那邊沒加會直接被 Google 擋在同意畫面前）。
@@ -251,7 +254,7 @@
 
   function fetchUserInfo(token) {
     return fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + token } })
-      .then(function (r) { if (!r.ok) throw new Error('讀取帳號資訊失敗'); return r.json(); });
+      .then(function (r) { if (!r.ok) throw new Error('讀取帳號資訊失敗（HTTP ' + r.status + '）'); return r.json(); });
   }
 
   auth.signIn = function () {
