@@ -225,17 +225,28 @@
   }
 
   // promptMode：'' 讓 Google 自行判斷(登入按鈕用)；'none' 完全不彈窗(背景自動同步用，失敗就算了，不強迫互動)
+  var TOKEN_REQUEST_TIMEOUT_MS = 20 * 1000;   // 授權彈窗被瀏覽器擋掉/使用者晾著不理時，別讓呼叫端永遠卡住
+
   function requestToken(promptMode) {
     return ensureTokenClient().then(function (tc) {
       return new Promise(function (resolve, reject) {
+        var settled = false;
+        var timer = setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          reject(new Error('登入逾時（授權視窗可能被瀏覽器封鎖，或忘記在彈出視窗完成登入）'));
+        }, TOKEN_REQUEST_TIMEOUT_MS);
         tc.callback = function (resp) {
+          if (settled) return;   // 逾時已經 reject 過，之後才姍姍來遲的 callback 不再處理
+          settled = true;
+          clearTimeout(timer);
           if (!resp || resp.error) { reject(new Error((resp && resp.error) || '登入被取消或失敗')); return; }
           _accessToken = resp.access_token;
           _tokenExpiresAt = Date.now() + ((resp.expires_in ? +resp.expires_in : 3500) * 1000);
           resolve(_accessToken);
         };
         try { tc.requestAccessToken({ prompt: promptMode }); }
-        catch (e) { reject(e); }
+        catch (e) { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
       });
     });
   }
@@ -368,18 +379,22 @@
     return drive.findFile(slot);
   }
 
+  // 以下 doUpload/uploadWithGuard/flow.syncUpload 都回傳一個結果物件(而非單純 resolve/reject),
+  // 讓呼叫端(尤其手動按「立即同步」)能明確知道「到底有沒有真的同步成功」,不是只能看 console。
   function doUpload(slot, obj, fileId) {
     return drive.uploadFile({ fileId: fileId, name: drive.fileNameFor(slot), content: JSON.stringify(obj) }).then(function (res) {
       setFileId(slot, res.id);
       setLastRev(slot, res.headRevisionId || '');
       console.log('[AFK-cloud-sync] 上傳成功（slot ' + slot + '）。');
+      return { ok: true };
     });
   }
 
   function handleSyncError(err, reason) {
     if (err && err.kind === 'network') { _pendingUpload = true; AFK_CLOUD.ui.toast('離線中，恢復連線後自動補傳存檔'); }
     else if (err && err.kind === 'auth') { AFK_CLOUD.ui.toast('登入已過期，請重新點擊「立即同步」重新登入'); }
-    else console.warn('[AFK-cloud-sync] 同步失敗（' + reason + '）:', err);
+    else { console.warn('[AFK-cloud-sync] 同步失敗（' + reason + '）:', err); AFK_CLOUD.ui.toast('同步失敗：' + ((err && err.message) || '未知錯誤')); }
+    return { ok: false, err: err };
   }
 
   function uploadWithGuard(slot, obj, reason) {
@@ -398,20 +413,20 @@
             cancelLabel: '先不同步'
           }).then(function (choice) {
             if (choice === 'left') return doUpload(slot, obj, existing.id);
-            if (choice === 'right') return flow.syncDownloadAndApply(slot).then(function () { AFK_CLOUD.ui.toast('已下載雲端最新版並套用到本機。'); });
-            return null;
+            if (choice === 'right') return flow.syncDownloadAndApply(slot).then(function () { AFK_CLOUD.ui.toast('已下載雲端最新版並套用到本機。'); return { ok: true, downloaded: true }; });
+            return { ok: false, cancelled: true };
           });
         }
         return doUpload(slot, obj, existing.id);
       });
-    }).catch(function (err) { handleSyncError(err, reason); });
+    }).catch(function (err) { return handleSyncError(err, reason); });
   }
 
   flow.syncUpload = function (reason) {
-    if (!drive.isReady()) return Promise.resolve();
+    if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
     var slot = currentSlot;
     var obj = payload.buildPayload(slot);
-    if (!obj) { console.log('[AFK-cloud-sync] 存檔位 ' + slot + ' 無資料，略過同步。'); return Promise.resolve(); }
+    if (!obj) { console.log('[AFK-cloud-sync] 存檔位 ' + slot + ' 無資料，略過同步。'); return Promise.resolve({ ok: false, reason: 'no-data' }); }
     return uploadWithGuard(slot, obj, reason);
   };
 
@@ -478,16 +493,17 @@
   // ===========================================================================
   var scheduler = AFK_CLOUD.scheduler = {};
   var idleTimer = null;
+  var lastRealUploadAt = 0;
 
   function requestUpload(reason, force) {
-    if (!auth.isSignedIn()) return;
+    if (!auth.isSignedIn()) return Promise.resolve({ ok: false, reason: 'not-signed-in' });
     var now = Date.now();
     if (!force && (now - lastRealUploadAt) < MIN_UPLOAD_INTERVAL_MS) {
       console.log('[AFK-cloud-sync] 節流：距上次同步未滿 ' + Math.round(MIN_UPLOAD_INTERVAL_MS / 1000) + ' 秒，暫不上傳（觸發原因=' + reason + '）。');
-      return;
+      return Promise.resolve({ ok: false, reason: 'throttled' });
     }
     lastRealUploadAt = now;
-    flow.syncUpload(reason);
+    return flow.syncUpload(reason);
   }
 
   scheduler.onSaveGame = function () {
@@ -501,11 +517,11 @@
   // 手動同步鈕：一律視為「一次性、必須做」，略過節流，但按鈕本身要有 cooldown 防連點
   scheduler.manualSync = function (btn) {
     if (btn) {
-      if (btn.disabled) return;
+      if (btn.disabled) return Promise.resolve({ ok: false, reason: 'cooldown' });
       btn.disabled = true;
       setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
     }
-    requestUpload('manual', true);
+    return requestUpload('manual', true);
   };
 
   document.addEventListener('visibilitychange', function () {
@@ -621,7 +637,16 @@
     var signinBtn = document.getElementById('afk-cloud-signin-btn');
     if (signinBtn) signinBtn.addEventListener('click', function () { auth.signIn(); });
     var syncBtn = document.getElementById('afk-cloud-sync-btn');
-    if (syncBtn) syncBtn.addEventListener('click', function () { scheduler.manualSync(syncBtn); ui.toast('已觸發同步'); });
+    if (syncBtn) syncBtn.addEventListener('click', function () {
+      ui.toast('同步中…');
+      scheduler.manualSync(syncBtn).then(function (result) {
+        if (!result) return;
+        if (result.ok) ui.toast('✅ 已同步完成');
+        else if (result.reason === 'no-data') ui.toast('目前存檔位（' + currentSlot + '）沒有資料，略過同步');
+        else if (result.cancelled) ui.toast('已取消，未同步');
+        // 其餘失敗情況(離線/認證過期/一般錯誤/節流)已由對應流程各自跳過 toast，這裡不重複
+      });
+    });
     var signoutBtn = document.getElementById('afk-cloud-signout-btn');
     if (signoutBtn) signoutBtn.addEventListener('click', function () { auth.signOut(); });
   };
