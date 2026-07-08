@@ -180,7 +180,15 @@
     var list = document.getElementById('m-bs-list');
     list.innerHTML = '';
     document.getElementById('m-bs-total').textContent = String(items.length);
-    items.forEach(function (item) {
+    // 2026-07-08(使用者實機回報:武器分頁裝備多時,點「批次販賣」要等好幾秒視窗才跳出來):
+    //   原本一次迴圈同步建完全部列,每列都要呼叫 getSellPrice/getItemFullName/getItemColor
+    //   (裝備類這些函式比道具貴,要算強化/詞綴/席琳套裝等),物品一多整段同步跑完才讓視窗
+    //   顯示,手機上感覺像卡住。改成分批(每批 40 筆)用 requestAnimationFrame 排程建立,第一批
+    //   同步跑完就讓視窗立刻可見,其餘批次不擋住主執行緒、逐步補進清單。
+    var CHUNK = 40;
+    var idx = 0;
+    var raf = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+    function buildRow(item) {
       var d = DB.items[item.id];
       var price = getSellPrice(item);
       var est = price * (item.cnt || 0);
@@ -201,9 +209,17 @@
         toggleSel(item.uid, e.target.checked);
         updateSummary();
       });
-      list.appendChild(row);
-    });
-    updateSummary();
+      return row;
+    }
+    function renderChunk() {
+      var frag = document.createDocumentFragment();
+      var end = Math.min(idx + CHUNK, items.length);
+      for (; idx < end; idx++) frag.appendChild(buildRow(items[idx]));
+      list.appendChild(frag);
+      if (idx < items.length) raf(renderChunk);
+      else updateSummary();
+    }
+    if (items.length) renderChunk(); else updateSummary();
   }
 
   function openModalUI(type) {
