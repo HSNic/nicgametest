@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "devserver",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".scratch/devserver.mjs"],
+      "port": 8000
+    }
+  ]
+}
