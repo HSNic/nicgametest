@@ -448,6 +448,33 @@
     });
   };
 
+  // 全新裝置的第一次還原：本機任何存檔位都沒有資料時，原作 openSlotSelect 在「載入進度」
+  // 畫面會把空存檔位的按鈕直接 disabled（見 js/13-shop-save.js:294），玩家根本點不下去，
+  // 導致 chooseSlot 攔截點永遠沒有機會觸發——所以另外開一條路：從雲端同步面板直接選存檔位
+  // 還原，繞過原作的 disabled 限制。本機該存檔位若已有資料，一樣走共用衝突視窗二次確認。
+  flow.restoreToSlot = function (slot) {
+    if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
+    var localSummary = payload.summarizeFromSlot(slot);
+    return downloadRemote(slot).then(function (remoteObj) {
+      if (!remoteObj) { AFK_CLOUD.ui.toast('雲端沒有存檔位 ' + slot + ' 的資料'); return { ok: false, reason: 'no-remote' }; }
+      if (!localSummary) {
+        payload.applyPayload(remoteObj, slot);
+        return { ok: true };
+      }
+      return AFK_CLOUD.ui.showConflictModal({
+        left: { title: '📼 目前存檔位 ' + slot, summary: localSummary },
+        right: { title: '☁️ 雲端存檔', summary: payload.summarize(remoteObj) },
+        leftLabel: '保留本機（取消還原）',
+        rightLabel: '用雲端覆蓋本機',
+        cancelLabel: '取消'
+      }).then(function (choice) {
+        if (choice !== 'right') return { ok: false, cancelled: true };
+        payload.applyPayload(remoteObj, slot);
+        return { ok: true };
+      });
+    }).catch(function (err) { return handleSyncError(err, 'restore'); });
+  };
+
   // 登入/載入完成後背景下載一次，純粹更新 lastKnownRev 快取，不套用、不跳視窗
   flow.backgroundDownloadPeek = function () {
     if (!drive.isReady()) return;
@@ -604,6 +631,8 @@
     }
     return '<div class="afk-cloud-info">你好，' + esc(auth.getEmail()) + '</div>' +
       '<button type="button" class="afk-cloud-btn" id="afk-cloud-sync-btn">☁️ 立即同步</button>' +
+      '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-restore-btn">📥 從雲端還原到指定存檔位</button>' +
+      '<div class="afk-cloud-hint">全新裝置第一次使用時，用這顆把雲端進度拉下來（原本「載入進度」畫面的空存檔位鈕會反灰點不了，所以另外開這條路）。</div>' +
       '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-signout-btn">登出</button>';
   }
 
@@ -647,8 +676,55 @@
         // 其餘失敗情況(離線/認證過期/一般錯誤/節流)已由對應流程各自跳過 toast，這裡不重複
       });
     });
+    var restoreBtn = document.getElementById('afk-cloud-restore-btn');
+    if (restoreBtn) restoreBtn.addEventListener('click', function () {
+      ui.openSlotPicker().then(function (slot) {
+        if (!slot) return;
+        ui.toast('讀取雲端中…');
+        flow.restoreToSlot(slot).then(function (result) {
+          if (!result) return;
+          if (result.ok) ui.toast('✅ 已還原到存檔位 ' + slot + '，回主選單「載入進度」即可看到');
+          else if (result.reason === 'no-remote') { /* flow.restoreToSlot 已經自己 toast 過 */ }
+          else if (result.cancelled) ui.toast('已取消，未還原');
+        });
+      });
+    });
     var signoutBtn = document.getElementById('afk-cloud-signout-btn');
     if (signoutBtn) signoutBtn.addEventListener('click', function () { auth.signOut(); });
+  };
+
+  // 存檔位選擇器（1~8，按鈕組）：resolve 選中的存檔位號碼，取消則 resolve(null)
+  ui.openSlotPicker = function () {
+    injectCss();
+    return new Promise(function (resolve) {
+      var done = false;
+      var overlay = document.createElement('div');
+      overlay.className = 'afk-cloud-modal-overlay';
+      var btnsHtml = '';
+      for (var i = 1; i <= 8; i++) btnsHtml += '<button type="button" class="afk-cloud-btn afk-cloud-choice-btn" data-slot="' + i + '">存檔位 ' + i + '</button>';
+      overlay.innerHTML =
+        '<div class="afk-cloud-modal-card">' +
+          '<div class="afk-cloud-card-title" style="text-align:center;margin-bottom:12px;">選擇要還原到哪個存檔位</div>' +
+          '<div class="afk-cloud-modal-actions">' + btnsHtml +
+            '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary afk-cloud-choice-btn" data-slot="0">取消</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      function finish(slot) {
+        if (done) return;
+        done = true;
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(slot || null);
+      }
+      var layer = window.AFK_UI ? AFK_UI.openLayer(function () { finish(null); }) : null;
+      overlay.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('[data-slot]') : null;
+        var slot = btn ? (+btn.getAttribute('data-slot') || null) : (e.target === overlay ? null : undefined);
+        if (slot === undefined) return;
+        finish(slot);
+        if (layer && window.AFK_UI) AFK_UI.closeLayer(layer);
+      });
+    });
   };
 
   ui.openPanel = function () {
