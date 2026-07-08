@@ -58,6 +58,18 @@
       'border-color:#b68a39;background:linear-gradient(180deg,rgba(35,55,83,.94),rgba(10,22,42,.96));',
       'color:#f8e7bb;text-shadow:0 1px 2px #000;box-shadow:inset 0 0 9px rgba(116,165,219,.35),0 2px 5px #000;}',
     '#main-menu .m-dex-entry-row > button:hover,#main-menu .m-wiki-entry-row > button:hover,#main-menu #afk-stg-gear:hover,#main-menu > #afk-plugin-btn:hover{filter:brightness(1.18);}',
+    /* 🔌 桌機外掛 Modal 裡的「⚙ 其他功能」鈕原本沿用 afk-storage.js 自己的小尺寸樣式(padding:5px 14px;
+       font-size:13px),跟同一個 Modal 裡「怪物/掉落查詢」「小百科」兩顆大按鈕比起來明顯瘦小、不對稱
+       (2026-07-08 使用者回報)。只在 Modal 這個固定寬度容器內把它放大對齊,手機版型的外框(afk-plugin-frame)
+       不受影響(選擇器限定 #afk-plugin-modal 底下,手機模式從不建立這個 Modal)。 */
+    '#afk-plugin-modal #afk-stg-wrap{width:100%;max-width:18rem;margin:0 auto;}',
+    '#afk-plugin-modal #afk-stg-gear{width:100%;padding:11px 12px;font-size:16px;}',
+    /* afk-storage.js 原本讓選單「往上」浮出(bottom:100%),但 Modal 面板有 overflow-y:auto、
+       捲動起點固定在頂端(scrollTop=0),往上展開的內容超出可視區時無法靠捲動看到、也點不到
+       (2026-07-08 實測發現:自動化點擊落在被裁切的選項上,穿透到背景直接把整個外掛視窗關掉,
+       證實使用者在桌機完全構不到「⚙ 其他功能」選單裡排在前面的幾項,含這次新增的雲端同步入口)。
+       Modal 裡改成「往下」展開:面板的可捲動範圍原生就包含向下超出的絕對定位內容,不會被裁掉。 */
+    '#afk-plugin-modal #afk-stg-menu{bottom:auto;top:100%;margin-bottom:0;margin-top:8px;box-shadow:0 8px 30px rgba(0,0,0,.55);}',
     /* 主入口鈕的字級/內距也對齊原版(↗ 鈕與 ⚙ 鈕維持各自尺寸,只換皮) */
     '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main{',
       'padding:clamp(5px,.72vw,11px) 4px;font-size:clamp(9px,1.03vw,16px);line-height:1.1;}',
