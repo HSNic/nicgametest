@@ -310,17 +310,31 @@
       if (typeof window.renderTabs !== 'function' || window.renderTabs.__mBagDefer) return;
       var origRT = window.renderTabs;
       var THROTTLE_MS = 250, SELSEL = '#tab-weapons,#tab-armors,#tab-items,#tab-equip,#tab-skill,#item-modal';
-      var dirty = false, lastRun = -1e9, trail = null;
+      var dirty = false, lastRun = -1e9, trail = null, flushing = false;
       function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
       function bagOpen() { return document.body.classList.contains('mview-bag'); }
       function selOpen() { var ae = document.activeElement; try { return !!(ae && ae.tagName === 'SELECT' && ae.closest && ae.closest(SELSEL)); } catch (e) { return false; } }
-      function schedTrail(delay) { if (!trail) trail = setTimeout(function () { trail = null; if (dirty) run([true]); }, delay); }
+      // 2026-07-08(手機背包點擊不順+批次販賣按鈕閃爍回報):補跑一律 force=true 呼叫,原本直接呼叫
+      // 閉包裡的 origRT,兩個副作用都要修:
+      //   ① force=true 繞過原生 js/10-ui-tabs.js renderTabs() 自己的「使用者正按著面板時延後重建」
+      //      保護(那道保護只在 !force 才生效),手指按在格子上時仍可能被整批換掉、點擊落空。
+      //   ② 若後面又有別的外掛(如 afk-batch-sell.js)monkey-patch window.renderTabs,直接呼叫
+      //      origRT 會整個繞過那層 wrapper,牠補插的按鈕(批次販賣入口)就會在這次補跑後消失,
+      //      要等下一次「非節流、走完整鏈」的呼叫才補回來 → 視覺上是按鈕一閃一閃。
+      // 改法:① 補跑不再強制 force=true(內容真的有變,簽章比對本來就會通過,照常渲染);
+      //      ② 補跑改呼叫目前最外層的 window.renderTabs(可能已被其他外掛再包一層),用 flushing
+      //         旗標避免遞迴重新套用節流判斷,讓外層 wrapper 的收尾邏輯(如補插按鈕)照樣跑得到。
+      function schedTrail(delay) { if (!trail) trail = setTimeout(function () { trail = null; if (dirty) run([]); }, delay); }
       function run(args) {
         if (selOpen()) { dirty = true; schedTrail(200); return; }   // 下拉開著時不重建(會把它關掉)→ 比照 afk-fixes select-guard,延後
-        dirty = false; lastRun = now(); return origRT.apply(window, args || [true]);
+        dirty = false; lastRun = now();
+        flushing = true;
+        try { return window.renderTabs.apply(window, args || [true]); }
+        finally { flushing = false; }
       }
       var wrapped = function () {
         if (!detectMobile()) return origRT.apply(this, arguments);
+        if (flushing) return origRT.apply(this, arguments);         // run() 為了觸發完整 wrapper 鏈重新呼叫進來,直接做真正的渲染,不要再套一次節流判斷
         if (!bagOpen()) { dirty = true; return; }                  // 戰鬥/設定畫面看不到背包 → 跳過,記 dirty
         var t = now();
         if (t - lastRun >= THROTTLE_MS) return run(arguments);     // 節流窗外 → 立即(自己的操作即時)
@@ -330,7 +344,7 @@
       window.renderTabs = wrapped;
       _flushDeferredTabs = function (toBattle) {
         if (toBattle) { if (trail) { clearTimeout(trail); trail = null; } return; }   // 進戰鬥畫面:取消待補(留 dirty,下次開背包再補),不重建看不到的東西
-        if (dirty) { if (trail) { clearTimeout(trail); trail = null; } run([true]); }  // 切到背包/設定:立刻補最新一份
+        if (dirty) { if (trail) { clearTimeout(trail); trail = null; } run([]); }  // 切到背包/設定:立刻補最新一份
       };
     })();
 
@@ -1079,7 +1093,16 @@
          跟本外掛長按 1 秒才顯示的 #m-tip-modal 打架(玩家感覺「兩套 tooltip、延遲不受控」)。
          只藏顯示、不移除 DOM——initTipPeek() 的 skillDetailHTML() 仍會借它的 innerHTML/getBoundingClientRect
          取技能說明,隱藏不影響讀取。 */
-      'body.m-mobile .game-tooltip{display:none !important;}'
+      'body.m-mobile .game-tooltip{display:none !important;}',
+
+      /* 2026-07-08(使用者回報快速強化/快速廢品/批次販賣按鈕底圖一閃一閃):根因是共用元件 .btn
+         (css/style.css)設了 transition:all 0.2s、只有 :hover 底色、沒有 :active 回饋、也沒關閉
+         -webkit-tap-highlight-color。手機瀏覽器點一下常會短暫誤套用 :hover 偽類("sticky hover")+
+         系統預設灰色 tap-highlight,疊上 0.2s 漸變,視覺上就是「淡入又淡出」的閃爍。全站 .btn 都有
+         這個缺口(不只這三顆),故全站套用:關掉 tap-highlight、拿掉 transition(讓瞬間誤觸的 hover
+         狀態不被動畫放大),改用 filter:brightness() 給按下回饋(不需知道每顆按鈕各自的底色)。 */
+      'body.m-mobile .btn{-webkit-tap-highlight-color:transparent;transition:none !important;}',
+      'body.m-mobile .btn:active:not(:disabled){filter:brightness(.82);}'
     ].join('\n');
     var s = document.createElement('style');
     s.id = 'm-style';
@@ -1138,7 +1161,7 @@
     modal.appendChild(card);
     document.body.appendChild(modal);
 
-    var modalOpen = false, swallow = false, swallowTimer = null, ICON2ID = null;
+    var modalOpen = false, swallow = false, swallowTimer = null, swallowHost = null, ICON2ID = null;
 
     // 圖示 src → 基底物品 id(商店/製作清單的圖示沒有 data-tip-uid,只能靠圖反查)
     function iconToId(src) {
@@ -1207,10 +1230,15 @@
     function close() { modal.classList.remove('open'); modalOpen = false; }
     modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
 
-    // 長按開卡後,吞掉緊接而來那一下 click(避免長按結束被當成存入/取出/購買);卡片內的點擊不吞
-    function arm() { swallow = true; clearTimeout(swallowTimer); swallowTimer = setTimeout(function () { swallow = false; }, 800); }
+    // 長按開卡後,吞掉緊接而來那一下 click(避免長按結束被當成存入/取出/購買);卡片內的點擊不吞。
+    // 2026-07-08(手機背包點擊不順回報):原本只判斷「不是點在卡片裡」就整個吞掉,沒比對這次點擊
+    // 是不是打在「剛才長按的那個 host」上,導致長按看過任一物品後 800ms 內,點背包裡任何按鈕
+    // (含快速強化/廢品/批次販賣)都可能被誤吞、需要點第二下。改成只吞「同一個 host」上的那一下。
+    function arm() { swallow = true; swallowHost = host; clearTimeout(swallowTimer); swallowTimer = setTimeout(function () { swallow = false; swallowHost = null; }, 800); }
     document.addEventListener('click', function (e) {
-      if (swallow && !modal.contains(e.target)) { swallow = false; clearTimeout(swallowTimer); e.preventDefault(); e.stopImmediatePropagation(); }
+      if (!swallow || modal.contains(e.target)) return;
+      if (!swallowHost || (e.target !== swallowHost && !(swallowHost.contains && swallowHost.contains(e.target)))) return;
+      swallow = false; swallowHost = null; clearTimeout(swallowTimer); e.preventDefault(); e.stopImmediatePropagation();
     }, true);
 
     // 🔧 手機:點一下「非手動」技能格(div[data-tip-skill])→ 顯示技能詳情卡。
