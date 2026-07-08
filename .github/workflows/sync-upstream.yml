@@ -1,0 +1,103 @@
+name: sync-upstream
+
+# 恢復自動比對(2026-07-08 最終定案):抓取原作者最新版 + 機械式差異比對(含關鍵字/識別碼比對)
+# + 冒煙測試,三步全部免費、機械性,只負責把「有沒有變動、變動有沒有風險」的初步報告整理出來。
+#
+# ⚠ 這支 workflow 不會自動 commit/push/tag/Release——結果一律寫進 workflow summary,
+#   並開/更新一個「等待人工確認」的 issue,由人工(使用者)看過、同意後才真的套用同步
+#   (見專案 CLAUDE.md「同步順序」規則)。跑完 runner 上的檔案變更會直接捨棄,不會留下任何痕跡。
+
+on:
+  schedule:
+    - cron: '52 * * * *'   # 每小時跑一次(GitHub 內建排程常延遲 1~2 小時,可接受——反正不會自動上線)
+  workflow_dispatch: {}    # 手動觸發(gh workflow run sync-upstream.yml)
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 抓取原作者最新版 + 機械式檔案差異比對
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/sync-upstream.mjs
+
+      - name: 關鍵字/識別碼比對(外掛依賴的 DOM id / 全域是否還在)
+        id: hookcheck
+        if: steps.merge.outputs.changed == 'true'
+        continue-on-error: true
+        run: node scripts/check-hook-points.mjs
+
+      - name: 外掛掛點冒煙測試 (Playwright)
+        id: smoke
+        if: steps.merge.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm i -D playwright@^1.48.0 >/dev/null 2>&1
+          npx playwright install --with-deps chromium
+          node scripts/smoke-hooks.mjs
+
+      - name: 沒有更新
+        if: steps.merge.outputs.changed != 'true'
+        run: echo "原作者沒有更新,本次不用處理。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 寫入 workflow summary(供人工/AI 分析報告當素材)
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          {
+            echo "## 🔍 原作者更新偵測結果(等待人工確認,尚未套用)"
+            echo ""
+            echo "- 遊戲:${{ steps.merge.outputs.game_title }} ${{ steps.merge.outputs.game_version }}"
+            echo "- index.html 有變:${{ steps.merge.outputs.html_changed }}"
+            echo "- 程式/樣式(js/css):新增 ${{ steps.merge.outputs.code_added }}、更新 ${{ steps.merge.outputs.code_changed }}、移除 ${{ steps.merge.outputs.code_removed }}"
+            echo "- 圖片(assets):新增 ${{ steps.merge.outputs.assets_added }}、更新 ${{ steps.merge.outputs.assets_changed }}、移除 ${{ steps.merge.outputs.assets_removed }}"
+            echo ""
+            echo "### 關鍵字/識別碼比對(外掛依賴的 DOM id / 全域)"
+            echo "- 結果:${{ steps.hookcheck.outputs.hook_points_ok == 'true' && '✅ 全部還在' || '⚠️ 有消失/改名,需人工判斷是否影響外掛' }}"
+            if [ -n "${{ steps.hookcheck.outputs.missing_ids }}" ]; then echo "- 消失的 DOM id: ${{ steps.hookcheck.outputs.missing_ids }}"; fi
+            if [ -n "${{ steps.hookcheck.outputs.missing_globals }}" ]; then echo "- 消失的全域: ${{ steps.hookcheck.outputs.missing_globals }}"; fi
+            echo ""
+            echo "### 冒煙測試(外掛掛點是否仍正常初始化)"
+            echo "- 結果:${{ steps.smoke.outcome == 'success' && '✅ 通過' || '⚠️ 沒過(見下方 run log)' }}"
+            echo ""
+            echo "**本次 workflow 只做機械式檔案比對+冒煙測試,不會自動 commit/push/上線。**"
+            echo "請跟 Cowork/Claude Code 說「合併原版」,由人工/AI 讀 diff、評估外掛風險、你同意後才套用。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 開 / 更新「等待人工確認」issue
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="🔍 原作者已更新,等待人工確認是否套用"
+          RISK=""
+          if [ "${{ steps.hookcheck.outputs.hook_points_ok }}" = "false" ]; then RISK="${RISK}⚠️ 關鍵字/識別碼比對抓到外掛依賴的位置被改動。\n"; fi
+          if [ "${{ steps.smoke.outcome }}" != "success" ]; then RISK="${RISK}⚠️ 冒煙測試沒過,外掛可能被原版改壞。\n"; fi
+          if [ -z "$RISK" ]; then RISK="機械比對+冒煙測試都正常,但仍需人工看過差異、確認外掛風險評估後才套用。\n"; fi
+          BODY=$(printf '原作者(%s %s)有新版本,自動比對結果:\n\n%b\n- index.html 有變:%s\n- 程式/樣式:新增 %s、更新 %s、移除 %s\n- 圖片:新增 %s、更新 %s、移除 %s\n\n**這是自動化前置檢查,不會自動套用/上線。** 請跟 Cowork/Claude Code 說「合併原版」,由人工/AI 讀完整 diff、評估外掛風險、你同意後才套用。詳細機械比對數據見本次 workflow run 的 summary。' \
+            "${{ steps.merge.outputs.game_title }}" "${{ steps.merge.outputs.game_version }}" \
+            "$RISK" \
+            "${{ steps.merge.outputs.html_changed }}" \
+            "${{ steps.merge.outputs.code_added }}" "${{ steps.merge.outputs.code_changed }}" "${{ steps.merge.outputs.code_removed }}" \
+            "${{ steps.merge.outputs.assets_added }}" "${{ steps.merge.outputs.assets_changed }}" "${{ steps.merge.outputs.assets_removed }}")
+          existing=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi

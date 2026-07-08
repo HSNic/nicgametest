@@ -35,21 +35,26 @@
 
 ## 「合併原版」= 從原作者站台抓最新 `index.html` 更新本專案
 
-> **🛑 2026-07-06 起停止與原版自動合併(使用者決定,且不留可誤觸的入口)**:`.github/workflows/sync-upstream.yml` 與 `cf-sync-trigger/`(Cloudflare Worker,已 `wrangler delete`)**整個從 repo 刪除**,只留在 git 歷史。**背景不再有自動同步在跑**——本文件其他地方提到「每小時自動同步會搶 push / 背景把作者新版推上來」的警語已不適用(rebase 撞產生檔、`git pull` 先行等習慣保留無妨)。`scripts/sync-upstream.mjs`、`scripts/smoke-hooks.mjs` 仍在(手動合併/驗證還用得到)。若要恢復自動同步:從 git 歷史把那兩個目錄撈回來(`git log --oneline -- .github/workflows cf-sync-trigger` 找到刪除前的 commit → `git checkout <commit>^ -- .github/workflows cf-sync-trigger`),CF Worker 需重放 GH_PAT secret 再 `wrangler deploy`。以下自動化描述保留作恢復時參考。
+> **2026-07-08 恢復自動比對(推翻 2026-07-06 的停用決定;Cloudflare 觸發器暫不恢復)**:`.github/workflows/sync-upstream.yml` 已恢復,每小時(GitHub 內建 `schedule:`,可能延遲 1~2 小時——因為現在不會自動上線,準不準時不急迫,故不重新部署 Cloudflare Worker/`cf-sync-trigger/`)+ 可手動觸發,自動跑「抓取原作者最新版 → 機械式檔案差異比對 → 關鍵字/識別碼比對(`scripts/check-hook-points.mjs`,新增,見下)→ Playwright 冒煙測試」。
 >
-> **已自動化**:`.github/workflows/sync-upstream.yml`(每小時 + 可手動)自動跑這套流程
-> ——腳本 `scripts/sync-upstream.mjs` 抓原版、補回外掛 `<script>`(保留各自 `?v=`)、補新圖、**重抓被作者換掉內容的既有圖**(比對 git blob SHA),
-> 再用 `scripts/smoke-hooks.mjs`(Playwright)驗五支外掛 `hooks OK`,**通過才自動 commit/push**;
-> 推送成功後再**打 tag(台灣時間 `v YYYYMMDD-HHMM`)+ 開 GitHub Release**(Release 自動附原始碼 zip/tar.gz 供下載)。
-> 掛點被原作者改壞時不會推壞版本,改開一個 issue 通知人工處理。
-
-### 🔒 同步順序倒過來:先分析、記錄、評估外掛風險,經使用者同意才套用(2026-07-08 使用者明訂)
-
-> 不管這次同步走哪條路(GitHub Action 已刪除；手動 curl 抓網站版；或使用者直接把新版整份丟進 `加掛版/` 資料夾、用 `scripts/sync-local-upstream.mjs` 套用——**目前實務上主要是這條**),都要照下面順序,**不是套用完再回頭看差異**:
+> **⚠️ 這支 workflow 只做免費、機械性的前置檢查,不會自動 commit/push/tag/Release**——結果一律寫進 workflow summary,並開/更新一個「等待人工確認」的 issue(不管有沒有測出問題都會開,只是內容標「正常」或「有風險」),runner 上跑出來的檔案變更本身不會留下任何痕跡(沒 commit,work 結束即捨棄)。目的純粹是幫人工/AI 省下「重新讀一次 diff」的 token,**不是拿來自動化最終上線決策**——套用與否仍要走下面「🔒 同步順序」規則。
+> - `scripts/sync-upstream.mjs`:抓原版、補回外掛 `<script>`(保留各自 `?v=`)、補新圖、重抓被作者換掉內容的既有圖(比對 git blob SHA)。
+> - `scripts/check-hook-points.mjs`(2026-07-08 新增):粗略掃描各 `afk-*.js` 依賴的 DOM id / 已知全域函式名,比對這些字串在剛抓進來的原作者新版程式碼裡是否還存在——即使冒煙測試通過,原作者也可能動到外掛依賴的東西但沒有立刻炸開(只是行為/參數變了),這支腳本抓的是「字串消失/改名」這種更早期的訊號。**先求有的粗略版**:自動排除外掛自己建立的 DOM id / 自己定義的同名函式(homeTown/gotoMap 這種外掛內部 helper 踩過,已排除),只留下真正依賴原作者的部分。清單會漏抓的案例之後踩到再補。
+> - `scripts/smoke-hooks.mjs`:Playwright 驗全部外掛 `hooks OK` + 掉落查詢地圖名翻譯覆蓋。
 >
-> 1. **先分析差異,且先別覆蓋任何現有檔案**:新版來源(不管是使用者放的資料夾還是抓下來的暫存檔)當唯讀資料,逐檔比對 `index.html`／`js/*.js`／`css/*.css` 跟目前 repo 內對應檔案的差異(`diff` 兩份檔案內容即可,不必先跑同步腳本)。**不只挑新增的定義看,既有公式/機制被改也要抓出來**——這跟小百科 SOP 那條鐵則是同一個道理(改既有邏輯不會以「新增」的樣子出現,只挑新增一定漏)。
+> **使用者要看到「等待人工確認」的 issue 時,才需要真的做同步/合併**(見下面 SOP)。
+
+### 🔒 同步順序:先確認有沒有跑過自動比對,再分析、記錄、評估外掛風險,經使用者同意才套用(2026-07-08 最終定案)
+
+> **第 0 步(2026-07-08 新增,在原規則最前面加的前置檢查)**:開始人工/AI 分析前,先確認**這次原作者更新有沒有經過上面 GitHub Actions 的自動比對＋冒煙測試**(看有沒有開出「🔍 原作者已更新,等待人工確認是否套用」的 issue,或 `gh run list --workflow=sync-upstream.yml` 查最近一次 run 的時間/結果)。
+> - **沒跑過**(例如作者剛更新、workflow 還沒排到,或使用者直接把新版資料夾丟進來要求同步)→ **先問使用者**:「要不要先觸發 GitHub Actions 跑一輪自動比對+冒煙測試,再根據結果決定分析深度?還是要直接手動分析?」,等使用者回覆才繼續。避免明明 Actions 能免費先做完機械式比對,卻跳過去重複花 token 從頭手動分析一次。
+> - **有跑過**→ 直接把 workflow summary / issue 內容(diff 清單、關鍵字比對結果、冒煙測試結果)當素材,省掉重新讀一次 diff 的力氣,直接進入下面第 1~4 步整理報告。
+>
+> 不管這次同步走哪條路(GitHub Action 自動比對;手動 curl 抓網站版;或使用者直接把新版整份丟進 `加掛版/` 資料夾、用 `scripts/sync-local-upstream.mjs` 套用——**目前實務上主要是這條**,GitHub Actions 不會自動 commit,所以套用仍是這支手動腳本),都要照下面順序,**不是套用完再回頭看差異**:
+>
+> 1. **先分析差異,且先別覆蓋任何現有檔案**:新版來源(不管是使用者放的資料夾、抓下來的暫存檔,或上面 workflow 已經整理好的比對結果)當唯讀資料,逐檔比對 `index.html`／`js/*.js`／`css/*.css` 跟目前 repo 內對應檔案的差異(`diff` 兩份檔案內容即可,不必先跑同步腳本)。**不只挑新增的定義看,既有公式/機制被改也要抓出來**——這跟小百科 SOP 那條鐵則是同一個道理(改既有邏輯不會以「新增」的樣子出現,只挑新增一定漏)。
 > 2. **把分析結果寫成記錄檔,存進 `../docs/同步/`**(即 `Lineage/加掛版/docs/同步/`,跟專案資料夾同層、位置固定不隨資料夾改名;檔名比照現有慣例:`同步差異分析_YYYYMMDD.md`),內容至少包含三類:新增功能、數值/機制調整(改了哪個函式/公式,原值→新值)、新增內容代表性例子(裝備/道具/地圖等)。
-> 3. **評估這次改動會不會影響外掛結構**:對照 `index.html` 的 DOM id/class、原作者全域函式名稱,有沒有被改名/移除、是不是我們 `afk-*.js` 掛點依賴的東西;`node scripts/smoke-hooks.mjs` 可以當輔助佐證,但不能取代人工讀 diff 判斷(smoke 只驗「現有掛點還在」,不會告訴你「這次改版邏輯上會不會跟外掛衝突」)。評估結果一併寫進同一份記錄檔。
+> 3. **評估這次改動會不會影響外掛結構**:對照 `index.html` 的 DOM id/class、原作者全域函式名稱,有沒有被改名/移除、是不是我們 `afk-*.js` 掛點依賴的東西;`node scripts/check-hook-points.mjs` 與 `node scripts/smoke-hooks.mjs` 可以當輔助佐證(或直接看 workflow 已經跑好的結果),但不能取代人工讀 diff 判斷(這兩支只驗「現有掛點還在/字串還在」,不會告訴你「這次改版邏輯上會不會跟外掛衝突」)。評估結果一併寫進同一份記錄檔。
 > 4. **記錄檔寫完之後才能回報使用者、等他同意,經同意才真的套用同步(執行 `sync-local-upstream.mjs`/覆蓋檔案並 commit)**。使用者是程式小白,回報時用白話文講清楚「這次原作者加了什麼、會不會影響我們的外掛」讓他能做決定,不要假設他都懂、也不要先套用了才問。
 >
 > 套用之後仍要照原本流程走完(分支 → smoke test → 手動功能驗收 → 使用者實測 → 合併進 main),這條規則只是把「差異分析+風險評估+使用者同意」這三步從「套用之後」搬到「套用之前」,其餘步驟不變。
@@ -65,10 +70,9 @@ gh run watch <run_id>   # 或輪詢 gh run view <run_id> --json status,conclusio
 ```
 > **⚠ 同步「卡死」的判準與解法(踩過 2026-07-04)**:症狀=站台一直停在舊版(玩家回報「原版有的功能我們沒有」,如怪物動畫 25→399 隻的改版沒跟上),`gh run list` 看到**一筆 sync run `in_progress` 掛了一兩小時、後面每 15 分的 run 全是 `cancelled`**(concurrency 佇列被堵住,cancelled 的連 job 都沒起)。根因:腳本逐檔序列 `fetch`,單一連線僵住就永遠卡住(當時無逾時)。解法:`gh run cancel <卡住的 run id>` → 佇列中的下一輪自動接手(通常幾十秒就跑完)。腳本已加 `fetchRetry`(60s 逾時×3 次重試)防再犯;若再看到同症狀,先 cancel 卡住的 run,再查 run log 是哪個 URL 一直重試失敗。
 
-跑完後看結果回報使用者:
+跑完後看結果回報使用者(**這支 workflow 不會自動 commit/push,只負責產出比對報告**):
 - **changed=false**:原作者沒更新,什麼都不用做。
-- **跑成功且有推 commit**:同步完成,GitHub Pages 會自動重建;`git pull --ff-only` 把本機同步回來。
-- **開了 issue(外掛掛點失效)**:原作者改了 DOM 害外掛掛不上 → 這時**才**走下面的手動流程,重點是去修「失效的外掛掛點」(改 id / DOM 選擇器),不只是重貼。
+- **changed=true**:會開/更新一個「🔍 原作者已更新,等待人工確認是否套用」的 issue,附檔案差異統計、關鍵字/識別碼比對結果、冒煙測試結果——**這時才**走上面「🔒 同步順序」規則:讀 issue/summary 內容當素材(省掉重新讀 diff 的力氣)、逐檔看完整 diff、寫記錄檔、評估外掛風險、回報使用者,同意後才用 `sync-local-upstream.mjs` 真的套用(見下面手動流程)。issue 內容若標「⚠️ 有風險」(冒煙沒過/關鍵字比對抓到位置被動到),分析時要特別看那幾處。
 
 > 同步成功後順手檢查一項:`afk-fixes.js` 的「renderTabs select-guard」是補原作者「戰鬥中重刷分頁 DOM 害強化下拉被關」的坑。
 > 若原作者已改成 diff 更新(不整塊重建分頁、不刪 `<select>`),這段就成多餘,可整段刪掉(留著無害,只是死碼)。
