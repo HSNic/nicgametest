@@ -64,12 +64,12 @@
        不受影響(選擇器限定 #afk-plugin-modal 底下,手機模式從不建立這個 Modal)。 */
     '#afk-plugin-modal #afk-stg-wrap{width:100%;max-width:18rem;margin:0 auto;}',
     '#afk-plugin-modal #afk-stg-gear{width:100%;padding:11px 12px;font-size:16px;}',
-    /* afk-storage.js 原本讓選單「往上」浮出(bottom:100%),但 Modal 面板有 overflow-y:auto、
-       捲動起點固定在頂端(scrollTop=0),往上展開的內容超出可視區時無法靠捲動看到、也點不到
-       (2026-07-08 實測發現:自動化點擊落在被裁切的選項上,穿透到背景直接把整個外掛視窗關掉,
-       證實使用者在桌機完全構不到「⚙ 其他功能」選單裡排在前面的幾項,含這次新增的雲端同步入口)。
-       Modal 裡改成「往下」展開:面板的可捲動範圍原生就包含向下超出的絕對定位內容,不會被裁掉。 */
-    '#afk-plugin-modal #afk-stg-menu{bottom:auto;top:100%;margin-bottom:0;margin-top:8px;box-shadow:0 8px 30px rgba(0,0,0,.55);}',
+    /* afk-storage.js 選單原本是 position:absolute+bottom:100%「往上」展開,但 Modal 面板有
+       overflow-y:auto、捲動起點固定在頂端,超出可視區的部分無法捲動看到、也點不到(2026-07-08
+       實測踩過:自動化點擊落在被裁切的選項上會穿透到背景把整個外掛視窗關掉)。使用者要求維持
+       「往上」展開的原本體感,不要改往下——改成 afk-storage.js 的 openMenu() 量測 gear 鈕實際
+       座標、用 position:fixed 定位選單(fixed 天生跳出 overflow:auto 祖先的裁切範圍),這裡不用
+       再靠 CSS 覆寫方向,詳見 afk-storage.js 的 positionMenu()。 */
     /* 主入口鈕的字級/內距也對齊原版(↗ 鈕與 ⚙ 鈕維持各自尺寸,只換皮) */
     '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main{',
       'padding:clamp(5px,.72vw,11px) 4px;font-size:clamp(9px,1.03vw,16px);line-height:1.1;}',
@@ -84,8 +84,10 @@
        scoped 樣式(入口列寬/皮)照樣命中;桌機祖先無 transform,position:fixed 對齊 viewport。 */
     '#afk-plugin-modal{display:none;position:fixed;inset:0;z-index:900;background:rgba(2,6,23,.72);align-items:center;justify-content:center;padding:24px;}',
     '#afk-plugin-modal.is-open{display:flex;}',
-    '#afk-plugin-modal .afk-pm-panel{position:relative;width:100%;max-width:22rem;max-height:86vh;overflow-y:auto;',
-      'padding:28px 18px 20px;border:1px solid rgba(182,138,57,.5);border-radius:16px;',
+    /* 2026-07-09 使用者回報桌機面板太小、頂端標籤跟第一顆按鈕擠在一起,加大留白與可視高度上限
+       (只影響桌機這個 Modal,不用管手機——手機從不建立這個 Modal,見 apply() 的分流)。 */
+    '#afk-plugin-modal .afk-pm-panel{position:relative;width:100%;max-width:22rem;max-height:92vh;overflow-y:auto;',
+      'padding:38px 18px 24px;border:1px solid rgba(182,138,57,.5);border-radius:16px;',
       'background:linear-gradient(180deg,rgba(20,28,44,.98),rgba(11,17,30,.98));box-shadow:0 18px 60px rgba(0,0,0,.6);',
       'display:flex;flex-direction:column;gap:14px;align-items:center;}',
     '#afk-plugin-modal .afk-pm-title{position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:2px 16px;',
