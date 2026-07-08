@@ -43,6 +43,8 @@
 > - `scripts/smoke-hooks.mjs`:Playwright 驗全部外掛 `hooks OK` + 掉落查詢地圖名翻譯覆蓋。
 >
 > **使用者要看到「等待人工確認」的 issue 時,才需要真的做同步/合併**(見下面 SOP)。
+>
+> **⚠️ 收到「等待人工確認」issue 時先驗證是不是真的有變,別急著當真——`sync-upstream.mjs` 的 `PLUGINS` 陣列裡每支外掛的 `comment` 字串,如果跟 `index.html` 裡實際的註解文字不一致(例如手動改過外掛功能、直接在 index.html 編輯了註解卻沒回頭改腳本裡的 `comment`),腳本每次重新產生 index.html 都會用它自己過期的 comment 覆蓋,跟已 commit 的版本產生一行文字差異,被誤判成「原作者有更新」(`html_changed=true`),即使遊戲版本號、`js/css`、圖片全部 0 異動也一樣。踩過(2026-07-08):`afk-warehouse-skill.js` 的功能後來多了「不可使用外框」,index.html 裡的註解跟著更新了,但 `sync-upstream.mjs` 沒同步改,連續好幾次同步比對都誤報。**判準/解法**:issue 顯示「程式/樣式/圖片全部 0、只有 `index.html 有變`」這種模式時,先懷疑是自己的 comment 沒同步,不是原作者真的改了——用乾淨 `git clone` 到暫存資料夾重跑 `node scripts/sync-upstream.mjs`,`diff` 產生的 `index.html` 跟 `git show HEAD:index.html`,一行行找差異(連全形/半形逗號都要看,踩過);差異只在某支外掛的 `<!-- comment -->` 文字時,回去把 `PLUGINS` 陣列裡對應的 `comment` 改成跟 index.html 現有文字**逐字元一致**。**以後改外掛功能、順手在 index.html 裡改了註解說明時,記得同時回頭改 `sync-upstream.mjs` 的 `PLUGINS[].comment`,兩處要保持同步。**
 
 ### 🔒 同步順序:先確認有沒有跑過自動比對,再分析、記錄、評估外掛風險,經使用者同意才套用(2026-07-08 最終定案)
 
