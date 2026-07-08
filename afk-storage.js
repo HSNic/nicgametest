@@ -201,25 +201,7 @@
         list.appendChild(b);
       });
     }
-    // 桌機「🔌 外掛工具」Modal 裡,選單容器(#afk-plugin-modal .afk-pm-panel)有 overflow-y:auto、
-    //   捲動起點固定在頂端,選單原本 CSS 是 position:absolute+bottom:100%「往上」展開,超出可視區
-    //   的部分無法捲動看到、也點不到(2026-07-08 實測踩過,見 afk-skin.js 的說明)。改成量測 gear
-    //   按鈕在畫面上的實際座標,用 position:fixed 定位選單(fixed 會跳出 overflow:auto 祖先的裁切,
-    //   不受面板捲動範圍限制),同樣「往上」貼齊 gear 鈕正上方,使用者體感跟原本一致。
-    //   只在偵測到位於 #afk-plugin-modal 內(桌機收合檢視)才套用;手機版原本的內嵌外框
-    //   (#afk-plugin-frame,一般文件流、無 overflow 裁切)完全不受影響,維持原生 CSS 定位。
-    function positionMenu() {
-      var inDesktopModal = wrap.closest && wrap.closest('#afk-plugin-modal');
-      if (!inDesktopModal) { list.style.cssText = ''; return; }
-      var r = gear.getBoundingClientRect();
-      list.style.position = 'fixed';
-      list.style.left = (r.left + r.width / 2) + 'px';
-      list.style.top = 'auto';
-      list.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-      list.style.transform = 'translateX(-50%)';
-      list.style.marginBottom = '0';
-    }
-    function openMenu() { renderMenu(); list.classList.add('open'); gear.classList.add('on'); positionMenu(); }
+    function openMenu() { renderMenu(); list.classList.add('open'); gear.classList.add('on'); }
     function closeMenu() { list.classList.remove('open'); gear.classList.remove('on'); }
     gear.addEventListener('click', function (e) {
       e.stopPropagation();

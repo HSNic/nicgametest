@@ -3,29 +3,27 @@
  *
  * 只動首頁 #creation-screen / #main-menu 的外觀,不碰存檔/遊戲函式:
  *   1. 標題下方放一個會上下微微飄動的「加掛版」雲朵副標。
- *   2. 外掛入口(掉落查詢/小百科/原作者資訊/設定)的收納,分裝置:
- *      - 桌機:作者 v3.0.40 起首頁改成固定 4:3 藝術舞台,右側 #main-menu 高度固定、
- *        不捲動 → 入口全展開會擠爆、溢出被裁。故桌機收成「一顆 🔌 外掛工具 按鈕」,
- *        點了用 Modal 攤開全部入口(Modal 掛在 #main-menu 內,保留 `#main-menu …`
- *        scoped 樣式;桌機祖先無 transform,position:fixed 對齊 viewport 正常)。
- *      - 手機:首頁是可捲動單欄,入口自然往下排、不擠 → 維持原本「🔌 外掛」半透明
- *        外框(afk-plugin-frame),不改(手機版型現況良好,勿動)。
+ *   2. 外掛入口(掉落查詢/小百科/其他功能)的收納:桌機/手機都用同一套「半透明外框
+ *      直接展開」(afk-plugin-frame),不分裝置(2026-07-09 使用者明訂:桌機也要跟
+ *      手機一樣全部展開在頁面上,不用點開才看得到;就算項目變多、頁面變長也接受)。
+ *      ⚠ 舊版桌機曾經用「一顆按鈕收合成 Modal」(理由:作者 v3.0.40 起首頁改成固定
+ *      4:3 藝術舞台,#main-menu 高度固定、不捲動,擔心入口全展開會擠爆),已依需求
+ *      移除;如果之後真的因為外掛項目變多、桌機出現擠爆/裁切,要恢復 Modal 收合前
+ *      先跟使用者確認,不要自己默默加回去。
  *   3. 外掛入口按鈕套用原版首頁按鈕的皮(深藍漸層+金邊,抄 css/style.css 的
  *      #main-menu > button),讓外掛鈕與作者的按鈕風格一致。
  *
- * 作法:外掛元素是別支外掛(afk-dex/afk-wiki/afk-syncinfo/afk-storage)append 到 #main-menu 的,
- *   本檔載入順序排最後、並用 MutationObserver + 重試,等它們到齊再把它們收進 Modal/外框(idempotent)。
+ * 作法:外掛元素是別支外掛(afk-dex/afk-wiki/afk-storage)append 到 #main-menu 的,
+ *   本檔載入順序排最後、並用 MutationObserver + 重試,等它們到齊再把它們收進外框(idempotent)。
  * 掛接:在 </body> 前 <script src="afk-skin.js?v=..."></script>(排在其他 afk-* 之後)。
  * ========================================================================== */
 (function () {
   'use strict';
 
-  // 外掛入口的「顯示順序」(都是 #main-menu 的子孫;依此序排入 Modal/外框)。
+  // 外掛入口的「顯示順序」(都是 #main-menu 的子孫;依此序排入外框)。
   //   2026-07-08 起 afk-syncinfo.js 不再輸出 DOM(A1 面板文字精簡),原本置頂的
   //   #afk-syncinfo / 排在後段的 #afk-syncinfo-links 已從順序移除,只剩查詢/小百科/設定。
   var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row', '#afk-stg-wrap'];
-
-  function isMobileNow() { return document.body.classList.contains('m-mobile'); }
 
   // ---- CSS ----------------------------------------------------------------
   var CSS = [
@@ -40,7 +38,7 @@
     /* 手機(body.m-mobile;此版用 viewport=1180 縮放,純寬度 media query 失效,故靠 m-mobile class)：字略縮一點 */
     'body.m-mobile #afk-brand-badge .afk-brand-line{font-size:12px;letter-spacing:1px;}',
 
-    /* 外掛區外框(半透明、像遊戲內面板) */
+    /* 外掛區外框(半透明、像遊戲內面板)——桌機/手機共用同一套,不分裝置 */
     '#afk-plugin-frame{position:relative;width:100%;max-width:20rem;margin:8px auto 0;padding:20px 14px 16px;',
       'border:1px solid rgba(148,163,184,.30);border-radius:16px;background:rgba(15,23,42,.22);',
       'box-shadow:inset 0 0 24px rgba(148,163,184,.05),0 4px 18px rgba(0,0,0,.20);',
@@ -54,22 +52,10 @@
     /* 外掛入口按鈕套原版皮:作者新登入頁的按鈕樣式只吃 #main-menu 的「直接子」button
        (css/style.css 的 #main-menu > button),我們的按鈕包在 row/外框裡吃不到 → 在這裡抄同一組
        宣告套上(深藍漸層+金邊)。⚠ 作者若改 css/style.css 該段風格,這裡要跟著換。 */
-    '#main-menu .m-dex-entry-row > button,#main-menu .m-wiki-entry-row > button,#main-menu #afk-stg-gear,#main-menu > #afk-plugin-btn{',
+    '#main-menu .m-dex-entry-row > button,#main-menu .m-wiki-entry-row > button,#main-menu #afk-stg-gear{',
       'border-color:#b68a39;background:linear-gradient(180deg,rgba(35,55,83,.94),rgba(10,22,42,.96));',
       'color:#f8e7bb;text-shadow:0 1px 2px #000;box-shadow:inset 0 0 9px rgba(116,165,219,.35),0 2px 5px #000;}',
-    '#main-menu .m-dex-entry-row > button:hover,#main-menu .m-wiki-entry-row > button:hover,#main-menu #afk-stg-gear:hover,#main-menu > #afk-plugin-btn:hover{filter:brightness(1.18);}',
-    /* 🔌 桌機外掛 Modal 裡的「⚙ 其他功能」鈕原本沿用 afk-storage.js 自己的小尺寸樣式(padding:5px 14px;
-       font-size:13px),跟同一個 Modal 裡「怪物/掉落查詢」「小百科」兩顆大按鈕比起來明顯瘦小、不對稱
-       (2026-07-08 使用者回報)。只在 Modal 這個固定寬度容器內把它放大對齊,手機版型的外框(afk-plugin-frame)
-       不受影響(選擇器限定 #afk-plugin-modal 底下,手機模式從不建立這個 Modal)。 */
-    '#afk-plugin-modal #afk-stg-wrap{width:100%;max-width:18rem;margin:0 auto;}',
-    '#afk-plugin-modal #afk-stg-gear{width:100%;padding:11px 12px;font-size:16px;}',
-    /* afk-storage.js 選單原本是 position:absolute+bottom:100%「往上」展開,但 Modal 面板有
-       overflow-y:auto、捲動起點固定在頂端,超出可視區的部分無法捲動看到、也點不到(2026-07-08
-       實測踩過:自動化點擊落在被裁切的選項上會穿透到背景把整個外掛視窗關掉)。使用者要求維持
-       「往上」展開的原本體感,不要改往下——改成 afk-storage.js 的 openMenu() 量測 gear 鈕實際
-       座標、用 position:fixed 定位選單(fixed 天生跳出 overflow:auto 祖先的裁切範圍),這裡不用
-       再靠 CSS 覆寫方向,詳見 afk-storage.js 的 positionMenu()。 */
+    '#main-menu .m-dex-entry-row > button:hover,#main-menu .m-wiki-entry-row > button:hover,#main-menu #afk-stg-gear:hover{filter:brightness(1.18);}',
     /* 主入口鈕的字級/內距也對齊原版(↗ 鈕與 ⚙ 鈕維持各自尺寸,只換皮) */
     '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main{',
       'padding:clamp(5px,.72vw,11px) 4px;font-size:clamp(9px,1.03vw,16px);line-height:1.1;}',
@@ -78,27 +64,6 @@
       'font-size:16px;padding:14px 12px;}',
     /* ↗ 鈕去掉自身上下內距(原 py-4 會把整列撐得比原版按鈕高);列高由主鈕決定,↗ 靠 stretch 等高 */
     '#main-menu .m-dex-entry-newtab,#main-menu .m-wiki-entry-newtab{padding-top:0;padding-bottom:0;}',
-
-    /* 🔌 桌機外掛 Modal:一顆按鈕點開、攤開全部入口。z-index 900 < 掉落查詢/小百科/存檔 Modal(1000)
-       → 在 Modal 內點入口,對方 Modal 會疊在上面正常顯示。Modal 掛在 #main-menu 內,故 `#main-menu …`
-       scoped 樣式(入口列寬/皮)照樣命中;桌機祖先無 transform,position:fixed 對齊 viewport。 */
-    '#afk-plugin-modal{display:none;position:fixed;inset:0;z-index:900;background:rgba(2,6,23,.72);align-items:center;justify-content:center;padding:24px;}',
-    '#afk-plugin-modal.is-open{display:flex;}',
-    /* 2026-07-09 使用者回報桌機面板太小、頂端標籤跟第一顆按鈕擠在一起,加大留白與可視高度上限
-       (只影響桌機這個 Modal,不用管手機——手機從不建立這個 Modal,見 apply() 的分流)。 */
-    '#afk-plugin-modal .afk-pm-panel{position:relative;width:100%;max-width:22rem;max-height:92vh;overflow-y:auto;',
-      'padding:38px 18px 24px;border:1px solid rgba(182,138,57,.5);border-radius:16px;',
-      'background:linear-gradient(180deg,rgba(20,28,44,.98),rgba(11,17,30,.98));box-shadow:0 18px 60px rgba(0,0,0,.6);',
-      'display:flex;flex-direction:column;gap:14px;align-items:center;}',
-    '#afk-plugin-modal .afk-pm-title{position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:2px 16px;',
-      'font-size:13px;font-weight:800;letter-spacing:2px;color:#f8e7bb;',
-      'background:linear-gradient(180deg,rgba(40,52,72,.98),rgba(28,38,56,.98));',
-      'border:1px solid rgba(182,138,57,.6);border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.5);white-space:nowrap;}',
-    '#afk-plugin-modal .afk-pm-close{position:absolute;top:9px;right:11px;width:30px;height:30px;border-radius:8px;',
-      'border:1px solid rgba(148,163,184,.4);background:rgba(15,23,42,.6);color:#cbd5e1;font-size:16px;line-height:1;',
-      'cursor:pointer;display:flex;align-items:center;justify-content:center;}',
-    '#afk-plugin-modal .afk-pm-close:hover{filter:brightness(1.4);}',
-    '#afk-plugin-modal-body{display:flex;flex-direction:column;gap:12px;align-items:center;width:100%;}',
 
     /* 📢 公告跑馬燈:放在 #main-menu 第一個子層(首頁按鈕上方);紅底捲動,游標移上去暫停。
        (v3.0.40 作者登入頁改成藝術舞台後,標題不再是 #creation-screen 直接子層,改錨定 #main-menu。) */
@@ -196,7 +161,7 @@
     // 跑馬燈暫時不再顯示版本號,維持預設文字「加掛版」——不呼叫 updateMarqueeVersion()。
   }
 
-  // ---- 手機:外掛外框(inline,現況良好、勿動)------------------------------
+  // ---- 外掛外框(桌機/手機共用,inline 直接展開,不收合成 Modal)----------------
   var _busy = false;
   // 找某 selector 的元素(可能已在外框內、或還在 #main-menu 直接子層)
   function findEl(menu, sel) {
@@ -221,64 +186,11 @@
     els.forEach(function (el) { frame.appendChild(el); });
   }
 
-  // ---- 桌機:一顆按鈕 + Modal 收納外掛入口 ---------------------------------
-  function ensureModal(menu) {
-    var modal = document.getElementById('afk-plugin-modal');
-    if (modal) return modal;
-    modal = document.createElement('div'); modal.id = 'afk-plugin-modal';
-    var panel = document.createElement('div'); panel.className = 'afk-pm-panel';
-    var title = document.createElement('div'); title.className = 'afk-pm-title'; title.textContent = '🔌 外掛工具';
-    var close = document.createElement('button'); close.type = 'button'; close.className = 'afk-pm-close';
-    close.textContent = '✕'; close.setAttribute('aria-label', '關閉');
-    var body = document.createElement('div'); body.id = 'afk-plugin-modal-body';
-    panel.appendChild(title); panel.appendChild(close); panel.appendChild(body);
-    modal.appendChild(panel);
-    menu.appendChild(modal);   // 掛在 #main-menu 內 → 保留 `#main-menu …` scoped 樣式
-    function closeModal() { modal.classList.remove('is-open'); }
-    close.addEventListener('click', closeModal);
-    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });   // 點背景關
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
-    return modal;
-  }
-  function ensureButton(menu) {
-    var btn = document.getElementById('afk-plugin-btn');
-    if (btn) return btn;
-    btn = document.createElement('button'); btn.id = 'afk-plugin-btn'; btn.type = 'button';
-    btn.className = 'btn text-base w-72 py-2.5';   // 尺寸對齊選單按鈕;金皮由本檔 CSS(#main-menu>#afk-plugin-btn)套
-    btn.textContent = '🔌 外掛工具';
-    btn.addEventListener('click', function () {
-      var m = document.getElementById('afk-plugin-modal'); if (m) m.classList.add('is-open');
-    });
-    menu.appendChild(btn);   // 直接子 → 排在遊戲按鈕/說明之後(=原本外框的位置)
-    return btn;
-  }
-  function ensureModalUI(menu) {
-    ensureModal(menu); ensureButton(menu);
-    var body = document.getElementById('afk-plugin-modal-body');
-    // 把散在 #main-menu 各處的外掛入口依 FRAME_ORDER 收進 Modal(idempotent;移動不動 menu 直接子→不觸發 observer 迴圈)
-    FRAME_ORDER.forEach(function (s) { var el = menu.querySelector(s); if (el) body.appendChild(el); });
-    // 清掉手機外框(切窄視窗回桌機的殘留)
-    var frame = document.getElementById('afk-plugin-frame');
-    if (frame) { while (frame.firstChild) { if (frame.firstChild.className === 'afk-frame-label') frame.removeChild(frame.firstChild); else body.appendChild(frame.firstChild); } frame.remove(); }
-  }
-
-  // 切回手機:把 Modal 拆掉、入口還原成 #main-menu 直接子,交還給 ensureFrame
-  function teardownModalUI(menu) {
-    var body = document.getElementById('afk-plugin-modal-body');
-    if (body) { while (body.firstChild) menu.appendChild(body.firstChild); }
-    var modal = document.getElementById('afk-plugin-modal'); if (modal) modal.remove();
-    var btn = document.getElementById('afk-plugin-btn'); if (btn) btn.remove();
-  }
-
   function apply() {
     if (_busy) return; _busy = true;
     try {
       injectCss(); ensureBadge(); ensureMarquee();
-      var menu = document.getElementById('main-menu');
-      if (menu) {
-        if (isMobileNow()) { teardownModalUI(menu); ensureFrame(); }
-        else ensureModalUI(menu);
-      }
+      ensureFrame();
     } catch (e) { /* 視覺外掛,出錯不影響遊戲 */ }
     _busy = false;
   }
