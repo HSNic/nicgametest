@@ -39,14 +39,13 @@
 
   // ----- 可調參數 -----------------------------------------------------------
   var CLIENT_ID = '452592311770-io65beqsrnb9vt25bpk360pnv9o2agef.apps.googleusercontent.com';
-  // drive.appdata:讀寫 App 專屬資料夾;userinfo.email:登入後查 email 比對白名單用
+  // drive.appdata:讀寫 App 專屬資料夾;userinfo.email:登入後顯示帳號 email 用
   //   （2026-07-09 踩過:只申請 drive.appdata 的話, token 沒有權限打 userinfo API,
   //   會被 Google 拒絕(403),表現成「登入失敗:讀取帳號資訊失敗」，要兩個 scope 一起要）。
   var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email';
-  // 測試白名單 email（小寫比對）：家人各自帳號直接加進這個陣列即可，例如 ['a@gmail.com','b@gmail.com']。
-  //   ⚠ 這是「我們自己的」第二層白名單，跟 Google Cloud Console 的 OAuth 同意畫面「測試使用者」名單是
-  //   兩件事，兩邊都要加同一批 email 才能登入成功（Console 那邊沒加會直接被 Google 擋在同意畫面前）。
-  var WHITELIST = ['dioyang59@gmail.com'];
+  // 2026-07-09 使用者確認:不用在這裡另外維護一層白名單，Google Cloud Console 的 OAuth
+  //   同意畫面「測試使用者」名單本身就是唯一的登入門檻(不在名單上的帳號會直接被 Google 擋在
+  //   同意畫面前，連 token 都拿不到)，這裡重複比對只是多一層維護負擔。
   var HEARTBEAT_FRESH_MS = 2 * 60 * 1000;      // 「可能正在遊玩中」門檻：心跳在幾毫秒內算新鮮（使用者已確認 2 分鐘）
   var MIN_UPLOAD_INTERVAL_MS = 4 * 60 * 1000;  // 節流：距上次真正打雲端 API 至少要隔這麼久（Gemini 建議採納）
   var IDLE_UPLOAD_AFTER_MS = 5 * 60 * 1000;    // 幾分鐘沒有新的 saveGame() 呼叫才觸發一次補傳
@@ -199,10 +198,6 @@
   auth.isConfigured = function () { return !!CLIENT_ID; };
   auth.isSignedIn = function () { return auth.isConfigured() && _signedIn; };
   auth.getEmail = function () { return _userEmail; };
-  auth.isWhitelisted = function (email) {
-    if (!email) return false;
-    return WHITELIST.indexOf(String(email).toLowerCase()) !== -1;
-  };
   // driveFetch 收到 401 時呼叫，強制下次重新取得 token
   auth._invalidateToken = function () { _accessToken = null; _tokenExpiresAt = 0; };
 
@@ -262,13 +257,6 @@
     requestToken('').then(function (token) {
       return fetchUserInfo(token).then(function (info) {
         var email = info.email || '';
-        if (!auth.isWhitelisted(email)) {
-          _signedIn = false; _userEmail = '';
-          AFK_CLOUD.ui.toast('此測試版僅開放特定帳號，你的帳號（' + email + '）尚未加入白名單。');
-          try { google.accounts.oauth2.revoke(token, function () {}); } catch (e) {}
-          auth._invalidateToken();
-          return;
-        }
         _signedIn = true; _userEmail = email;
         AFK_CLOUD.ui.refreshPanel();
         AFK_CLOUD.ui.toast('已登入：' + email);
