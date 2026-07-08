@@ -162,6 +162,10 @@
   //   舊錨點「h1 父層是 #creation-screen 直接子層」不再成立、跑馬燈整個不插入(玩家回報消失)。
   //   改插在 #main-menu 第一個子層:視覺位置同樣在標題之下、按鈕之上,且不依賴作者標題結構。
   function ensureMarquee() {
+    // 2026-07-08(待辦#1):使用者要求隱藏跑馬燈紅色橫條,不再建立/插入 DOM。
+    // 相關 CSS(#afk-marquee 等)保留不刪,選擇器不命中則無害,方便日後想恢復時復原容易。
+    return;
+    // eslint-disable-next-line no-unreachable
     if (document.getElementById('afk-marquee')) return;
     var menu = document.getElementById('main-menu'); if (!menu) return;
     var mq = document.createElement('div'); mq.id = 'afk-marquee';

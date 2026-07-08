@@ -379,5 +379,121 @@
     console.log('[AFK-fixes] 快轉補跑靜音 / 不跳特效 已掛上(音效 / 特效總開關 ff-aware)');
   })();
 
+  /* --------------------------------------------------------------------------
+   * 修正#9:潘朵拉黑市購買「持有上限已滿」時扣錢但沒拿到物品(2026-07-08 待辦#2)
+   *
+   * 問題:`buyPandoraItem(i)`(js/14-craft-pandora.js)流程是「先扣錢 → 呼叫 gainItem 加
+   *   物品 → 不論成功與否都顯示『購買成功』」。而 `gainItem`(js/08-items-equip.js)遇到
+   *   商品有 `maxHold`(持有上限,如精靈的私語=10)且已達上限時,會直接 `return null`、不會
+   *   把物品塞進 `player.inv`。原函式沒判斷這個 null,於是「已達持有上限」時玩家會被扣錢、
+   *   卻拿不到東西,畫面還顯示購買成功——這正是玩家回報的症狀。
+   * 解法:外掛在 `buyPandoraItem` 真正執行「扣錢」之前,自己先複算一次 `gainItem` 內部同一套
+   *   maxHold 判斷式(held >= d.maxHold);若判定這次購買必定會失敗,直接顯示錯誤訊息並 return,
+   *   完全不呼叫原函式——原函式的扣錢/gainItem/logSys 都不會被觸發,錢不會被扣。未達上限時原
+   *   樣呼叫原函式,行為不變。只讀 `DB.items`/`player.inv`(唯讀複算,不寫入),不改本體檔案。
+   * 何時可移除:原作者把 `buyPandoraItem` 改成會判斷 `gainItem` 的 null 回傳值(退錢/改顯示
+   *   失敗)時,本段即多餘,可整段刪掉(抓不到 `buyPandoraItem` 會自動略過,不弄壞遊戲)。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    function install() {
+      var orig = window.buyPandoraItem;
+      if (typeof orig !== 'function' || orig.__maxHoldGuard) return typeof window.buyPandoraItem === 'function' && window.buyPandoraItem.__maxHoldGuard;
+
+      var guarded = function (i) {
+        try {
+          var m = player && player.pandoraMarket2;
+          var s = m && m.slots && m.slots[i];
+          var d = s && typeof DB !== 'undefined' && DB.items && DB.items[s.id];
+          if (s && !s.sold && d && d.maxHold) {
+            var held = (player.inv || []).reduce(function (sum, it) { return sum + (it.id === s.id ? (it.cnt || 0) : 0); }, 0);
+            if (held >= d.maxHold) {
+              var e = document.getElementById('pandora-msg');
+              if (e) e.innerHTML = '<span class="text-red-400">已達「' + (d.n || s.id) + '」持有上限(' + d.maxHold + '),無法購買。</span>';
+              return;
+            }
+          }
+        } catch (e) { /* 複算出錯就不攔,交還原函式,不能弄壞購買功能 */ }
+        return orig.apply(this, arguments);
+      };
+      guarded.__maxHoldGuard = true;
+      window.buyPandoraItem = guarded;
+      console.log('[AFK-fixes] 潘朵拉黑市持有上限購買防呆 已掛上');
+      return true;
+    }
+    try {
+      if (!install()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+        else setTimeout(install, 0);
+      }
+    } catch (e) { console.warn('[AFK-fixes] 潘朵拉黑市持有上限購買防呆 安裝失敗,已略過:', e); }
+  })();
+
+  /* --------------------------------------------------------------------------
+   * 修正#10:快速強化 / 快速廢品勾選會跳位(2026-07-08 待辦#6)
+   *
+   * 問題:`toggleQuickItem`/`toggleQuickJunkItem`(js/10-ui-tabs.js)每勾一格都呼叫
+   *   `renderTabs(true)` 整表重繪。`renderTabs` 雖然有記錄/還原捲動位置(`_scroll`),但
+   *   勾選格會多套 `ring-2 ring-*-500/70`(邊框+陰影,約 2~4px),重繪時每格高度都可能因
+   *   勾選狀態不同而微變——累積勾很多項後,還原的 scrollTop 數值已經對不上新版面的實際位置,
+   *   使用者體感就是「越勾畫面跳越多」。
+   * 解法:monkey-patch 這兩個函式,**不呼叫 renderTabs**,只更新狀態 + 直接找到該 uid 對應的
+   *   那一格 DOM(`[data-tip-uid]`,scope 在對應分頁容器 tab-weapons/tab-armors/tab-items),
+   *   切換其 checkbox 的 `checked` 與 `ring-2 ring-*-500/70` class。其餘格子完全不動,自然不會
+   *   有捲動跳位問題。找不到對應格子(理論上不會發生,防禦用)才退回呼叫原函式整表重繪。
+   * 何時可移除:原作者自己把這兩個函式改成局部更新(不再整表 renderTabs)時,本段即多餘,
+   *   可整段刪掉(抓不到函式會自動略過,不弄壞遊戲)。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    var RING_RE = / ring-2 ring-(blue|amber)-500\/70/g;
+
+    function patchCell(uid, panelId, checked, ringClass) {
+      var panel = document.getElementById(panelId);
+      if (!panel) return false;
+      var cell = panel.querySelector('[data-tip-uid="' + uid + '"]');
+      if (!cell) return false;
+      var cb = cell.querySelector('input[type="checkbox"]');
+      if (!cb) return false;
+      cb.checked = checked;
+      var base = cell.className.replace(RING_RE, '');
+      cell.className = checked ? (base + ' ' + ringClass) : base;
+      return true;
+    }
+
+    function install() {
+      var origItem = window.toggleQuickItem, origJunk = window.toggleQuickJunkItem;
+      if (typeof origItem !== 'function' || typeof origJunk !== 'function') return false;
+      if (origItem.__noJumpGuard && origJunk.__noJumpGuard) return true;
+
+      var PANEL_BY_TYPE = { wpn: 'tab-weapons', arm: 'tab-armors', item: 'tab-items' };
+
+      var guardedItem = function (type, uid) {
+        var st = quickEnh[type];
+        var nowChecked = !st.sel[uid];
+        if (st.sel[uid]) delete st.sel[uid]; else st.sel[uid] = true;
+        if (!patchCell(uid, PANEL_BY_TYPE[type], nowChecked, 'ring-2 ring-blue-500/70')) renderTabs(true);
+      };
+      guardedItem.__noJumpGuard = true;
+
+      var guardedJunk = function (type, uid) {
+        var st = quickJunk[type];
+        var nowChecked = !st.sel[uid];
+        if (st.sel[uid]) delete st.sel[uid]; else st.sel[uid] = true;
+        if (!patchCell(uid, PANEL_BY_TYPE[type], nowChecked, 'ring-2 ring-amber-500/70')) renderTabs(true);
+      };
+      guardedJunk.__noJumpGuard = true;
+
+      window.toggleQuickItem = guardedItem;
+      window.toggleQuickJunkItem = guardedJunk;
+      console.log('[AFK-fixes] 快速強化/廢品勾選防跳位 已掛上');
+      return true;
+    }
+    try {
+      if (!install()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+        else setTimeout(install, 0);
+      }
+    } catch (e) { console.warn('[AFK-fixes] 快速強化/廢品勾選防跳位 安裝失敗,已略過:', e); }
+  })();
+
   console.log('[AFK-fixes] hooks OK — 通用修正外掛已啟用。');
 })();

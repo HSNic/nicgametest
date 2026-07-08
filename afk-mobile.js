@@ -61,6 +61,7 @@
     var nav = buildNav();
     gs.appendChild(nav);
     initTipPeek();   // 手機「長按物品看詳情」(取代桌機 hover tooltip)
+    initInputZoomGuard();   // 2026-07-08(待辦#7):輸入框 focus 時防止 iOS 自動放大畫面
     // (手機倉庫數量自製視窗已移除:改用原作者 V2.32 的原生「數量」輸入框 #wh-qty-amt——非 prompt、手機可用、parseInt 無溢位,故自製視窗不再需要。)
 
     // 手機:點「回村/回城」後自動收起日誌浮層。日誌展開時會蓋住村莊的 NPC/商店/倉庫,否則每次回村都要先手動關一次。
@@ -1029,8 +1030,46 @@
     document.head.appendChild(s);
   }
 
+  // --- 手機輸入框 focus 自動放大畫面(2026-07-08 待辦#7)--------------------------
+  //   問題:iOS Safari 規則——聚焦的 input/textarea「有效字體 < 16px」時,瀏覽器會自動放大畫面
+  //   讓文字看得清楚(跟 index.html 開頭的 viewport DESIGN_W=1180 縮放無關;實測手機尺寸下
+  //   afk-mobile 啟用時 viewport 其實已是 device-width,純粹是站內大量輸入框吃 Tailwind
+  //   text-sm/text-xs(12~14px)小於門檻觸發)。放大後遊戲版面被撐開、玩家要手動縮小很煩。
+  //   解法:輸入框 focus 時,把 viewport meta 暫時加上 `maximum-scale=1`(明確告訴瀏覽器
+  //   目前不准縮放,自動放大就不會發生);blur 時還原成 focus 前的原始 content,不影響正常
+  //   手動縮放/捲動。用 focusin/focusout(會冒泡)委派在 document 上,涵蓋站上所有輸入框
+  //   (靜態 HTML + 之後動態產生的搜尋欄/數量輸入框都一併涵蓋),不用逐一綁定。
+  function initInputZoomGuard() {
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    var savedContent = null;
+    function isTextInput(t) {
+      if (!t || !t.tagName) return false;
+      if (t.tagName === 'TEXTAREA') return true;
+      if (t.tagName !== 'INPUT') return false;
+      var type = (t.getAttribute('type') || 'text').toLowerCase();
+      return ['text', 'number', 'search', 'tel', 'email', 'password', 'url'].indexOf(type) !== -1;
+    }
+    document.addEventListener('focusin', function (e) {
+      if (!document.body.classList.contains('m-mobile') || !isTextInput(e.target)) return;
+      if (savedContent === null) savedContent = meta.getAttribute('content');
+      if (!/maximum-scale/.test(savedContent)) meta.setAttribute('content', savedContent + ',maximum-scale=1');
+    }, true);
+    document.addEventListener('focusout', function (e) {
+      if (!document.body.classList.contains('m-mobile') || !isTextInput(e.target) || savedContent === null) return;
+      // 延遲還原:切換到下一個輸入框(Tab/點下一格)時中間會先觸發 focusout 再 focusin,
+      //   若在還沒確定下一個焦點落在哪之前就立刻還原,連續切換輸入框時畫面會一直閃爍縮放。
+      setTimeout(function () {
+        var active = document.activeElement;
+        if (isTextInput(active)) return;   // 焦點換到另一個輸入框:維持鎖定,等真的離開輸入框才還原
+        meta.setAttribute('content', savedContent);
+        savedContent = null;
+      }, 50);
+    }, true);
+  }
+
   // --- 手機「長按物品看詳情」:取代桌機 hover tooltip(原作只綁 mousemove,手機觸發不到)。
-  //   長按任一 .tip-host(倉庫/背包/商店/製作/裝備欄的物品)約 350ms → 彈出資訊卡;短按維持原動作。
+  //   長按任一 .tip-host(倉庫/背包/商店/製作/裝備欄的物品)約 500ms → 彈出資訊卡;短按維持原動作。
   //   內容沿用原作全域函式(getItemFullName/buildItemDescHTML/getItemColor),不重寫資料、不改原作碼。
 
   function initTipPeek() {
@@ -1150,7 +1189,7 @@
         var c = (hostKind === 'item') ? resolve(host) : resolveTitle(host);
         if (!c) return;        // 解析不出內容 → 不開卡,維持一般操作
         open(c); arm();
-      }, 350);
+      }, 500);   // 2026-07-08(待辦#3):350ms 太快易誤觸,依使用者要求拉長到 500ms
     }, { passive: true });
     document.addEventListener('touchmove', function (e) {
       if (timer === null) return;
