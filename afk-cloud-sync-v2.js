@@ -236,12 +236,15 @@
   // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
   // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選；
   // 倉庫（依模式共用）跟著它所屬的存檔位決定一起用哪一邊，不需要另外問。
-  flow.uploadAll = function (reason) {
+  flow.uploadAll = function (reason, onProgress) {
     if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
+    if (typeof onProgress === 'function') onProgress(8, '打包本機存檔中…');
     var localDoc = payload.buildAllSlotsDoc();
     if (!Object.keys(localDoc.slots).length) return Promise.resolve({ ok: false, reason: 'no-data' });
+    if (typeof onProgress === 'function') onProgress(28, '連線到雲端服務…');
     return api.putSave(cfg.getCode(), localDoc, cfg.getVersion()).then(function (r) {
-      if (r.ok) { cfg.rememberSync(r.version, r.hash); return { ok: true }; }
+      if (r.ok) { if (typeof onProgress === 'function') onProgress(96, '雲端寫入完成…'); cfg.rememberSync(r.version, r.hash); return { ok: true }; }
+      if (typeof onProgress === 'function') onProgress(48, '偵測到雲端版本不同，等待選擇…');
       var remoteDoc = (r.remote && r.remote.save) || emptyDoc();
       var remoteSlots = remoteDoc.slots || {};
       var remoteWh = remoteDoc.warehouses || {};
@@ -260,8 +263,9 @@
         conflicts.push({ slot: k, whKeyStr: key, localObj: localSlots[k], remoteObj: remoteSlots[k] });
       });
       function finalize() {
+        if (typeof onProgress === 'function') onProgress(78, '套用衝突選擇並重新上傳…');
         return api.putSave(cfg.getCode(), merged, r.remote.version).then(function (r2) {
-          if (r2.ok) { cfg.rememberSync(r2.version, r2.hash); return { ok: true }; }
+          if (r2.ok) { if (typeof onProgress === 'function') onProgress(96, '雲端寫入完成…'); cfg.rememberSync(r2.version, r2.hash); return { ok: true }; }
           return { ok: false, reason: 'race', err: new Error('同步時偵測到其他裝置又搶先寫入了一次，請再按一次立即上傳') };
         });
       }
@@ -286,10 +290,12 @@
 
   // 下載雲端整包文件。本機沒有的存檔位直接套用（純獲得，不會有損失）；本機已有且內容不同才是衝突，
   // 跳批次視窗讓玩家逐格選「用本機(維持不變)/用雲端(套用覆蓋)/略過」。
-  flow.downloadAll = function () {
+  flow.downloadAll = function (onProgress) {
     if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
+    if (typeof onProgress === 'function') onProgress(12, '讀取雲端資料中…');
     return api.getSave(cfg.getCode()).then(function (r) {
       if (!r.exists) return { ok: false, reason: 'no-remote' };
+      if (typeof onProgress === 'function') onProgress(42, '比對本機與雲端存檔…');
       cfg.rememberSync(r.version, r.hash);
       var remoteDoc = r.save || emptyDoc();
       var remoteSlots = remoteDoc.slots || {};
@@ -303,11 +309,14 @@
         if (!remoteSummary || localSummary.ts === remoteSummary.ts) return;   // 一致，不用動
         conflicts.push({ slot: k, localObj: payload.buildPayload(slot), remoteObj: remoteSlots[k] });
       });
-      if (!conflicts.length) return { ok: true, applied: applied };
+      if (!conflicts.length) { if (typeof onProgress === 'function') onProgress(96, '下載套用完成…'); return { ok: true, applied: applied }; }
+      if (typeof onProgress === 'function') onProgress(62, '偵測到版本不同，等待選擇…');
       return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+        if (typeof onProgress === 'function') onProgress(82, '套用選擇結果…');
         conflicts.forEach(function (c) {
           if (decisions[c.slot] === 'cloud') { payload.applySlotFromDoc(+c.slot, remoteDoc); applied++; }
         });
+        if (typeof onProgress === 'function') onProgress(96, '下載套用完成…');
         return { ok: true, applied: applied };
       });
     }).catch(function (err) { return handleErr(err, 'download'); });
@@ -345,6 +354,14 @@
       '#afk-cloud2-panel-close{display:block;width:100%;margin-top:14px;}',
       '.afk-cloud2-status{font-size:12.5px;color:#94a3b8;text-align:center;}',
       '.afk-cloud2-status.is-err{color:#f87171;}',
+      '#afk-cloud2-panel-modal.is-busy{cursor:wait;}',
+      '#afk-cloud2-panel-modal.is-busy #afk-cloud2-panel-card{box-shadow:0 0 0 2px rgba(251,191,36,.55),0 20px 60px rgba(0,0,0,.75);}',
+      '.afk-cloud2-progress{display:none;background:#111c30;border:1px solid #334155;border-radius:10px;padding:10px;gap:8px;}',
+      '.afk-cloud2-progress.is-active{display:flex;flex-direction:column;}',
+      '.afk-cloud2-progress-label{font-size:13px;color:#fde68a;text-align:center;font-weight:700;}',
+      '.afk-cloud2-progress-track{height:10px;border-radius:999px;background:#1e293b;overflow:hidden;border:1px solid #475569;}',
+      '.afk-cloud2-progress-bar{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#f59e0b,#22c55e);transition:width .22s ease;}',
+      '.afk-cloud2-lock-note{font-size:12px;color:#fca5a5;text-align:center;line-height:1.5;}',
       '.afk-cloud2-modal-overlay{position:fixed;inset:0;z-index:1002;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:16px;}',
       '.afk-cloud2-modal-card{width:min(560px,96vw);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6);}',
       '.afk-cloud2-card-title{color:#f8e7bb;font-weight:800;font-size:14px;margin-bottom:8px;}',
@@ -454,6 +471,11 @@
     return '<div class="afk-cloud2-code">' + esc(cfg.getCode()) + '</div>' +
       '<div class="afk-cloud2-info">' + esc(slotsText) + '</div>' +
       '<div class="afk-cloud2-status" id="afk-cloud2-status">上次同步：' + esc(fmtTsShort(syncedAt)) + '</div>' +
+      '<div class="afk-cloud2-progress" id="afk-cloud2-progress" aria-live="polite">' +
+        '<div class="afk-cloud2-progress-label" id="afk-cloud2-progress-label">準備同步…</div>' +
+        '<div class="afk-cloud2-progress-track"><div class="afk-cloud2-progress-bar" id="afk-cloud2-progress-bar"></div></div>' +
+        '<div class="afk-cloud2-lock-note">同步完成前請勿關閉或切換畫面。</div>' +
+      '</div>' +
       '<div class="afk-cloud2-hint">同步涵蓋所有存檔位(1~8)，只有按下面按鈕才會連網；別台裝置才有的存檔位不會被上傳動作誤刪。</div>' +
       '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-upload-btn">⬆️ 立即上傳全部存檔位</button>' +
       '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-download-btn">⬇️ 立即下載全部存檔位</button>' +
@@ -464,6 +486,62 @@
   function setStatus(msg, isErr) {
     var el = document.getElementById('afk-cloud2-status');
     if (el) { el.textContent = msg; el.classList.toggle('is-err', !!isErr); }
+  }
+
+  var _syncBusy = false;
+  var _syncProgress = 0;
+  var _progressTimer = 0;
+  function blockUnload(e) {
+    if (!_syncBusy) return;
+    e.preventDefault();
+    e.returnValue = '雲端同步尚未完成，請等待同步結束。';
+    return e.returnValue;
+  }
+  function setPanelBusy(on) {
+    _syncBusy = !!on;
+    var modal = document.getElementById('afk-cloud2-panel-modal');
+    if (modal) modal.classList.toggle('is-busy', _syncBusy);
+    var closeBtn = document.getElementById('afk-cloud2-panel-close');
+    if (closeBtn) closeBtn.disabled = _syncBusy;
+    Array.prototype.forEach.call(document.querySelectorAll('#afk-cloud2-panel-body button,#afk-cloud2-panel-body input'), function (el) {
+      el.disabled = _syncBusy;
+    });
+    if (_syncBusy) window.addEventListener('beforeunload', blockUnload);
+    else window.removeEventListener('beforeunload', blockUnload);
+  }
+  function updateProgress(pct, label) {
+    _syncProgress = Math.max(_syncProgress, Math.min(100, pct || 0));
+    var box = document.getElementById('afk-cloud2-progress');
+    var bar = document.getElementById('afk-cloud2-progress-bar');
+    var text = document.getElementById('afk-cloud2-progress-label');
+    if (box) box.classList.add('is-active');
+    if (bar) bar.style.width = _syncProgress + '%';
+    if (text && label) text.textContent = label;
+  }
+  function beginBlockingSync(label) {
+    setPanelBusy(true);
+    _syncProgress = 0;
+    updateProgress(6, label || '同步準備中…');
+    clearInterval(_progressTimer);
+    _progressTimer = setInterval(function () {
+      if (!_syncBusy || _syncProgress >= 88) return;
+      updateProgress(_syncProgress + 2, '');
+    }, 900);
+    return updateProgress;
+  }
+  function endBlockingSync(label, afterUnlock) {
+    clearInterval(_progressTimer);
+    _progressTimer = 0;
+    updateProgress(100, label || '同步完成');
+    setTimeout(function () {
+      setPanelBusy(false);
+      var box = document.getElementById('afk-cloud2-progress');
+      var bar = document.getElementById('afk-cloud2-progress-bar');
+      if (box) box.classList.remove('is-active');
+      if (bar) bar.style.width = '0%';
+      _syncProgress = 0;
+      if (typeof afterUnlock === 'function') afterUnlock();
+    }, 450);
   }
 
   ui.refreshPanel = function () {
@@ -499,24 +577,28 @@
 
     var uploadBtn = document.getElementById('afk-cloud2-upload-btn');
     if (uploadBtn) uploadBtn.addEventListener('click', function () {
-      uploadBtn.disabled = true; setStatus('同步中…');
-      flow.uploadAll('manual').then(function (r) {
-        uploadBtn.disabled = false;
-        if (r && r.ok) { ui.toast('✅ 已上傳全部存檔位到雲端', 'success'); ui.refreshPanel(); }
+      if (_syncBusy) return;
+      var progress = beginBlockingSync('準備上傳全部存檔位…');
+      setStatus('同步中…畫面已鎖定，請等待完成');
+      flow.uploadAll('manual', progress).then(function (r) {
+        if (r && r.ok) ui.toast('✅ 已上傳全部存檔位到雲端', 'success');
         else if (r && r.reason === 'no-data') setStatus('本機目前沒有任何存檔位有資料，尚無需同步', true);
         else if (r && r.reason === 'race') setStatus(r.err.message, true);
         else setStatus('同步失敗', true);
+        endBlockingSync(r && r.ok ? '上傳完成' : '同步結束', function () { if (r && r.ok) ui.refreshPanel(); });
       });
     });
 
     var downloadBtn = document.getElementById('afk-cloud2-download-btn');
     if (downloadBtn) downloadBtn.addEventListener('click', function () {
-      downloadBtn.disabled = true; setStatus('讀取雲端中…');
-      flow.downloadAll().then(function (r) {
-        downloadBtn.disabled = false;
-        if (r && r.ok) { ui.toast('✅ 已從雲端同步 ' + (r.applied || 0) + ' 個存檔位', 'success'); ui.refreshPanel(); }
+      if (_syncBusy) return;
+      var progress = beginBlockingSync('準備下載全部存檔位…');
+      setStatus('讀取雲端中…畫面已鎖定，請等待完成');
+      flow.downloadAll(progress).then(function (r) {
+        if (r && r.ok) ui.toast('✅ 已從雲端同步 ' + (r.applied || 0) + ' 個存檔位', 'success');
         else if (r && r.reason === 'no-remote') setStatus('雲端尚無資料', true);
         else setStatus('下載失敗', true);
+        endBlockingSync(r && r.ok ? '下載完成' : '同步結束', function () { if (r && r.ok) ui.refreshPanel(); });
       });
     });
 
@@ -543,8 +625,8 @@
     document.getElementById('afk-cloud2-panel-close').addEventListener('click', closePanel);
   }
   var _panelLayer = null;
-  function hidePanel() { var m = document.getElementById('afk-cloud2-panel-modal'); if (m) m.classList.remove('open'); _panelLayer = null; }
-  function closePanel() { if (_panelLayer && window.AFK_UI) AFK_UI.closeLayer(_panelLayer); else hidePanel(); }
+  function hidePanel() { if (_syncBusy) return; var m = document.getElementById('afk-cloud2-panel-modal'); if (m) m.classList.remove('open'); _panelLayer = null; }
+  function closePanel() { if (_syncBusy) { ui.toast('同步尚未完成，請等待進度條結束。'); return; } if (_panelLayer && window.AFK_UI) AFK_UI.closeLayer(_panelLayer); else hidePanel(); }
   ui.openPanel = function () {
     injectCss(); buildPanel(); ui.refreshPanel();
     document.getElementById('afk-cloud2-panel-modal').classList.add('open');
