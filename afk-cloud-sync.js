@@ -227,9 +227,14 @@
   }
 
   // promptMode：'' 讓 Google 自行判斷(登入按鈕用)；'none' 完全不彈窗(背景自動同步用，失敗就算了，不強迫互動)
-  var TOKEN_REQUEST_TIMEOUT_MS = 20 * 1000;   // 授權彈窗被瀏覽器擋掉/使用者晾著不理時，別讓呼叫端永遠卡住
+  var TOKEN_REQUEST_TIMEOUT_MS = 20 * 1000;        // 互動式登入：授權彈窗被瀏覽器擋掉/使用者晾著不理時，別讓呼叫端永遠卡住
+  var SILENT_TOKEN_TIMEOUT_MS = 6 * 1000;          // 靜默恢復：沒有人在等，失敗就趕快放棄，別讓那個一閃即逝的視窗卡 20 秒
 
-  function requestToken(promptMode) {
+  // opts: { timeoutMs, hint }。hint(上次登入的 email) 給靜默恢復用，讓 Google 不必再選帳號，
+  // 提高「重整頁面後不用重新登入」的成功率(2026-07-09 使用者回報重整常常還是被登出)。
+  function requestToken(promptMode, opts) {
+    opts = opts || {};
+    var timeoutMs = opts.timeoutMs || TOKEN_REQUEST_TIMEOUT_MS;
     return ensureTokenClient().then(function (tc) {
       return new Promise(function (resolve, reject) {
         var settled = false;
@@ -237,7 +242,7 @@
           if (settled) return;
           settled = true;
           reject(new Error('登入逾時（授權視窗可能被瀏覽器封鎖，或忘記在彈出視窗完成登入）'));
-        }, TOKEN_REQUEST_TIMEOUT_MS);
+        }, timeoutMs);
         tc.callback = function (resp) {
           if (settled) return;   // 逾時已經 reject 過，之後才姍姍來遲的 callback 不再處理
           settled = true;
@@ -247,7 +252,9 @@
           _tokenExpiresAt = Date.now() + ((resp.expires_in ? +resp.expires_in : 3500) * 1000);
           resolve(_accessToken);
         };
-        try { tc.requestAccessToken({ prompt: promptMode }); }
+        var req = { prompt: promptMode };
+        if (opts.hint) req.hint = opts.hint;
+        try { tc.requestAccessToken(req); }
         catch (e) { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
       });
     });
@@ -257,7 +264,7 @@
   // 呼叫端若是使用者主動點擊(立即同步/登入)已經是 user gesture，過期時退回互動式('')重新登入）。
   auth.getAccessToken = function (interactive) {
     if (_accessToken && Date.now() < _tokenExpiresAt - 60000) return Promise.resolve(_accessToken);
-    return requestToken(interactive ? '' : 'none');
+    return requestToken(interactive ? '' : 'none', interactive ? null : { timeoutMs: SILENT_TOKEN_TIMEOUT_MS, hint: _userEmail });
   };
 
   function fetchUserInfo(token) {
@@ -290,7 +297,7 @@
     var savedEmail;
     try { savedEmail = localStorage.getItem(SESSION_EMAIL_KEY); } catch (e) { savedEmail = null; }
     if (!savedEmail) return;
-    requestToken('none').then(function (token) {
+    requestToken('none', { timeoutMs: SILENT_TOKEN_TIMEOUT_MS, hint: savedEmail }).then(function (token) {
       return fetchUserInfo(token).then(function (info) {
         _signedIn = true; _userEmail = info.email || savedEmail;
         AFK_CLOUD.ui.refreshPanel();
@@ -561,6 +568,60 @@
     });
   };
 
+  // 手動操作一律先跳視窗預覽本機 vs 雲端再執行——跟「自動背景同步沒衝突就悄悄完成」是
+  // 兩條不同規則:玩家自己點同步時要清楚看到「這次到底會蓋掉什麼、往哪個方向蓋」才能決定，
+  // 不能像舊版「立即同步」一樣悶著頭直接上傳(2026-07-09 使用者回報看不出同步方向、
+  // 也沒機會在覆蓋前確認)。左右卡片同時列出本機/雲端內容，兩個方向都能選。
+  flow.previewAndSync = function (slot) {
+    if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
+    AFK_CLOUD.ui.toast('讀取雲端內容中…');
+    return downloadRemote(slot).catch(function (err) { return handleSyncError(err, 'preview'); }).then(function (remoteObjOrFail) {
+      if (remoteObjOrFail && remoteObjOrFail.ok === false) return remoteObjOrFail;
+      var remoteObj = remoteObjOrFail;
+      var localSummary = payload.summarizeFromSlot(slot);
+      var remoteSummary = remoteObj ? payload.summarize(remoteObj) : null;
+      if (!localSummary && !remoteSummary) { AFK_CLOUD.ui.toast('存檔位 ' + slot + ' 本機與雲端都沒有資料'); return { ok: false, reason: 'no-data' }; }
+      return AFK_CLOUD.ui.showConflictModal({
+        left: { title: '📱 本機存檔 ' + slot, summary: localSummary },
+        right: { title: '☁️ 雲端存檔 ' + slot, summary: remoteSummary },
+        leftLabel: '⬆️ 確認上傳（本機覆蓋雲端）',
+        rightLabel: '⬇️ 確認下載（雲端覆蓋本機）',
+        cancelLabel: '取消，先不動作'
+      }).then(function (choice) {
+        if (choice === 'left') {
+          if (!localSummary) { AFK_CLOUD.ui.toast('本機存檔位 ' + slot + ' 沒有資料可以上傳'); return { ok: false, reason: 'no-local' }; }
+          return uploadWithGuard(slot, payload.buildPayload(slot), 'manual-preview-' + slot);
+        }
+        if (choice === 'right') {
+          if (!remoteObj) { AFK_CLOUD.ui.toast('雲端存檔位 ' + slot + ' 沒有資料可以下載'); return { ok: false, reason: 'no-remote' }; }
+          payload.applyPayload(remoteObj, slot);
+          AFK_CLOUD.ui.toast('已套用雲端版本到本機（存檔 ' + slot + '）。');
+          return { ok: true, downloaded: true };
+        }
+        return { ok: false, cancelled: true };
+      });
+    });
+  };
+
+  // 全部同步：逐格跑 previewAndSync，每格仍然各自跳視窗預覽確認，不因為是批次就跳過確認
+  // (2026-07-09 使用者要求「缺少選擇可以同步哪些本機存檔或是全選」，批次跟單格同等重視)。
+  flow.syncAllSlots = function () {
+    if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
+    var slots = [];
+    for (var n = 1; n <= 8; n++) { if (payload.summarizeFromSlot(n)) slots.push(n); }
+    if (!slots.length) { AFK_CLOUD.ui.toast('本機沒有任何存檔位有資料'); return Promise.resolve({ ok: false, reason: 'no-data' }); }
+    var results = [];
+    function next(i) {
+      if (i >= slots.length) return Promise.resolve(results);
+      return flow.previewAndSync(slots[i]).then(function (r) { results.push({ slot: slots[i], result: r }); return next(i + 1); });
+    }
+    return next(0).then(function () {
+      var done = results.filter(function (r) { return r.result && r.result.ok; }).length;
+      AFK_CLOUD.ui.toast('全部同步完成：' + done + ' / ' + slots.length + ' 個存檔位已處理');
+      return { ok: true, results: results };
+    });
+  };
+
   // ===========================================================================
   // scheduler：同步觸發時機 + 節流（不持續 debounce，只在有意義的時間點才可能打 API）
   // ===========================================================================
@@ -586,15 +647,6 @@
   };
   scheduler.onLoadGame = function () {
     try { flow.backgroundDownloadPeek(); } catch (e) {}
-  };
-  // 手動同步鈕：一律視為「一次性、必須做」，略過節流，但按鈕本身要有 cooldown 防連點
-  scheduler.manualSync = function (btn) {
-    if (btn) {
-      if (btn.disabled) return Promise.resolve({ ok: false, reason: 'cooldown' });
-      btn.disabled = true;
-      setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
-    }
-    return requestUpload('manual', true);
   };
 
   document.addEventListener('visibilitychange', function () {
@@ -627,6 +679,11 @@
       '.afk-cloud-btn-secondary{border-color:#334155;background:#1e293b;color:#e2e8f0;}',
       '.afk-cloud-btn-secondary:active{background:#273449;}',
       '#afk-cloud-panel-close{display:block;width:100%;margin-top:14px;}',
+      /* 每格存檔位的上傳/下載按鈕：手機寬度也要能兩顆並排點按(觸控目標沿用 .afk-cloud-btn 的 44px) */
+      '.afk-cloud-slot-row{border-top:1px solid #1e293b;padding-top:8px;margin-top:8px;}',
+      '.afk-cloud-slot-row:first-of-type{border-top:none;padding-top:0;margin-top:0;}',
+      '.afk-cloud-slot-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}',
+      '.afk-cloud-slot-btn{flex:1 1 45%;min-height:40px;padding:8px 10px;font-size:13px;}',
       /* 衝突視窗（雲端同步下載衝突 / 手動匯入覆蓋共用） */
       '.afk-cloud-modal-overlay{position:fixed;inset:0;z-index:1002;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:16px;}',
       '.afk-cloud-modal-card{width:min(560px,96vw);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6);}',
@@ -672,6 +729,9 @@
   // ----- 管理面板（登入/同步/登出）：掛進 afk-storage.js 的「⚙ 其他功能」選單 ----
   // 各存檔位的同步狀態列表：不能讓玩家「按了立即同步卻不知道到底同步了哪個、什麼時候」
   //（2026-07-09 使用者回報）。只列本機有資料的存檔位，空存檔位不顯示、避免洗版。
+  // 每格存檔位旁都加「⬆️上傳」「⬇️下載」兩顆鈕：按哪顆都會先跳視窗預覽本機/雲端內容
+  // 再確認方向(見 flow.previewAndSync)，兩顆鈕只是視覺上兩個入口，行為一致——不會有
+  // 「按了才發現方向搞反」的情況(2026-07-09 使用者回報看不出同步方向)。
   function syncStatusListHTML() {
     var rows = '';
     for (var n = 1; n <= 8; n++) {
@@ -679,8 +739,13 @@
       if (!sum) continue;
       var ts = getLastSyncedAt(n);
       var isCurrent = (n === currentSlot);
-      rows += '<div class="afk-cloud-card-line">' + (isCurrent ? '👉 ' : '　') + '存檔 ' + n + '　' + esc(sum.cls) + ' Lv.' + esc(String(sum.lv)) +
-        (sum.name ? '　' + esc(sum.name) : '') + '<br>　　' + (ts ? '上次同步：' + esc(fmtTs(ts)) : '尚未同步過') + '</div>';
+      rows += '<div class="afk-cloud-slot-row">' +
+        '<div class="afk-cloud-card-line">' + (isCurrent ? '👉 ' : '　') + '存檔 ' + n + '　' + esc(sum.cls) + ' Lv.' + esc(String(sum.lv)) +
+        (sum.name ? '　' + esc(sum.name) : '') + '<br>　　' + (ts ? '上次同步：' + esc(fmtTs(ts)) : '尚未同步過') + '</div>' +
+        '<div class="afk-cloud-slot-actions">' +
+          '<button type="button" class="afk-cloud-btn afk-cloud-slot-btn" data-slot-up="' + n + '">⬆️ 上傳</button>' +
+          '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary afk-cloud-slot-btn" data-slot-down="' + n + '">⬇️ 下載</button>' +
+        '</div></div>';
     }
     if (!rows) return '<div class="afk-cloud-hint">目前本機沒有任何存檔位有資料。</div>';
     return '<div class="afk-cloud-card" style="width:100%;text-align:left;">' +
@@ -694,7 +759,8 @@
     }
     return '<div class="afk-cloud-info">你好，' + esc(auth.getEmail()) + '</div>' +
       syncStatusListHTML() +
-      '<button type="button" class="afk-cloud-btn" id="afk-cloud-sync-btn">☁️ 立即同步</button>' +
+      '<div class="afk-cloud-hint">按「⬆️上傳」或「⬇️下載」都會先跳視窗顯示本機/雲端目前內容，確認方向後才會真的同步，絕不自動覆蓋。</div>' +
+      '<button type="button" class="afk-cloud-btn" id="afk-cloud-syncall-btn">🔁 全部同步（逐格確認）</button>' +
       '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-restore-btn">📥 從雲端還原到指定存檔位</button>' +
       '<div class="afk-cloud-hint">全新裝置第一次使用時，用這顆把雲端進度拉下來（原本「載入進度」畫面的空存檔位鈕會反灰點不了，所以另外開這條路）。</div>' +
       '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-signout-btn">登出</button>';
@@ -729,18 +795,31 @@
     body.innerHTML = panelBodyHTML();
     var signinBtn = document.getElementById('afk-cloud-signin-btn');
     if (signinBtn) signinBtn.addEventListener('click', function () { auth.signIn(); });
-    var syncBtn = document.getElementById('afk-cloud-sync-btn');
-    if (syncBtn) syncBtn.addEventListener('click', function () {
-      ui.toast('同步中…');
-      var syncingSlot = currentSlot;
-      scheduler.manualSync(syncBtn).then(function (result) {
-        if (!result) return;
-        if (result.ok) { ui.toast('✅ 存檔位 ' + syncingSlot + ' 已同步完成'); ui.refreshPanel(); }
-        else if (result.reason === 'no-data') ui.toast('目前存檔位（' + syncingSlot + '）沒有資料，略過同步');
-        else if (result.cancelled) ui.toast('已取消，未同步');
-        // 其餘失敗情況(離線/認證過期/一般錯誤/節流)已由對應流程各自跳過 toast，這裡不重複
+
+    // 每格 ⬆️上傳／⬇️下載都走同一顆「先跳視窗預覽再確認」的 flow.previewAndSync，
+    // 兩顆鈕差異只是視覺入口、行為一致；按鈕本身加 cooldown 防連點(沿用既有防抖常數)。
+    Array.prototype.forEach.call(body.querySelectorAll('[data-slot-up],[data-slot-down]'), function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        var slot = +(btn.getAttribute('data-slot-up') || btn.getAttribute('data-slot-down'));
+        btn.disabled = true;
+        setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
+        flow.previewAndSync(slot).then(function (result) {
+          if (result && result.ok) ui.refreshPanel();
+        });
       });
     });
+
+    var syncAllBtn = document.getElementById('afk-cloud-syncall-btn');
+    if (syncAllBtn) syncAllBtn.addEventListener('click', function () {
+      if (syncAllBtn.disabled) return;
+      syncAllBtn.disabled = true;
+      flow.syncAllSlots().then(function () {
+        syncAllBtn.disabled = false;
+        ui.refreshPanel();
+      });
+    });
+
     var restoreBtn = document.getElementById('afk-cloud-restore-btn');
     if (restoreBtn) restoreBtn.addEventListener('click', function () {
       ui.openSlotPicker().then(function (slot) {
