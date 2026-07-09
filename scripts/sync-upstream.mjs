@@ -80,7 +80,9 @@ const PLUGINS = [
   { file: 'afk-player-ring.js', comment: '玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-skin.js', comment: '首頁「加掛版」品牌標記 + 外掛區外框(純視覺;需排在其他 afk-* 之後;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-doll-pet.js', comment: '魔法娃娃「飄浮寵物」:取代原本滑鼠游標特效,改成冒險地圖戰鬥框左下角飄浮的寵物圖案(出發狩獵才顯示);需排在 afk-mobile.js 之後(完全接管 applyDollCursor);可獨立維護,原作者更新後重新加回此行即可' },
-  { file: 'afk-cloud-sync.js', comment: '跨裝置雲端存檔同步(Google Drive drive.appdata;帳號登入即綁定,身分限制交由Google Cloud Console的OAuth測試使用者名單管理;衝突時跳視窗由玩家自選本機/雲端,不自動覆蓋;可獨立維護,原作者更新後重新加回此行即可)' },
+  // afk-cloud-sync.js 已於 2026-07-09 暫停(使用者實測後認為體驗有問題),index.html 已移除引用，
+  // 這裡也拿掉，避免下次自動同步又把 script 標籤補回去。檔案本體還留著，見
+  // Lineage/加掛版/docs/交接與接手/雲端同步功能開發紀錄_暫停_20260709.md 的「重啟方式」。
 ];
 
 // 我們自己放在 assets/ 底下、非上游的檔案白名單(孤兒清理時略過,不會被當「作者移除的圖」刪掉)。
