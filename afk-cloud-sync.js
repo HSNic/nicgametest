@@ -318,7 +318,7 @@
   drive.isReady = function () { return auth.isSignedIn(); };
   drive.fileNameFor = function (slot) { return 'lineage_save_sync_slot' + slot + '.json'; };
 
-  function makeErr(kind, msg) { var e = new Error(msg); e.kind = kind; return e; }
+  function makeErr(kind, msg, status) { var e = new Error(msg); e.kind = kind; if (status) e.status = status; return e; }
 
   function driveFetch(url, opts, interactive) {
     return auth.getAccessToken(interactive).then(function (token) {
@@ -351,7 +351,7 @@
   drive.getFileMeta = function (fileId) {
     var url = API_BASE + '/files/' + fileId + '?fields=' + encodeURIComponent('headRevisionId,modifiedTime');
     return driveFetch(url, {}).then(function (res) {
-      if (!res.ok) throw makeErr('unknown', 'Drive 讀取檔案資訊失敗（' + res.status + '）');
+      if (!res.ok) throw makeErr('unknown', 'Drive 讀取檔案資訊失敗（' + res.status + '）', res.status);
       return res.json();
     });
   };
@@ -402,10 +402,19 @@
   function getLastSyncedAt(slot) { try { return +localStorage.getItem(lastSyncedAtKey(slot)) || 0; } catch (e) { return 0; } }
   function setLastSyncedAt(slot, ts) { try { localStorage.setItem(lastSyncedAtKey(slot), String(ts)); } catch (e) {} }
 
+  // 本機快取的 fileId 可能已經失效(例如雲端那份檔案被清掉、或帳號狀態變了)，
+  // 這時直接信任快取會讓後續 getFileMeta/downloadFile 打 404 導致整次同步失敗
+  // (2026-07-09 使用者實測回報「同步失敗：Drive 讀取檔案資訊失敗（404）」)。
+  // 先驗證快取的 id 還存在，404 就清快取、改用檔名重新查詢一次。
   function findExisting(slot) {
     var fid = getFileId(slot);
-    if (fid) return Promise.resolve({ id: fid });
-    return drive.findFile(slot);
+    if (!fid) return drive.findFile(slot);
+    return drive.getFileMeta(fid).then(function (meta) {
+      return { id: fid, headRevisionId: meta.headRevisionId, modifiedTime: meta.modifiedTime };
+    }).catch(function (err) {
+      if (err && err.status === 404) { setFileId(slot, null); return drive.findFile(slot); }
+      throw err;
+    });
   }
 
   // 以下 doUpload/uploadWithGuard/flow.syncUpload 都回傳一個結果物件(而非單純 resolve/reject),
