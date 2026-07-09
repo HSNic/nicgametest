@@ -534,8 +534,15 @@
       try { if (typeof window.saveGame === 'function') window.saveGame(); } catch (e) {}   // 先存當前進度,避免漏掉上次自動存檔後的收益
       try { if (window.__afk && window.__afk.stamp) window.__afk.stamp(); } catch (e) {}   // 存完再蓋錨點 → 存檔時間=離線起算時間,離線結算不會漏算/重算
       showLogoutOverlay();   // 立刻蓋全螢幕遮罩:reload 是整頁重開機(手機要幾秒),期間舊頁仍在跑戰鬥,不蓋住會看起來像「還在打怪」
+      // 跨裝置雲端同步(afk-cloud-sync.js)若已載入且已登入,在真的 reload 前給它一次強制同步
+      // 的機會(有自己的短逾時,不會卡住登出流程太久)——玩家主動離開時上傳，另一台裝置才不會
+      // 讀到舊進度(2026-07-09 使用者要求登出/關閉前要有機會先同步)。外掛不存在時直接跳過。
+      var cloudSync = (window.AFK_CLOUD && AFK_CLOUD.flow && typeof AFK_CLOUD.flow.forceSyncBeforeLeave === 'function')
+        ? AFK_CLOUD.flow.forceSyncBeforeLeave().catch(function () {}) : Promise.resolve();
       // double rAF:確保遮罩先畫出來(rAF 在繪製前觸發,巢狀第二個在首次繪製後),再開始 reload
-      requestAnimationFrame(function () { requestAnimationFrame(function () { try { location.reload(); } catch (e) {} }); });
+      cloudSync.then(function () {
+        requestAnimationFrame(function () { requestAnimationFrame(function () { try { location.reload(); } catch (e) {} }); });
+      });
     });
     return m;
   }

@@ -288,11 +288,11 @@
         _signedIn = true; _userEmail = email;
         try { localStorage.setItem(SESSION_EMAIL_KEY, email); } catch (e) {}
         AFK_CLOUD.ui.refreshPanel();
-        AFK_CLOUD.ui.toast('已登入：' + email);
+        AFK_CLOUD.ui.toast('已登入：' + email, 'success');
         try { AFK_CLOUD.scheduler.onLoadGame(); } catch (e) {}
       });
     }).catch(function (err) {
-      AFK_CLOUD.ui.toast('登入失敗：' + (err && err.message ? err.message : String(err)));
+      AFK_CLOUD.ui.toast('登入失敗：' + (err && err.message ? err.message : String(err)), 'error');
     });
   };
 
@@ -393,7 +393,11 @@
       opts.content + '\r\n' +
       '--' + boundary + '--';
     var url = UPLOAD_BASE + '/files' + (opts.fileId ? '/' + opts.fileId : '') + '?uploadType=multipart&fields=' + encodeURIComponent('id,headRevisionId,modifiedTime');
-    return driveFetch(url, { method: opts.fileId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: body }, true).then(function (res) {
+    // keepalive：頁面卸載(beforeunload/pagehide)觸發的上傳加這個，讓瀏覽器有機會讓請求撐過
+    // 頁面關閉那一刻(2026-07-09 使用者要求關閉/重整前要有機會先同步)；body 超過瀏覽器
+    // keepalive 上限(通常 64KB)時瀏覽器會直接拒絕，driveFetch 的 catch 會轉成一般失敗，
+    // 不影響其他觸發時機照常同步。
+    return driveFetch(url, { method: opts.fileId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: body, keepalive: !!opts.keepalive }, true).then(function (res) {
       if (!res.ok) throw makeErr('unknown', 'Drive 上傳失敗（' + res.status + '）');
       return res.json();
     });
@@ -434,8 +438,8 @@
 
   // 以下 doUpload/uploadWithGuard/flow.syncUpload 都回傳一個結果物件(而非單純 resolve/reject),
   // 讓呼叫端(尤其手動按「立即同步」)能明確知道「到底有沒有真的同步成功」,不是只能看 console。
-  function doUpload(slot, obj, fileId) {
-    return drive.uploadFile({ fileId: fileId, name: drive.fileNameFor(slot), content: JSON.stringify(obj) }).then(function (res) {
+  function doUpload(slot, obj, fileId, keepalive) {
+    return drive.uploadFile({ fileId: fileId, name: drive.fileNameFor(slot), content: JSON.stringify(obj), keepalive: keepalive }).then(function (res) {
       setFileId(slot, res.id);
       setLastRev(slot, res.headRevisionId || '');
       setLastSyncedAt(slot, Date.now());
@@ -445,50 +449,68 @@
   }
 
   function handleSyncError(err, reason) {
-    if (err && err.kind === 'network') { _pendingUpload = true; AFK_CLOUD.ui.toast('離線中，恢復連線後自動補傳存檔'); }
-    else if (err && err.kind === 'auth') { AFK_CLOUD.ui.toast('登入已過期，請重新點擊「立即同步」重新登入'); }
-    else { console.warn('[AFK-cloud-sync] 同步失敗（' + reason + '）:', err); AFK_CLOUD.ui.toast('同步失敗：' + ((err && err.message) || '未知錯誤')); }
+    if (err && err.kind === 'network') { _pendingUpload = true; AFK_CLOUD.ui.toast('離線中，恢復連線後自動補傳存檔', 'error'); }
+    else if (err && err.kind === 'auth') { AFK_CLOUD.ui.toast('登入已過期，請重新點擊「立即同步」重新登入', 'error'); }
+    else { console.warn('[AFK-cloud-sync] 同步失敗（' + reason + '）:', err); AFK_CLOUD.ui.toast('同步失敗：' + ((err && err.message) || '未知錯誤'), 'error'); }
     return { ok: false, err: err };
   }
 
-  function uploadWithGuard(slot, obj, reason) {
+  // findExisting() 本身已經在驗證快取 fileId 時順便拿到 headRevisionId，這裡不用再打一次
+  // getFileMeta(2026-07-09 精簡：少一次網路來回，同步/批次探測都會更快)。
+  function uploadWithGuard(slot, obj, reason, keepalive) {
     return findExisting(slot).then(function (existing) {
-      if (!existing) return doUpload(slot, obj, null);
+      if (!existing) return doUpload(slot, obj, null, keepalive);
       setFileId(slot, existing.id);
-      return drive.getFileMeta(existing.id).then(function (meta) {
-        var lastKnown = getLastRev(slot);
-        if (lastKnown && meta.headRevisionId && meta.headRevisionId !== lastKnown) {
-          // 別台裝置搶先寫入：不覆蓋，跳警告讓玩家決定。先把雲端目前內容真的抓下來顯示摘要，
-          // 不能讓玩家看著「（無資料）」盲選（2026-07-09 使用者回報看不出是哪個存檔位在衝突）。
-          return downloadRemote(slot).then(function (remoteObj) {
-            return AFK_CLOUD.ui.showConflictModal({
-              left: { title: '📱 本機存檔 ' + slot + '（觸發原因：' + reason + '）', summary: payload.summarize(obj) },
-              right: { title: '☁️ 雲端存檔 ' + slot + '（已被別台裝置更新過）', summary: remoteObj ? payload.summarize(remoteObj) : null },
-              leftLabel: '仍要用本機覆蓋（危險）',
-              rightLabel: '使用雲端版本（套用到本機）',
-              cancelLabel: '先不同步'
-            }).then(function (choice) {
-              if (choice === 'left') return doUpload(slot, obj, existing.id);
-              if (choice === 'right') {
-                if (remoteObj) payload.applyPayload(remoteObj, slot);
-                AFK_CLOUD.ui.toast('已套用雲端版本到本機（存檔 ' + slot + '）。');
-                return { ok: true, downloaded: true };
-              }
-              return { ok: false, cancelled: true };
-            });
+      var lastKnown = getLastRev(slot);
+      if (lastKnown && existing.headRevisionId && existing.headRevisionId !== lastKnown) {
+        // 別台裝置搶先寫入：不覆蓋，跳警告讓玩家決定。先把雲端目前內容真的抓下來顯示摘要，
+        // 不能讓玩家看著「（無資料）」盲選（2026-07-09 使用者回報看不出是哪個存檔位在衝突）。
+        return downloadRemote(slot).then(function (remoteObj) {
+          return AFK_CLOUD.ui.showConflictModal({
+            left: { title: '📱 本機存檔 ' + slot + '（觸發原因：' + reason + '）', summary: payload.summarize(obj) },
+            right: { title: '☁️ 雲端存檔 ' + slot + '（已被別台裝置更新過）', summary: remoteObj ? payload.summarize(remoteObj) : null },
+            leftLabel: '仍要用本機覆蓋（危險）',
+            rightLabel: '使用雲端版本（套用到本機）',
+            cancelLabel: '先不同步'
+          }).then(function (choice) {
+            if (choice === 'left') return doUpload(slot, obj, existing.id);
+            if (choice === 'right') {
+              if (remoteObj) payload.applyPayload(remoteObj, slot);
+              AFK_CLOUD.ui.toast('已套用雲端版本到本機（存檔 ' + slot + '）。', 'success');
+              return { ok: true, downloaded: true };
+            }
+            return { ok: false, cancelled: true };
           });
-        }
-        return doUpload(slot, obj, existing.id);
-      });
+        });
+      }
+      return doUpload(slot, obj, existing.id, keepalive);
     }).catch(function (err) { return handleSyncError(err, reason); });
   }
 
-  flow.syncUpload = function (reason) {
+  // 探測單一存檔位「上傳會不會撞到衝突」，只讀不寫——供批次同步先一輪探測全部存檔位，
+  // 蒐集完所有衝突再一次顯示，不要探測一格就跳一次視窗(2026-07-09 使用者要求)。
+  function probeSlotForUpload(slot) {
+    var obj = payload.buildPayload(slot);
+    if (!obj) return Promise.resolve(null);
+    return findExisting(slot).then(function (existing) {
+      if (!existing) return { slot: slot, status: 'clean', obj: obj, fileId: null };
+      setFileId(slot, existing.id);
+      var lastKnown = getLastRev(slot);
+      if (lastKnown && existing.headRevisionId && existing.headRevisionId !== lastKnown) {
+        return downloadRemote(slot).then(function (remoteObj) {
+          return { slot: slot, status: 'conflict', obj: obj, remoteObj: remoteObj, fileId: existing.id };
+        });
+      }
+      return { slot: slot, status: 'clean', obj: obj, fileId: existing.id };
+    }).catch(function (err) { return { slot: slot, status: 'error', err: err }; });
+  }
+
+  flow.syncUpload = function (reason, keepalive) {
     if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
     var slot = currentSlot;
     var obj = payload.buildPayload(slot);
     if (!obj) { console.log('[AFK-cloud-sync] 存檔位 ' + slot + ' 無資料，略過同步。'); return Promise.resolve({ ok: false, reason: 'no-data' }); }
-    return uploadWithGuard(slot, obj, reason);
+    return uploadWithGuard(slot, obj, reason, keepalive);
   };
 
   function downloadRemote(slot) {
@@ -586,24 +608,71 @@
     return uploadWithGuard(slot, obj, 'manual-slot-' + slot);
   };
 
-  // 全部同步(上傳)：逐格呼叫 uploadSlot，同樣沒衝突就悄悄完成；真的遇到衝突那一格才
-  // 跳視窗，不會像之前那樣每一格都跳一次(2026-07-09 使用者回報「一個畫面一個畫面跳出來
-  // 很不方便」)。
-  flow.syncAllSlots = function () {
+  // 全部同步(上傳)：先把每個存檔位都探測一輪(不寫入)，沒衝突的直接上傳；有衝突的
+  // 全部蒐集起來，一次跳出總覽視窗讓玩家逐格選擇，送出後才一次性套用——不要探測一格
+  // 就跳一次視窗(2026-07-09 使用者要求「先每一個都跑一遍，再顯示需要選擇的，再一次性
+  // 處理」)。onProgress(i,total) 供 UI 顯示目前跑到第幾格。
+  flow.syncAllSlots = function (onProgress) {
     if (!drive.isReady()) return Promise.resolve({ ok: false, reason: 'not-ready' });
     var slots = [];
     for (var n = 1; n <= 8; n++) { if (payload.summarizeFromSlot(n)) slots.push(n); }
     if (!slots.length) { AFK_CLOUD.ui.toast('本機沒有任何存檔位有資料'); return Promise.resolve({ ok: false, reason: 'no-data' }); }
-    var results = [];
-    function next(i) {
-      if (i >= slots.length) return Promise.resolve(results);
-      return flow.uploadSlot(slots[i]).then(function (r) { results.push({ slot: slots[i], result: r }); return next(i + 1); });
-    }
-    return next(0).then(function () {
-      var done = results.filter(function (r) { return r.result && r.result.ok; }).length;
-      AFK_CLOUD.ui.toast('全部同步完成：' + done + ' / ' + slots.length + ' 個存檔位已處理');
-      return { ok: true, results: results };
+    var probed = 0;
+    return Promise.all(slots.map(function (slot) {
+      return probeSlotForUpload(slot).then(function (r) {
+        probed++;
+        if (onProgress) onProgress(probed, slots.length);
+        return r;
+      });
+    })).then(function (probes) {
+      probes = probes.filter(Boolean);
+      var clean = probes.filter(function (p) { return p.status === 'clean'; });
+      var conflicts = probes.filter(function (p) { return p.status === 'conflict'; });
+      var errored = probes.filter(function (p) { return p.status === 'error'; });
+      var uploadClean = clean.reduce(function (chain, item) {
+        return chain.then(function () { return doUpload(item.slot, item.obj, item.fileId); });
+      }, Promise.resolve());
+      return uploadClean.then(function () {
+        if (!conflicts.length) {
+          AFK_CLOUD.ui.toast('全部同步完成：' + clean.length + ' / ' + slots.length + ' 個存檔位已上傳' +
+            (errored.length ? '，' + errored.length + ' 個查詢失敗' : ''), errored.length ? 'error' : 'success');
+          return { ok: true };
+        }
+        return AFK_CLOUD.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+          var applied = 0;
+          var apply = conflicts.reduce(function (chain, item) {
+            var choice = decisions[String(item.slot)];
+            return chain.then(function () {
+              if (choice === 'local') { applied++; return doUpload(item.slot, item.obj, item.fileId); }
+              if (choice === 'cloud') {
+                applied++;
+                if (item.remoteObj) payload.applyPayload(item.remoteObj, item.slot);
+                return null;
+              }
+              return null;   // 略過：不動這一格
+            });
+          }, Promise.resolve());
+          return apply.then(function () {
+            AFK_CLOUD.ui.toast('全部同步完成：' + (clean.length + applied) + ' / ' + slots.length + ' 個存檔位已處理', 'success');
+            return { ok: true };
+          });
+        });
+      });
     });
+  };
+
+  // 頁面/遊戲即將離開前的最後一次同步機會：跟一般背景節流不同，這裡永遠強制嘗試上傳
+  // 目前存檔位，且有自己的短逾時(不無限期卡住離開流程)——供「登出回首頁」等玩家主動
+  // 離開的流程在真的離開前呼叫(2026-07-09 使用者要求關閉/登出前要有機會先同步)。
+  // 沒登入/沒設定 Client ID 時直接 resolve，呼叫端不用另外判斷。
+  flow.forceSyncBeforeLeave = function () {
+    if (!drive.isReady()) return Promise.resolve();
+    var slot = currentSlot;
+    var obj = payload.buildPayload(slot);
+    if (!obj) return Promise.resolve();
+    var attempt = uploadWithGuard(slot, obj, 'leaving').catch(function () {});
+    var timeout = new Promise(function (resolve) { setTimeout(resolve, 6000); });
+    return Promise.race([attempt, timeout]).catch(function () {});
   };
 
   // ===========================================================================
@@ -613,7 +682,7 @@
   var idleTimer = null;
   var lastRealUploadAt = 0;
 
-  function requestUpload(reason, force) {
+  function requestUpload(reason, force, keepalive) {
     if (!auth.isSignedIn()) return Promise.resolve({ ok: false, reason: 'not-signed-in' });
     var now = Date.now();
     if (!force && (now - lastRealUploadAt) < MIN_UPLOAD_INTERVAL_MS) {
@@ -621,7 +690,7 @@
       return Promise.resolve({ ok: false, reason: 'throttled' });
     }
     lastRealUploadAt = now;
-    return flow.syncUpload(reason);
+    return flow.syncUpload(reason, keepalive);
   }
 
   scheduler.onSaveGame = function () {
@@ -633,11 +702,14 @@
     try { flow.backgroundDownloadPeek(); } catch (e) {}
   };
 
+  // 這三個都是「頁面可能真的要卸載」的時機，上傳請求加 keepalive:true，讓瀏覽器有機會
+  // 讓這個網路請求撐過頁面關閉那一刻(2026-07-09 使用者要求關閉/重整前要有機會先同步；
+  // 一般背景節流的其他觸發點不需要，維持原樣)。
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden') requestUpload('visibilitychange-hidden', true);
+    if (document.visibilityState === 'hidden') requestUpload('visibilitychange-hidden', true, true);
   });
-  window.addEventListener('beforeunload', function () { requestUpload('beforeunload', true); });
-  window.addEventListener('pagehide', function () { requestUpload('pagehide', true); });
+  window.addEventListener('beforeunload', function () { requestUpload('beforeunload', true, true); });
+  window.addEventListener('pagehide', function () { requestUpload('pagehide', true, true); });
   window.addEventListener('online', function () { try { flow.flushPendingUpload(); } catch (e) {} });
 
   // ===========================================================================
@@ -669,6 +741,7 @@
       '.afk-cloud-slot-table th{color:#94a3b8;font-weight:700;font-size:11px;text-align:left;padding:4px 5px;border-bottom:1px solid #334155;white-space:nowrap;}',
       '.afk-cloud-slot-table td{color:#e2e8f0;padding:6px 5px;border-bottom:1px solid #1e293b;vertical-align:middle;}',
       '.afk-cloud-slot-sub{color:#94a3b8;font-size:11px;}',
+      '.afk-cloud-current-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#164e63;color:#67e8f9;font-size:10px;font-weight:700;vertical-align:middle;}',
       /* 上傳/下載用不同顏色區分方向，觸控目標維持 >=36px */
       '.afk-cloud-slot-btn{min-width:36px;min-height:36px;padding:6px 8px;font-size:15px;}',
       '.afk-cloud-btn-upload{border-color:#d97706;background:#b45309;}',
@@ -685,10 +758,21 @@
       '.afk-cloud-card-warn{margin-top:8px;color:#f87171;font-size:12.5px;font-weight:bold;line-height:1.6;}',
       '.afk-cloud-modal-actions{display:flex;flex-wrap:wrap;gap:8px;}',
       '.afk-cloud-choice-btn{flex:1 1 160px;}',
-      /* toast（非阻斷，桌機手機共用，跟 afk-toast.js 的手機專用 toast 分開一個容器避免互相干擾） */
-      '#afk-cloud-toast-wrap{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99998;display:flex;flex-direction:column;gap:8px;width:min(92vw,420px);pointer-events:none;}',
-      '#afk-cloud-toast-wrap .afk-cloud-toast{pointer-events:auto;background:rgba(15,23,42,.96);border:1px solid #334155;border-left:3px solid #38bdf8;border-radius:10px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);color:#e2e8f0;font-size:13.5px;line-height:1.5;word-break:break-word;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease;}',
-      '#afk-cloud-toast-wrap .afk-cloud-toast.in{opacity:1;transform:translateY(0);}'
+      /* 批次衝突總覽：每列一格存檔位 + 三顆選擇鈕(本機/雲端/略過，不用下拉選單) */
+      '.afk-cloud-batch-row{background:#111c30;border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:10px;}',
+      '.afk-cloud-batch-choice-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+      '.afk-cloud-batch-btn{flex:1 1 28%;min-height:38px;padding:6px 8px;font-size:12.5px;opacity:.5;}',
+      '.afk-cloud-batch-btn.is-active{opacity:1;box-shadow:0 0 0 2px #fff;}',
+      /* 同步中的轉圈動畫：讓玩家看得出「正在跑」而不是按了沒反應(2026-07-09 使用者回報) */
+      '.afk-cloud-spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:afk-cloud-spin .7s linear infinite;vertical-align:-2px;}',
+      '@keyframes afk-cloud-spin{to{transform:rotate(360deg);}}',
+      /* toast（非阻斷，桌機手機共用，跟 afk-toast.js 的手機專用 toast 分開一個容器避免互相干擾）
+         2026-07-09 使用者回報桌機版不太明顯：加大字級/留白/陰影，並依成功/失敗上色 */
+      '#afk-cloud-toast-wrap{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99998;display:flex;flex-direction:column;gap:10px;width:min(92vw,460px);pointer-events:none;}',
+      '#afk-cloud-toast-wrap .afk-cloud-toast{pointer-events:auto;background:rgba(15,23,42,.98);border:1px solid #475569;border-left:5px solid #38bdf8;border-radius:10px;padding:14px 18px;box-shadow:0 10px 34px rgba(0,0,0,.65);color:#f1f5f9;font-size:15px;font-weight:600;line-height:1.55;word-break:break-word;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease;}',
+      '#afk-cloud-toast-wrap .afk-cloud-toast.in{opacity:1;transform:translateY(0);}',
+      '#afk-cloud-toast-wrap .afk-cloud-toast-success{border-left-color:#22c55e;}',
+      '#afk-cloud-toast-wrap .afk-cloud-toast-error{border-left-color:#ef4444;}'
     ].join('');
     var s = document.createElement('style');
     s.id = 'afk-cloud-css';
@@ -696,13 +780,13 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
-  // ----- toast（非阻斷提示，例如離線佇列訊息） -------------------------------
-  ui.toast = function (msg) {
+  // ----- toast（非阻斷提示，例如離線佇列訊息）：type 可傳 'success'/'error' 上色 --------
+  ui.toast = function (msg, type) {
     injectCss();
     var wrap = document.getElementById('afk-cloud-toast-wrap');
     if (!wrap) { wrap = document.createElement('div'); wrap.id = 'afk-cloud-toast-wrap'; document.body.appendChild(wrap); }
     var card = document.createElement('div');
-    card.className = 'afk-cloud-toast';
+    card.className = 'afk-cloud-toast' + (type ? ' afk-cloud-toast-' + type : '');
     card.textContent = msg;
     wrap.appendChild(card);
     requestAnimationFrame(function () { card.classList.add('in'); });
@@ -714,7 +798,7 @@
       setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 300);
     }
     card.addEventListener('click', kill);
-    setTimeout(kill, 4000);
+    setTimeout(kill, 5000);
   };
 
   // ----- 管理面板（登入/同步/登出）：掛進 afk-storage.js 的「⚙ 其他功能」選單 ----
@@ -732,7 +816,8 @@
       var ts = getLastSyncedAt(n);
       var isCurrent = (n === currentSlot);
       rows += '<tr>' +
-        '<td>' + (isCurrent ? '👉' : '　') + '存檔' + n + '<br><span class="afk-cloud-slot-sub">' + esc(sum.cls) + ' Lv.' + esc(String(sum.lv)) +
+        '<td>存檔' + n + (isCurrent ? '<span class="afk-cloud-current-tag">目前使用中</span>' : '') +
+          '<br><span class="afk-cloud-slot-sub">' + esc(sum.cls) + ' Lv.' + esc(String(sum.lv)) +
           (sum.name ? '　' + esc(sum.name) : '') + '</span></td>' +
         '<td class="afk-cloud-slot-sub">' + esc(fmtTsShort(ts)) + '</td>' +
         '<td><button type="button" class="afk-cloud-btn afk-cloud-btn-upload afk-cloud-slot-btn" data-slot-up="' + n + '" title="上傳到雲端">⬆️</button></td>' +
@@ -790,17 +875,21 @@
     if (signinBtn) signinBtn.addEventListener('click', function () { auth.signIn(); });
 
     // ⬆️上傳：直接呼叫 flow.uploadSlot，沒衝突就悄悄完成；真的衝突才跳視窗(見該函式註解)。
+    // 按下後鈕本身換成轉圈圖示，讓玩家看得出「正在跑」，不是按了沒反應(2026-07-09 使用者回報)。
     Array.prototype.forEach.call(body.querySelectorAll('[data-slot-up]'), function (btn) {
       btn.addEventListener('click', function () {
         if (btn.disabled) return;
         var slot = +btn.getAttribute('data-slot-up');
+        var origHTML = btn.innerHTML;
         btn.disabled = true;
-        setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
-        ui.toast('上傳中…');
+        btn.innerHTML = '<span class="afk-cloud-spin"></span>';
         flow.uploadSlot(slot).then(function (result) {
-          if (result && result.ok) { ui.toast('✅ 存檔位 ' + slot + ' 已上傳'); ui.refreshPanel(); }
-          else if (result && result.cancelled) ui.toast('已取消，未上傳');
+          btn.innerHTML = origHTML;
+          if (result && result.ok) { ui.toast('✅ 存檔位 ' + slot + ' 已上傳', 'success'); ui.refreshPanel(); return; }
+          if (result && result.cancelled) ui.toast('已取消，未上傳');
           // 其餘失敗(離線/認證過期/一般錯誤)已由 handleSyncError 各自跳過 toast，這裡不重複
+          btn.disabled = true;
+          setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
         });
       });
     });
@@ -811,24 +900,32 @@
       btn.addEventListener('click', function () {
         if (btn.disabled) return;
         var slot = +btn.getAttribute('data-slot-down');
+        var origHTML = btn.innerHTML;
         btn.disabled = true;
-        setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
-        ui.toast('讀取雲端中…');
+        btn.innerHTML = '<span class="afk-cloud-spin"></span>';
         flow.restoreToSlot(slot).then(function (result) {
-          if (!result) return;
-          if (result.ok) { ui.toast('✅ 已從雲端下載到存檔位 ' + slot); ui.refreshPanel(); }
-          else if (result.reason === 'no-remote') { /* flow.restoreToSlot 已經自己 toast 過 */ }
+          btn.innerHTML = origHTML;
+          if (!result) { btn.disabled = false; return; }
+          if (result.ok) { ui.toast('✅ 已從雲端下載到存檔位 ' + slot, 'success'); ui.refreshPanel(); return; }
+          if (result.reason === 'no-remote') { /* flow.restoreToSlot 已經自己 toast 過 */ }
           else if (result.cancelled) ui.toast('已取消，未下載');
+          btn.disabled = true;
+          setTimeout(function () { btn.disabled = false; }, MANUAL_SYNC_COOLDOWN_MS);
         });
       });
     });
 
+    // 全部同步：按鈕文字即時顯示「跑到第幾格」，讓玩家看得出進度，不是卡住(2026-07-09 使用者回報)。
     var syncAllBtn = document.getElementById('afk-cloud-syncall-btn');
     if (syncAllBtn) syncAllBtn.addEventListener('click', function () {
       if (syncAllBtn.disabled) return;
       syncAllBtn.disabled = true;
-      flow.syncAllSlots().then(function () {
+      var origHTML = syncAllBtn.innerHTML;
+      flow.syncAllSlots(function (i, total) {
+        syncAllBtn.innerHTML = '<span class="afk-cloud-spin"></span> 探測中…(' + i + '/' + total + ')';
+      }).then(function () {
         syncAllBtn.disabled = false;
+        syncAllBtn.innerHTML = origHTML;
         ui.refreshPanel();
       });
     });
@@ -837,10 +934,14 @@
     if (restoreBtn) restoreBtn.addEventListener('click', function () {
       ui.openSlotPicker().then(function (slot) {
         if (!slot) return;
-        ui.toast('讀取雲端中…');
+        var origHTML = restoreBtn.innerHTML;
+        restoreBtn.disabled = true;
+        restoreBtn.innerHTML = '<span class="afk-cloud-spin"></span> 讀取雲端中…';
         flow.restoreToSlot(slot).then(function (result) {
+          restoreBtn.disabled = false;
+          restoreBtn.innerHTML = origHTML;
           if (!result) return;
-          if (result.ok) { ui.toast('✅ 已還原到存檔位 ' + slot + '，回主選單「載入進度」即可看到'); ui.refreshPanel(); }
+          if (result.ok) { ui.toast('✅ 已還原到存檔位 ' + slot + '，回主選單「載入進度」即可看到', 'success'); ui.refreshPanel(); }
           else if (result.reason === 'no-remote') { /* flow.restoreToSlot 已經自己 toast 過 */ }
           else if (result.cancelled) ui.toast('已取消，未還原');
         });
@@ -937,6 +1038,72 @@
         if (!choice) return;
         finish(choice);   // 先 resolve（idempotent），再退歷史一格；layer 的 closeFn 之後才觸發也會被 done 擋掉
         if (layer && window.AFK_UI) AFK_UI.closeLayer(layer);
+      });
+    });
+  };
+
+  // ----- 批次同步的衝突總覽（全部同步探測完後，一次列出所有衝突讓玩家逐格選、再一次送出）---
+  // 每格三顆按鈕組(本機/雲端/略過，不用下拉選單)，預設「略過」(安全，不誤動作)；
+  // 送出時只讀當下每列選了什麼(2026-07-09 使用者要求批次不要逐格跳視窗)。
+  ui.showBatchConflictModal = function (conflicts) {
+    injectCss();
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'afk-cloud-modal-overlay';
+      var rows = conflicts.map(function (c) {
+        var ls = payload.summarize(c.obj);
+        var rs = c.remoteObj ? payload.summarize(c.remoteObj) : null;
+        return '<div class="afk-cloud-batch-row" data-batch-slot="' + c.slot + '" data-selected="skip">' +
+          '<div class="afk-cloud-card-title">存檔 ' + c.slot + '</div>' +
+          '<div class="afk-cloud-card-line">📱 本機：' + esc(ls.cls) + ' Lv.' + esc(String(ls.lv)) + (ls.name ? '　' + esc(ls.name) : '') + '</div>' +
+          '<div class="afk-cloud-card-line">☁️ 雲端：' + (rs ? esc(rs.cls) + ' Lv.' + esc(String(rs.lv)) + (rs.name ? '　' + esc(rs.name) : '') : '（無資料）') + '</div>' +
+          '<div class="afk-cloud-batch-choice-group">' +
+            '<button type="button" class="afk-cloud-btn afk-cloud-btn-upload afk-cloud-batch-btn" data-choice="local">用本機</button>' +
+            '<button type="button" class="afk-cloud-btn afk-cloud-btn-download afk-cloud-batch-btn" data-choice="cloud">用雲端</button>' +
+            '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary afk-cloud-batch-btn is-active" data-choice="skip">略過</button>' +
+          '</div></div>';
+      }).join('');
+      overlay.innerHTML =
+        '<div class="afk-cloud-modal-card">' +
+          '<div class="afk-cloud-card-title" style="margin-bottom:10px;">以下存檔位偵測到衝突，逐格選好再一次送出：</div>' +
+          rows +
+          '<div class="afk-cloud-modal-actions" style="margin-top:6px;">' +
+            '<button type="button" class="afk-cloud-btn" id="afk-cloud-batch-submit">確認送出</button>' +
+            '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-batch-cancel">全部略過</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      var done = false;
+      function finish(decisions) {
+        if (done) return;
+        done = true;
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(decisions);
+      }
+      var layer = window.AFK_UI ? AFK_UI.openLayer(function () { finish({}); }) : null;
+      overlay.addEventListener('click', function (e) {
+        var choiceBtn = e.target.closest ? e.target.closest('[data-choice]') : null;
+        if (choiceBtn) {
+          var row = choiceBtn.closest('.afk-cloud-batch-row');
+          row.setAttribute('data-selected', choiceBtn.getAttribute('data-choice'));
+          Array.prototype.forEach.call(row.querySelectorAll('.afk-cloud-batch-btn'), function (b) {
+            b.classList.toggle('is-active', b === choiceBtn);
+          });
+          return;
+        }
+        if (e.target.id === 'afk-cloud-batch-submit' || e.target.id === 'afk-cloud-batch-cancel') {
+          var decisions = {};
+          if (e.target.id === 'afk-cloud-batch-submit') {
+            Array.prototype.forEach.call(overlay.querySelectorAll('.afk-cloud-batch-row'), function (row) {
+              decisions[row.getAttribute('data-batch-slot')] = row.getAttribute('data-selected');
+            });
+          }
+          // 先 resolve（idempotent），再退歷史一格；layer 的 closeFn 之後才觸發也會被 done 擋掉
+          // （跟 showConflictModal 同一個順序鐵則——寫反會變成 closeLayer 同步觸發的空白
+          // finish({}) 先跑，把這裡真正的 decisions 卡死，2026-07-09 踩過）。
+          finish(decisions);
+          if (layer && window.AFK_UI) AFK_UI.closeLayer(layer);
+        }
       });
     });
   };
