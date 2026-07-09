@@ -50,6 +50,7 @@
   var MIN_UPLOAD_INTERVAL_MS = 4 * 60 * 1000;  // 節流：距上次真正打雲端 API 至少要隔這麼久（Gemini 建議採納）
   var IDLE_UPLOAD_AFTER_MS = 5 * 60 * 1000;    // 幾分鐘沒有新的 saveGame() 呼叫才觸發一次補傳
   var MANUAL_SYNC_COOLDOWN_MS = 8 * 1000;      // 手動同步按鈕 cooldown（防連點）
+  var SESSION_EMAIL_KEY = 'afk_cloud_session_email';   // 記住「上次登入過」，供重整頁面後靜默恢復登入用
 
   // ----- 自我檢查：核心掛點都在才啟用，否則安靜退出（遊戲照常運作） ----------
   if (typeof window.saveGame !== 'function' ||
@@ -136,6 +137,7 @@
       _lzSet('lineage_idle_save_' + slot, _saveWrap(JSON.stringify(obj.save)));
       if (obj.wh) _lzSet(whKey(obj.save.p), JSON.stringify(obj.wh));
       payload.writeAfkKeys(slot, obj.afk);
+      setLastSyncedAt(slot, Date.now());   // 套用雲端內容＝本機現在跟雲端一致，記一筆同步時間供面板顯示
       return true;
     } catch (e) { console.warn('[AFK-cloud-sync] applyPayload 失敗:', e); return false; }
   };
@@ -269,6 +271,7 @@
       return fetchUserInfo(token).then(function (info) {
         var email = info.email || '';
         _signedIn = true; _userEmail = email;
+        try { localStorage.setItem(SESSION_EMAIL_KEY, email); } catch (e) {}
         AFK_CLOUD.ui.refreshPanel();
         AFK_CLOUD.ui.toast('已登入：' + email);
         try { AFK_CLOUD.scheduler.onLoadGame(); } catch (e) {}
@@ -278,10 +281,31 @@
     });
   };
 
+  // 頁面重整/重新開啟時，只要「上次登入過」(SESSION_EMAIL_KEY 有記錄)就嘗試靜默恢復登入
+  //（prompt:'none'，不彈窗；玩家的 Google 那邊還記得同意才會成功）——玩家體感是「登入一次，
+  //   除非自己按登出，否則會一直保持登入狀態」（2026-07-09 使用者明訂的期待行為）。
+  //   靜默恢復失敗（例如 Google 那邊 session 過期）就悄悄放著,玩家自己按登入鈕重新來一次即可。
+  auth.tryRestoreSession = function () {
+    if (!auth.isConfigured()) return;
+    var savedEmail;
+    try { savedEmail = localStorage.getItem(SESSION_EMAIL_KEY); } catch (e) { savedEmail = null; }
+    if (!savedEmail) return;
+    requestToken('none').then(function (token) {
+      return fetchUserInfo(token).then(function (info) {
+        _signedIn = true; _userEmail = info.email || savedEmail;
+        AFK_CLOUD.ui.refreshPanel();
+        try { AFK_CLOUD.scheduler.onLoadGame(); } catch (e) {}
+      });
+    }).catch(function (err) {
+      console.log('[AFK-cloud-sync] 靜默恢復登入失敗（需要重新按登入）:', err && err.message);
+    });
+  };
+
   auth.signOut = function () {
     if (_accessToken) { try { google.accounts.oauth2.revoke(_accessToken, function () {}); } catch (e) {} }
     auth._invalidateToken();
     _signedIn = false; _userEmail = '';
+    try { localStorage.removeItem(SESSION_EMAIL_KEY); } catch (e) {}
     AFK_CLOUD.ui.refreshPanel();
   };
 
@@ -372,6 +396,11 @@
   function fileIdKey(slot) { return 'afk_cloud_file_id_' + slot; }
   function getFileId(slot) { try { return localStorage.getItem(fileIdKey(slot)) || ''; } catch (e) { return ''; } }
   function setFileId(slot, id) { try { localStorage.setItem(fileIdKey(slot), id || ''); } catch (e) {} }
+  // 「上次同步時間」：面板要顯示各存檔位的同步狀態，不能只讓玩家憑感覺猜（2026-07-09 使用者回報）。
+  //   function 宣告會被提升到整個 IIFE 頂端，payload.applyPayload 雖然寫在更前面也能呼叫到。
+  function lastSyncedAtKey(slot) { return 'afk_cloud_synced_at_' + slot; }
+  function getLastSyncedAt(slot) { try { return +localStorage.getItem(lastSyncedAtKey(slot)) || 0; } catch (e) { return 0; } }
+  function setLastSyncedAt(slot, ts) { try { localStorage.setItem(lastSyncedAtKey(slot), String(ts)); } catch (e) {} }
 
   function findExisting(slot) {
     var fid = getFileId(slot);
@@ -385,6 +414,7 @@
     return drive.uploadFile({ fileId: fileId, name: drive.fileNameFor(slot), content: JSON.stringify(obj) }).then(function (res) {
       setFileId(slot, res.id);
       setLastRev(slot, res.headRevisionId || '');
+      setLastSyncedAt(slot, Date.now());
       console.log('[AFK-cloud-sync] 上傳成功（slot ' + slot + '）。');
       return { ok: true };
     });
@@ -404,17 +434,24 @@
       return drive.getFileMeta(existing.id).then(function (meta) {
         var lastKnown = getLastRev(slot);
         if (lastKnown && meta.headRevisionId && meta.headRevisionId !== lastKnown) {
-          // 別台裝置搶先寫入：不覆蓋，跳警告讓玩家決定
-          return AFK_CLOUD.ui.showConflictModal({
-            left: { title: '📱 本機（觸發原因：' + reason + '）', summary: payload.summarize(obj) },
-            right: { title: '☁️ 雲端目前內容（已被別台裝置更新過）', summary: null },
-            leftLabel: '仍要覆蓋（危險）',
-            rightLabel: '先下載雲端最新版',
-            cancelLabel: '先不同步'
-          }).then(function (choice) {
-            if (choice === 'left') return doUpload(slot, obj, existing.id);
-            if (choice === 'right') return flow.syncDownloadAndApply(slot).then(function () { AFK_CLOUD.ui.toast('已下載雲端最新版並套用到本機。'); return { ok: true, downloaded: true }; });
-            return { ok: false, cancelled: true };
+          // 別台裝置搶先寫入：不覆蓋，跳警告讓玩家決定。先把雲端目前內容真的抓下來顯示摘要，
+          // 不能讓玩家看著「（無資料）」盲選（2026-07-09 使用者回報看不出是哪個存檔位在衝突）。
+          return downloadRemote(slot).then(function (remoteObj) {
+            return AFK_CLOUD.ui.showConflictModal({
+              left: { title: '📱 本機存檔 ' + slot + '（觸發原因：' + reason + '）', summary: payload.summarize(obj) },
+              right: { title: '☁️ 雲端存檔 ' + slot + '（已被別台裝置更新過）', summary: remoteObj ? payload.summarize(remoteObj) : null },
+              leftLabel: '仍要用本機覆蓋（危險）',
+              rightLabel: '使用雲端版本（套用到本機）',
+              cancelLabel: '先不同步'
+            }).then(function (choice) {
+              if (choice === 'left') return doUpload(slot, obj, existing.id);
+              if (choice === 'right') {
+                if (remoteObj) payload.applyPayload(remoteObj, slot);
+                AFK_CLOUD.ui.toast('已套用雲端版本到本機（存檔 ' + slot + '）。');
+                return { ok: true, downloaded: true };
+              }
+              return { ok: false, cancelled: true };
+            });
           });
         }
         return doUpload(slot, obj, existing.id);
@@ -463,7 +500,7 @@
       }
       return AFK_CLOUD.ui.showConflictModal({
         left: { title: '📼 目前存檔位 ' + slot, summary: localSummary },
-        right: { title: '☁️ 雲端存檔', summary: payload.summarize(remoteObj) },
+        right: { title: '☁️ 雲端存檔 ' + slot, summary: payload.summarize(remoteObj) },
         leftLabel: '保留本機（取消還原）',
         rightLabel: '用雲端覆蓋本機',
         cancelLabel: '取消'
@@ -499,7 +536,7 @@
       var maybePlaying = conflict.isRemoteMaybePlaying(remoteSummary, timesync.now());
       return AFK_CLOUD.ui.showConflictModal({
         left: { title: '📱 本機存檔 ' + slot, summary: localSummary },
-        right: { title: '☁️ 雲端存檔', summary: remoteSummary },
+        right: { title: '☁️ 雲端存檔 ' + slot, summary: remoteSummary },
         leftLabel: '使用本機存檔',
         rightLabel: '使用雲端存檔',
         cancelLabel: '取消，先不進入',
@@ -624,12 +661,30 @@
   };
 
   // ----- 管理面板（登入/同步/登出）：掛進 afk-storage.js 的「⚙ 其他功能」選單 ----
+  // 各存檔位的同步狀態列表：不能讓玩家「按了立即同步卻不知道到底同步了哪個、什麼時候」
+  //（2026-07-09 使用者回報）。只列本機有資料的存檔位，空存檔位不顯示、避免洗版。
+  function syncStatusListHTML() {
+    var rows = '';
+    for (var n = 1; n <= 8; n++) {
+      var sum = slotSummary(n);
+      if (!sum) continue;
+      var ts = getLastSyncedAt(n);
+      var isCurrent = (n === currentSlot);
+      rows += '<div class="afk-cloud-card-line">' + (isCurrent ? '👉 ' : '　') + '存檔 ' + n + '　' + esc(sum.cls) + ' Lv.' + esc(String(sum.lv)) +
+        (sum.name ? '　' + esc(sum.name) : '') + '<br>　　' + (ts ? '上次同步：' + esc(fmtTs(ts)) : '尚未同步過') + '</div>';
+    }
+    if (!rows) return '<div class="afk-cloud-hint">目前本機沒有任何存檔位有資料。</div>';
+    return '<div class="afk-cloud-card" style="width:100%;text-align:left;">' +
+      '<div class="afk-cloud-card-title">本機存檔同步狀態</div>' + rows + '</div>';
+  }
+
   function panelBodyHTML() {
     if (!auth.isSignedIn()) {
       return '<button type="button" class="afk-cloud-btn" id="afk-cloud-signin-btn">🔑 使用 Google 帳號登入雲端同步</button>' +
         '<div class="afk-cloud-hint">登入後，家用電腦／手機／筆電用同一個 Google 帳號登入即可自動同步進度。</div>';
     }
     return '<div class="afk-cloud-info">你好，' + esc(auth.getEmail()) + '</div>' +
+      syncStatusListHTML() +
       '<button type="button" class="afk-cloud-btn" id="afk-cloud-sync-btn">☁️ 立即同步</button>' +
       '<button type="button" class="afk-cloud-btn afk-cloud-btn-secondary" id="afk-cloud-restore-btn">📥 從雲端還原到指定存檔位</button>' +
       '<div class="afk-cloud-hint">全新裝置第一次使用時，用這顆把雲端進度拉下來（原本「載入進度」畫面的空存檔位鈕會反灰點不了，所以另外開這條路）。</div>' +
@@ -668,10 +723,11 @@
     var syncBtn = document.getElementById('afk-cloud-sync-btn');
     if (syncBtn) syncBtn.addEventListener('click', function () {
       ui.toast('同步中…');
+      var syncingSlot = currentSlot;
       scheduler.manualSync(syncBtn).then(function (result) {
         if (!result) return;
-        if (result.ok) ui.toast('✅ 已同步完成');
-        else if (result.reason === 'no-data') ui.toast('目前存檔位（' + currentSlot + '）沒有資料，略過同步');
+        if (result.ok) { ui.toast('✅ 存檔位 ' + syncingSlot + ' 已同步完成'); ui.refreshPanel(); }
+        else if (result.reason === 'no-data') ui.toast('目前存檔位（' + syncingSlot + '）沒有資料，略過同步');
         else if (result.cancelled) ui.toast('已取消，未同步');
         // 其餘失敗情況(離線/認證過期/一般錯誤/節流)已由對應流程各自跳過 toast，這裡不重複
       });
@@ -683,7 +739,7 @@
         ui.toast('讀取雲端中…');
         flow.restoreToSlot(slot).then(function (result) {
           if (!result) return;
-          if (result.ok) ui.toast('✅ 已還原到存檔位 ' + slot + '，回主選單「載入進度」即可看到');
+          if (result.ok) { ui.toast('✅ 已還原到存檔位 ' + slot + '，回主選單「載入進度」即可看到'); ui.refreshPanel(); }
           else if (result.reason === 'no-remote') { /* flow.restoreToSlot 已經自己 toast 過 */ }
           else if (result.cancelled) ui.toast('已取消，未還原');
         });
@@ -922,6 +978,8 @@
       if (result.decision !== 'cancel') _chooseSlotOrig.call(window, n);
     });
   };
+
+  try { auth.tryRestoreSession(); } catch (e) {}   // 玩家上次登入過就靜默恢復，不用每次重整都重新登入
 
   console.log('[AFK-cloud-sync] hooks OK — ' + (auth.isConfigured() ? '已設定 Client ID' : '尚未設定 Client ID，僅 exportSave/importSave 補強生效') + '。');
 })();
