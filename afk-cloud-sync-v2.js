@@ -5,14 +5,17 @@
  * 舊版（Google 帳號登入 + 前端直打 Drive API）已停用於 afk-cloud-sync.js.disabled，
  * 兩份文件/兩支外掛設計思路不同，不要混用；本檔沿用舊版已驗證過的部分邏輯
  *（payload 打包/還原、衝突視窗、finish-before-closeLayer 順序鐵則），但簡化成
- *「一個配對碼＝一個綁定存檔位」，且上傳時機只在「正常關閉／登出」，不做閒置補傳/定期同步。
+ *「一個配對碼＝一個綁定存檔位」。
+ *
+ * 2026-07-09 使用者明訂：**純手動**——正常存檔/讀檔/關閉分頁/登出完全不碰雲端，只有玩家主動
+ * 按「產生配對碼」「使用配對碼」「立即上傳」「立即下載」這幾顆按鈕時才會真的連網。不攔截
+ * saveGame/loadGame/chooseSlot，不掛 visibilitychange/beforeunload/pagehide 自動上傳。
  *
  * 玩家不需要登入 Google 帳號，身分綁定＝瀏覽器 localStorage 記住的一組配對碼；換瀏覽器/
  * 清除資料要手動輸入回配對碼，畫面上會提示這個風險。
  *
  * 掛接：在 index.html 的 </body> 前加一行 <script src="afk-cloud-sync-v2.js"></script>，
- *   必須排在 afk-offline.js（4 把輔助鍵/saveGame·loadGame 第一層包裝）、
- *   afk-fixes.js、afk-ui.js（共用 Modal 管理器）、afk-storage.js（⚙ 其他功能選單）之後。
+ *   必須排在 afk-fixes.js、afk-ui.js（共用 Modal 管理器）、afk-storage.js（⚙ 其他功能選單）之後。
  * ========================================================================== */
 (function () {
   'use strict';
@@ -29,16 +32,13 @@
   var FETCH_TIMEOUT_MS = 12000;
 
   // ----- 自我檢查：核心掛點都在才啟用，否則安靜退出（遊戲照常運作） ----------
-  if (typeof window.saveGame !== 'function' ||
-      typeof window.loadGame !== 'function' ||
-      typeof window.chooseSlot !== 'function' ||
-      typeof window.slotSummary !== 'function' ||
+  if (typeof window.slotSummary !== 'function' ||
       typeof window.whKey !== 'function' ||
       typeof window._lzGet !== 'function' ||
       typeof window._lzSet !== 'function' ||
       typeof window._saveWrap !== 'function' ||
       typeof window._saveUnwrap !== 'function') {
-    console.warn('[AFK-cloud-sync-v2] 缺少核心掛點（saveGame/loadGame/chooseSlot/...），雲端同步功能停用。');
+    console.warn('[AFK-cloud-sync-v2] 缺少核心掛點（slotSummary/whKey/_lzGet/...），雲端同步功能停用。');
     return;
   }
   try { void currentSlot; }
@@ -290,19 +290,11 @@
     }).catch(function (err) { console.warn('[AFK-cloud-sync-v2] startupCheck 失敗:', err); });
   };
 
-  // 供「登出/切換裝置」流程在真的離開前呼叫；有自己的短逾時，不無限期卡住離開流程
-  // (afk-mobile.js 早先已埋好 window.AFK_CLOUD.flow.forceSyncBeforeLeave 這個掛勾，見交接紀錄)
-  flow.forceSyncBeforeLeave = function () {
-    if (!cfg.hasPairing()) return Promise.resolve();
-    var attempt = flow.upload('leaving').catch(function () {});
-    var timeout = new Promise(function (resolve) { setTimeout(resolve, 6000); });
-    return Promise.race([attempt, timeout]).catch(function () {});
-  };
-
-  // ----- 上傳時機：只在「正常關閉」與「登出」，不做定期/閒置補傳（規格明訂） --------------
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flow.upload('visibilitychange-hidden'); });
-  window.addEventListener('beforeunload', function () { flow.upload('beforeunload'); });
-  window.addEventListener('pagehide', function () { flow.upload('pagehide'); });
+  // 2026-07-09 使用者明訂：正常遊戲(存檔/讀檔/關閉分頁/登出)一律只碰本機，雲端同步只在玩家
+  // 主動按「產生配對碼」「使用配對碼」「立即上傳」「立即下載」這幾顆按鈕時才會發生。
+  // 因此這裡刻意不掛 visibilitychange/beforeunload/pagehide 自動上傳、不提供
+  // flow.forceSyncBeforeLeave（afk-mobile.js 檢查 AFK_CLOUD.flow.forceSyncBeforeLeave 是否存在
+  // 才呼叫，這裡不定義它，該掛勾會繼續維持沒接上的狀態，等同無操作)。
 
   // ===========================================================================
   // ui：管理面板（產生/輸入配對碼、立即同步、風險提示）+ 衝突視窗 + toast
@@ -521,19 +513,9 @@
   window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
   AFK_SETTINGS.add({ label: '☁️ 配對碼雲端同步', visible: function () { return cfg.isConfigured(); }, onClick: ui.openPanel });
 
-  // ===========================================================================
-  // 疊加 monkey-patch：只觀察，不做決策覆蓋
-  // ===========================================================================
-  // _slotMode 是 js/13-shop-save.js 的 top-level let，不是 window 屬性，同頁其他 classic script
-  // 可用「裸識別字」直接讀（跟 afk-offline.js 讀 state/player/currentSlot 同一招）。
-  var _chooseSlotOrig = window.chooseSlot;
-  window.chooseSlot = function (n) {
-    if (_slotMode !== 'load' || !cfg.hasPairing() || n !== cfg.getBoundSlot()) return _chooseSlotOrig.apply(this, arguments);
-    // 進入綁定存檔位前，先跑一次跟 startupCheck 相同的雲端比對，避免載入到落後的本機進度
-    flow.download(true).then(function () { _chooseSlotOrig.call(window, n); });
-  };
-
-  if (cfg.isConfigured()) { try { flow.startupCheck(); } catch (e) {} }
+  // 2026-07-09 使用者明訂：不攔截 chooseSlot/loadGame，正常存檔/讀檔完全不碰雲端；
+  // 也不在遊戲啟動時自動跑 flow.startupCheck()——雲端同步只在玩家主動按面板按鈕時才發生
+  // (見上面「上傳時機」註解)。flow.startupCheck 仍保留給「使用配對碼」按鈕主動呼叫。
 
   console.log('[AFK-cloud-sync-v2] hooks OK — ' + (cfg.isConfigured() ? '已設定服務網址' : '尚未設定服務網址，僅本機配對碼記錄生效，不會呼叫任何雲端 API') + '。');
 })();
