@@ -4,12 +4,15 @@
  * 設計依據：Lineage/待辦-ClaudeCode/2026-07-09_配對碼雲端存檔同步規格(取代0708版Google登入方案).md
  * 舊版（Google 帳號登入 + 前端直打 Drive API）已停用於 afk-cloud-sync.js.disabled，
  * 兩份文件/兩支外掛設計思路不同，不要混用；本檔沿用舊版已驗證過的部分邏輯
- *（payload 打包/還原、衝突視窗、finish-before-closeLayer 順序鐵則），但簡化成
- *「一個配對碼＝一個綁定存檔位」。
+ *（payload 打包/還原、finish-before-closeLayer 順序鐵則）。
  *
- * 2026-07-09 使用者明訂：**純手動**——正常存檔/讀檔/關閉分頁/登出完全不碰雲端，只有玩家主動
- * 按「產生配對碼」「使用配對碼」「立即上傳」「立即下載」這幾顆按鈕時才會真的連網。不攔截
- * saveGame/loadGame/chooseSlot，不掛 visibilitychange/beforeunload/pagehide 自動上傳。
+ * 2026-07-09 使用者明訂兩條規則：
+ *   1. **純手動**——正常存檔/讀檔/關閉分頁/登出完全不碰雲端，只有玩家主動按「產生配對碼」
+ *      「使用配對碼」「立即上傳」「立即下載」這幾顆按鈕時才會真的連網。不攔截
+ *      saveGame/loadGame/chooseSlot，不掛 visibilitychange/beforeunload/pagehide 自動上傳。
+ *   2. **一個配對碼＝這個玩家帳號的所有存檔位(1~8)**，不綁定單一存檔位——雲端存一份
+ *      「整包文件」（key 是存檔位號碼），上傳/下載都會處理本機所有有資料的存檔位；
+ *      雲端上「本機沒有、別台裝置才有」的存檔位不會被上傳動作誤刪，下載時才會拉下來。
  *
  * 玩家不需要登入 Google 帳號，身分綁定＝瀏覽器 localStorage 記住的一組配對碼；換瀏覽器/
  * 清除資料要手動輸入回配對碼，畫面上會提示這個風險。
@@ -25,8 +28,7 @@
   // 留空時整支外掛對遊戲行為零介入：不掛選單、不攔截任何流程，安靜停用。
   var API_BASE = 'https://cloud-sync-backend-452592311770.asia-east1.run.app';
   var CODE_KEY = 'afk_cloud2_code';          // 玩家的配對碼
-  var SLOT_KEY = 'afk_cloud2_slot';          // 這個配對碼綁定的本機存檔位（1~8）
-  var VER_KEY = 'afk_cloud2_version';        // 最後一次讀取/寫入成功時的雲端 version（樂觀鎖用）
+  var VER_KEY = 'afk_cloud2_version';        // 最後一次讀取/寫入成功時的雲端整包文件 version（樂觀鎖用）
   var HASH_KEY = 'afk_cloud2_hash';          // 對應 VER_KEY 的雲端內容雜湊
   var SYNCED_AT_KEY = 'afk_cloud2_synced_at';
   var FETCH_TIMEOUT_MS = 12000;
@@ -41,14 +43,11 @@
     console.warn('[AFK-cloud-sync-v2] 缺少核心掛點（slotSummary/whKey/_lzGet/...），雲端同步功能停用。');
     return;
   }
-  try { void currentSlot; }
-  catch (e) { console.warn('[AFK-cloud-sync-v2] 缺少核心全域 currentSlot，雲端同步功能停用。'); return; }
 
   var AFK_CLOUD2 = (window.AFK_CLOUD = window.AFK_CLOUD || {});   // 沿用同一個全域掛點名，方便 afk-mobile.js 既有的死碼掛勾重新生效
   AFK_CLOUD2.v2 = true;
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function fmtTs(ts) { if (!ts) return '未知時間'; try { return new Date(ts).toLocaleString(); } catch (e) { return '未知時間'; } }
   function fmtTsShort(ts) {
     if (!ts) return '尚未同步過';
     try { var d = new Date(ts); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
@@ -61,10 +60,8 @@
   var cfg = AFK_CLOUD2.cfg = {};
   cfg.isConfigured = function () { return !!API_BASE; };
   cfg.getCode = function () { return getStr(CODE_KEY); };
-  cfg.getBoundSlot = function () { return getNum(SLOT_KEY) || null; };
-  cfg.hasPairing = function () { return !!(cfg.getCode() && cfg.getBoundSlot()); };
+  cfg.hasPairing = function () { return !!cfg.getCode(); };
   cfg.getVersion = function () { return getNum(VER_KEY); };
-  cfg.getHash = function () { return getStr(HASH_KEY); };
   cfg.getSyncedAt = function () { return getNum(SYNCED_AT_KEY); };
   cfg.rememberSync = function (version, hash) {
     setStr(VER_KEY, String(version || 0));
@@ -72,15 +69,14 @@
     setStr(SYNCED_AT_KEY, String(Date.now()));
   };
   cfg.clearPairing = function () {
-    setStr(CODE_KEY, ''); setStr(SLOT_KEY, ''); setStr(VER_KEY, ''); setStr(HASH_KEY, ''); setStr(SYNCED_AT_KEY, '');
+    setStr(CODE_KEY, ''); setStr(VER_KEY, ''); setStr(HASH_KEY, ''); setStr(SYNCED_AT_KEY, '');
   };
-  cfg.setPairing = function (code, slot) {
-    setStr(CODE_KEY, code); setStr(SLOT_KEY, String(slot));
-    setStr(VER_KEY, ''); setStr(HASH_KEY, ''); setStr(SYNCED_AT_KEY, '');
+  cfg.setPairing = function (code) {
+    setStr(CODE_KEY, code); setStr(VER_KEY, ''); setStr(HASH_KEY, ''); setStr(SYNCED_AT_KEY, '');
   };
 
   // ===========================================================================
-  // payload：打包/還原「存檔位 + 倉庫 + 4 把裝置綁定輔助鍵」（邏輯沿用舊版已驗證過的寫法）
+  // payload：打包/還原「單一存檔位 + 倉庫 + 4 把裝置綁定輔助鍵」，以及整包多存檔位文件
   // ===========================================================================
   var payload = AFK_CLOUD2.payload = {};
   var CLASS_NAME = { knight: '騎士', mage: '法師', elf: '妖精', dark: '黑暗妖精', illusion: '幻術士', dragon: '龍騎士', warrior: '戰士', royal: '王族' };
@@ -136,6 +132,23 @@
   };
   payload.summarizeFromSlot = function (slot) { return payload.summarize(payload.buildPayload(slot)); };
 
+  // 本機所有「有資料」的存檔位號碼（1~8）
+  payload.localSlotNumbers = function () {
+    var arr = [];
+    for (var n = 1; n <= 8; n++) { if (slotSummary(n)) arr.push(n); }
+    return arr;
+  };
+
+  // 打包本機所有有資料的存檔位成一份整包文件：{ "1": payloadObj, "3": payloadObj, ... }
+  payload.buildAllSlotsDoc = function () {
+    var doc = {};
+    payload.localSlotNumbers().forEach(function (n) {
+      var obj = payload.buildPayload(n);
+      if (obj) doc[String(n)] = obj;
+    });
+    return doc;
+  };
+
   // ===========================================================================
   // api：呼叫後端(配對碼) — 全部用 fetch，帶逾時保護；不做背景重試/排隊，失敗直接回錯給呼叫端
   // ===========================================================================
@@ -162,7 +175,7 @@
     }).then(function (data) { return data.code; });
   };
 
-  // 回傳 { exists, save, version, updatedAt, hash } 或查無配對碼時 throw（err.kind='not-found'）
+  // 回傳 { exists, save, version, updatedAt, hash }；save 是整包文件 { "<slot>": payloadObj, ... }
   api.getSave = function (code) {
     return apiFetch('/api/save/' + encodeURIComponent(code), { method: 'GET' }).then(function (res) {
       if (res.status === 404) { var e = new Error('配對碼不存在'); e.kind = 'not-found'; throw e; }
@@ -171,10 +184,10 @@
     });
   };
 
-  // 樂觀鎖寫入。成功回 {ok:true,version,hash,updatedAt}；version 衝突回 {ok:false,conflict:true,remote:{save,version,hash,updatedAt}}
-  api.putSave = function (code, save, version) {
+  // 樂觀鎖寫入整包文件。成功回 {ok:true,version,hash,updatedAt}；version 衝突回 {ok:false,conflict:true,remote:{save,version,hash,updatedAt}}
+  api.putSave = function (code, doc, version) {
     return apiFetch('/api/save/' + encodeURIComponent(code), {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ save: save, version: version })
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ save: doc, version: version })
     }).then(function (res) {
       if (res.status === 409) return res.json().then(function (remote) { return { ok: false, conflict: true, remote: remote }; });
       if (res.status === 404) { var e = new Error('配對碼不存在'); e.kind = 'not-found'; throw e; }
@@ -184,53 +197,10 @@
     });
   };
 
-  // 強制覆蓋：expectedHash 必須是玩家端真的讀過的雲端內容雜湊，防止只靠配對碼亂蓋別人存檔
-  api.forceSave = function (code, save, expectedHash) {
-    return apiFetch('/api/save/' + encodeURIComponent(code) + '/force', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ save: save, expectedHash: expectedHash })
-    }).then(function (res) {
-      if (res.status === 403) throw new Error('雲端內容已被更新，無法強制覆蓋（請重新讀取後再試）');
-      if (!res.ok) throw new Error('強制覆蓋失敗（HTTP ' + res.status + '）');
-      return res.json().then(function (r) { r.ok = true; return r; });
-    });
-  };
-
   // ===========================================================================
-  // flow：串起 api/payload/conflict 視窗的高階流程
+  // flow：串起 api/payload/衝突視窗的高階流程。全部以「整包文件」為單位操作。
   // ===========================================================================
   var flow = AFK_CLOUD2.flow = {};
-
-  // 上傳目前綁定存檔位；衝突時跳視窗讓玩家選：本機覆蓋(強制)/雲端覆蓋本機/取消
-  flow.upload = function (reason) {
-    if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
-    var slot = cfg.getBoundSlot();
-    var obj = payload.buildPayload(slot);
-    if (!obj) return Promise.resolve({ ok: false, reason: 'no-data' });
-    return api.putSave(cfg.getCode(), obj, cfg.getVersion()).then(function (r) {
-      if (r.ok) { cfg.rememberSync(r.version, r.hash); return { ok: true }; }
-      // 衝突：雲端已被別台裝置更新過，跳視窗讓玩家決定（仿 Steam 雲端存檔衝突畫面）
-      var remote = r.remote;
-      return AFK_CLOUD2.ui.showConflictModal({
-        left: { title: '📱 本機存檔（觸發原因：' + reason + '）', summary: payload.summarize(obj) },
-        right: { title: '☁️ 雲端存檔（已被別台裝置更新過）', summary: remote && remote.save ? payload.summarize(remote.save) : null },
-        leftLabel: '仍要用本機覆蓋（危險）',
-        rightLabel: '使用雲端版本（套用到本機）',
-        cancelLabel: '先不同步'
-      }).then(function (choice) {
-        if (choice === 'left') {
-          return api.forceSave(cfg.getCode(), obj, remote.hash).then(function (fr) {
-            cfg.rememberSync(fr.version, fr.hash);
-            return { ok: true, forced: true };
-          });
-        }
-        if (choice === 'right') {
-          if (remote && remote.save) { payload.applyPayload(remote.save, slot); cfg.rememberSync(remote.version, remote.hash); }
-          return { ok: true, downloaded: true };
-        }
-        return { ok: false, cancelled: true };
-      });
-    }).catch(function (err) { return handleErr(err, reason); });
-  };
 
   function handleErr(err, reason) {
     if (err && err.kind === 'network') AFK_CLOUD2.ui.toast('離線中或連線失敗，這次沒能同步（' + reason + '）', 'error');
@@ -239,65 +209,80 @@
     return { ok: false, err: err };
   }
 
-  // 讀取雲端內容並套用到綁定存檔位；needConfirm=true 時，本機該存檔位已有資料才跳視窗二次確認
-  flow.download = function (needConfirm) {
+  // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
+  // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選。
+  flow.uploadAll = function (reason) {
     if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
-    var slot = cfg.getBoundSlot();
+    var localDoc = payload.buildAllSlotsDoc();
+    if (!Object.keys(localDoc).length) return Promise.resolve({ ok: false, reason: 'no-data' });
+    return api.putSave(cfg.getCode(), localDoc, cfg.getVersion()).then(function (r) {
+      if (r.ok) { cfg.rememberSync(r.version, r.hash); return { ok: true }; }
+      var remoteDoc = (r.remote && r.remote.save) || {};
+      var conflicts = [];
+      var merged = {};
+      Object.keys(remoteDoc).forEach(function (k) { merged[k] = remoteDoc[k]; });   // 雲端全部先帶入，別台裝置的存檔位不會憑空消失
+      Object.keys(localDoc).forEach(function (k) {
+        if (!remoteDoc[k]) { merged[k] = localDoc[k]; return; }   // 只有本機有這格，直接併入，不是衝突
+        var lsum = payload.summarize(localDoc[k]);
+        var rsum = payload.summarize(remoteDoc[k]);
+        if (!rsum || !lsum || lsum.ts === rsum.ts) { merged[k] = localDoc[k]; return; }   // 內容一致（或無法比較），直接用本機
+        conflicts.push({ slot: k, localObj: localDoc[k], remoteObj: remoteDoc[k] });
+      });
+      function finalize() {
+        return api.putSave(cfg.getCode(), merged, r.remote.version).then(function (r2) {
+          if (r2.ok) { cfg.rememberSync(r2.version, r2.hash); return { ok: true }; }
+          return { ok: false, reason: 'race', err: new Error('同步時偵測到其他裝置又搶先寫入了一次，請再按一次立即上傳') };
+        });
+      }
+      if (!conflicts.length) return finalize();
+      return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+        conflicts.forEach(function (c) {
+          var choice = decisions[c.slot];
+          if (choice === 'cloud') { merged[c.slot] = c.remoteObj; payload.applyPayload(c.remoteObj, +c.slot); }
+          else if (choice === 'local') { merged[c.slot] = c.localObj; }
+          else { merged[c.slot] = c.remoteObj; }   // 略過：維持雲端現況，不動本機這格
+        });
+        return finalize();
+      });
+    }).catch(function (err) { return handleErr(err, reason); });
+  };
+
+  // 下載雲端整包文件。本機沒有的存檔位直接套用（純獲得，不會有損失）；本機已有且內容不同才是衝突，
+  // 跳批次視窗讓玩家逐格選「用本機(維持不變)/用雲端(套用覆蓋)/略過」。
+  flow.downloadAll = function () {
+    if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
     return api.getSave(cfg.getCode()).then(function (r) {
       if (!r.exists) return { ok: false, reason: 'no-remote' };
-      var localSummary = payload.summarizeFromSlot(slot);
-      if (!needConfirm || !localSummary) {
-        payload.applyPayload(r.save, slot);
-        cfg.rememberSync(r.version, r.hash);
-        return { ok: true };
-      }
-      return AFK_CLOUD2.ui.showConflictModal({
-        left: { title: '📼 目前存檔位 ' + slot, summary: localSummary },
-        right: { title: '☁️ 雲端存檔', summary: r.save ? payload.summarize(r.save) : null },
-        leftLabel: '保留本機（取消還原）',
-        rightLabel: '用雲端覆蓋本機',
-        cancelLabel: '取消'
-      }).then(function (choice) {
-        if (choice !== 'right') return { ok: false, cancelled: true };
-        payload.applyPayload(r.save, slot);
-        cfg.rememberSync(r.version, r.hash);
-        return { ok: true };
+      cfg.rememberSync(r.version, r.hash);
+      var remoteDoc = r.save || {};
+      var conflicts = [];
+      var applied = 0;
+      Object.keys(remoteDoc).forEach(function (k) {
+        var slot = +k;
+        var localSummary = payload.summarizeFromSlot(slot);
+        var remoteSummary = payload.summarize(remoteDoc[k]);
+        if (!localSummary) { payload.applyPayload(remoteDoc[k], slot); applied++; return; }
+        if (!remoteSummary || localSummary.ts === remoteSummary.ts) return;   // 一致，不用動
+        conflicts.push({ slot: k, localObj: payload.buildPayload(slot), remoteObj: remoteDoc[k] });
+      });
+      if (!conflicts.length) return { ok: true, applied: applied };
+      return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+        conflicts.forEach(function (c) {
+          if (decisions[c.slot] === 'cloud') { payload.applyPayload(c.remoteObj, +c.slot); applied++; }
+        });
+        return { ok: true, applied: applied };
       });
     }).catch(function (err) { return handleErr(err, 'download'); });
   };
 
-  // 遊戲啟動時：本機該存檔位若已有資料就悄悄比對時間戳，不同才跳視窗；本機沒資料就直接套用
-  // (規格「讀取時機：遊戲啟動時」)
-  flow.startupCheck = function () {
-    if (!cfg.hasPairing()) return;
-    var slot = cfg.getBoundSlot();
-    api.getSave(cfg.getCode()).then(function (r) {
-      if (!r.exists) return;
-      var localSummary = payload.summarizeFromSlot(slot);
-      if (!localSummary) { payload.applyPayload(r.save, slot); cfg.rememberSync(r.version, r.hash); AFK_CLOUD2.ui.toast('已從雲端還原存檔位 ' + slot); return; }
-      var remoteSummary = r.save ? payload.summarize(r.save) : null;
-      if (!remoteSummary || localSummary.ts === remoteSummary.ts) { cfg.rememberSync(r.version, r.hash); return; }
-      AFK_CLOUD2.ui.showConflictModal({
-        left: { title: '📱 本機存檔 ' + slot, summary: localSummary },
-        right: { title: '☁️ 雲端存檔 ' + slot, summary: remoteSummary },
-        leftLabel: '使用本機存檔',
-        rightLabel: '使用雲端存檔',
-        cancelLabel: '先不處理'
-      }).then(function (choice) {
-        if (choice === 'right') { payload.applyPayload(r.save, slot); cfg.rememberSync(r.version, r.hash); AFK_CLOUD2.ui.toast('已套用雲端存檔'); }
-        else if (choice === 'left') cfg.rememberSync(r.version, r.hash);
-      });
-    }).catch(function (err) { console.warn('[AFK-cloud-sync-v2] startupCheck 失敗:', err); });
-  };
-
   // 2026-07-09 使用者明訂：正常遊戲(存檔/讀檔/關閉分頁/登出)一律只碰本機，雲端同步只在玩家
   // 主動按「產生配對碼」「使用配對碼」「立即上傳」「立即下載」這幾顆按鈕時才會發生。
-  // 因此這裡刻意不掛 visibilitychange/beforeunload/pagehide 自動上傳、不提供
-  // flow.forceSyncBeforeLeave（afk-mobile.js 檢查 AFK_CLOUD.flow.forceSyncBeforeLeave 是否存在
-  // 才呼叫，這裡不定義它，該掛勾會繼續維持沒接上的狀態，等同無操作)。
+  // 因此這裡刻意不掛 visibilitychange/beforeunload/pagehide 自動上傳、不攔截 chooseSlot/loadGame、
+  // 不提供 flow.forceSyncBeforeLeave（afk-mobile.js 檢查 AFK_CLOUD.flow.forceSyncBeforeLeave 是否
+  // 存在才呼叫，這裡不定義它，該掛勾會繼續維持沒接上的狀態，等同無操作)。
 
   // ===========================================================================
-  // ui：管理面板（產生/輸入配對碼、立即同步、風險提示）+ 衝突視窗 + toast
+  // ui：管理面板（產生/輸入配對碼、立即同步、風險提示）+ 批次衝突視窗 + toast
   // ===========================================================================
   var ui = AFK_CLOUD2.ui = {};
 
@@ -324,15 +309,16 @@
       '.afk-cloud2-status.is-err{color:#f87171;}',
       '.afk-cloud2-modal-overlay{position:fixed;inset:0;z-index:1002;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:16px;}',
       '.afk-cloud2-modal-card{width:min(560px,96vw);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6);}',
-      '.afk-cloud2-modal-cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;}',
-      '.afk-cloud2-card{flex:1 1 220px;background:#111c30;border:1px solid #1e293b;border-radius:10px;padding:12px;}',
       '.afk-cloud2-card-title{color:#f8e7bb;font-weight:800;font-size:14px;margin-bottom:8px;}',
       '.afk-cloud2-card-line{color:#e2e8f0;font-size:13.5px;line-height:1.7;}',
-      '.afk-cloud2-card-warn{margin-top:8px;color:#f87171;font-size:12.5px;font-weight:bold;line-height:1.6;}',
       '.afk-cloud2-modal-actions{display:flex;flex-wrap:wrap;gap:8px;}',
-      '.afk-cloud2-choice-btn{flex:1 1 160px;}',
       '.afk-cloud2-spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:afk-cloud2-spin .7s linear infinite;vertical-align:-2px;}',
       '@keyframes afk-cloud2-spin{to{transform:rotate(360deg);}}',
+      // 批次衝突總覽：每列一格存檔位 + 三顆選擇鈕(本機/雲端/略過，不用下拉選單)
+      '.afk-cloud2-batch-row{background:#111c30;border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:10px;}',
+      '.afk-cloud2-batch-choice-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+      '.afk-cloud2-batch-btn{flex:1 1 28%;min-height:38px;padding:6px 8px;font-size:12.5px;opacity:.5;}',
+      '.afk-cloud2-batch-btn.is-active{opacity:1;box-shadow:0 0 0 2px #fff;}',
       '#afk-cloud2-toast-wrap{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99998;display:flex;flex-direction:column;gap:10px;width:min(92vw,460px);pointer-events:none;}',
       '#afk-cloud2-toast-wrap .afk-cloud2-toast{pointer-events:auto;background:rgba(15,23,42,.98);border:1px solid #475569;border-left:5px solid #38bdf8;border-radius:10px;padding:14px 18px;box-shadow:0 10px 34px rgba(0,0,0,.65);color:#f1f5f9;font-size:15px;font-weight:600;line-height:1.55;word-break:break-word;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease;}',
       '#afk-cloud2-toast-wrap .afk-cloud2-toast.in{opacity:1;transform:translateY(0);}',
@@ -360,42 +346,57 @@
     setTimeout(kill, 5000);
   };
 
-  // ----- 衝突視窗（本機/雲端二選一）：finish 先 resolve、closeLayer 後觸發，順序鐵則不可寫反 ---
-  function cardHTML(side, warn) {
-    var s = side.summary;
-    var body = s
-      ? '<div class="afk-cloud2-card-line">' + esc(s.cls) + ' Lv.' + esc(String(s.lv)) + (s.name ? '　' + esc(s.name) : '') + '</div>' +
-        '<div class="afk-cloud2-card-line">更新於：' + esc(fmtTs(s.ts)) + '</div>' +
-        '<div class="afk-cloud2-card-line">地點：' + esc(s.map || '未知') + '</div>'
-      : '<div class="afk-cloud2-card-line">（無資料）</div>';
-    return '<div class="afk-cloud2-card">' + '<div class="afk-cloud2-card-title">' + esc(side.title) + '</div>' + body +
-      (warn ? '<div class="afk-cloud2-card-warn">⚠ 另一台裝置可能正在遊玩中，選它會蓋掉本機</div>' : '') + '</div>';
-  }
-
-  ui.showConflictModal = function (opts) {
+  // ----- 批次衝突總覽（每個衝突的存檔位一列，本機/雲端/略過三選一，全部選完一次送出） -----------
+  // finish 先 resolve（idempotent）、closeLayer 後觸發，順序鐵則不可寫反（沿用舊版踩過的教訓）。
+  ui.showBatchConflictModal = function (conflicts) {
     injectCss();
     return new Promise(function (resolve) {
-      var done = false;
       var overlay = document.createElement('div');
       overlay.className = 'afk-cloud2-modal-overlay';
+      var rows = conflicts.map(function (c) {
+        var ls = payload.summarize(c.localObj);
+        var rs = payload.summarize(c.remoteObj);
+        return '<div class="afk-cloud2-batch-row" data-batch-slot="' + esc(c.slot) + '" data-selected="skip">' +
+          '<div class="afk-cloud2-card-title">存檔 ' + esc(c.slot) + '</div>' +
+          '<div class="afk-cloud2-card-line">📱 本機：' + (ls ? esc(ls.cls) + ' Lv.' + esc(String(ls.lv)) + (ls.name ? '　' + esc(ls.name) : '') : '（無資料）') + '</div>' +
+          '<div class="afk-cloud2-card-line">☁️ 雲端：' + (rs ? esc(rs.cls) + ' Lv.' + esc(String(rs.lv)) + (rs.name ? '　' + esc(rs.name) : '') : '（無資料）') + '</div>' +
+          '<div class="afk-cloud2-batch-choice-group">' +
+            '<button type="button" class="afk-cloud2-btn afk-cloud2-batch-btn" data-choice="local">用本機</button>' +
+            '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary afk-cloud2-batch-btn" data-choice="cloud">用雲端</button>' +
+            '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary afk-cloud2-batch-btn is-active" data-choice="skip">略過</button>' +
+          '</div></div>';
+      }).join('');
       overlay.innerHTML =
         '<div class="afk-cloud2-modal-card">' +
-          '<div class="afk-cloud2-modal-cards">' + cardHTML(opts.left, false) + cardHTML(opts.right, !!opts.warnRight) + '</div>' +
-          '<div class="afk-cloud2-modal-actions">' +
-            '<button type="button" class="afk-cloud2-btn afk-cloud2-choice-btn" data-choice="left">' + esc(opts.leftLabel || '使用左側') + '</button>' +
-            '<button type="button" class="afk-cloud2-btn afk-cloud2-choice-btn" data-choice="right">' + esc(opts.rightLabel || '使用右側') + '</button>' +
-            '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary afk-cloud2-choice-btn" data-choice="cancel">' + esc(opts.cancelLabel || '取消') + '</button>' +
+          '<div class="afk-cloud2-card-title" style="margin-bottom:10px;">以下存檔位偵測到本機與雲端內容不同，逐格選好再一次送出：</div>' +
+          rows +
+          '<div class="afk-cloud2-modal-actions" style="margin-top:6px;">' +
+            '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-batch-submit">確認送出</button>' +
+            '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-batch-cancel">全部略過</button>' +
           '</div>' +
         '</div>';
       document.body.appendChild(overlay);
-      function finish(choice) { if (done) return; done = true; if (overlay.parentNode) overlay.parentNode.removeChild(overlay); resolve(choice); }
-      var layer = window.AFK_UI ? AFK_UI.openLayer(function () { finish('cancel'); }) : null;
+      var done = false;
+      function finish(decisions) { if (done) return; done = true; if (overlay.parentNode) overlay.parentNode.removeChild(overlay); resolve(decisions); }
+      var layer = window.AFK_UI ? AFK_UI.openLayer(function () { finish({}); }) : null;
       overlay.addEventListener('click', function (e) {
-        var btn = e.target.closest ? e.target.closest('[data-choice]') : null;
-        var choice = btn ? btn.getAttribute('data-choice') : (e.target === overlay ? 'cancel' : null);
-        if (!choice) return;
-        finish(choice);   // 先 resolve（idempotent），再退歷史一格；layer 的 closeFn 之後才觸發也會被 done 擋掉
-        if (layer && window.AFK_UI) AFK_UI.closeLayer(layer);
+        var choiceBtn = e.target.closest ? e.target.closest('[data-choice]') : null;
+        if (choiceBtn) {
+          var row = choiceBtn.closest('.afk-cloud2-batch-row');
+          row.setAttribute('data-selected', choiceBtn.getAttribute('data-choice'));
+          Array.prototype.forEach.call(row.querySelectorAll('.afk-cloud2-batch-btn'), function (b) { b.classList.toggle('is-active', b === choiceBtn); });
+          return;
+        }
+        if (e.target.id === 'afk-cloud2-batch-submit' || e.target.id === 'afk-cloud2-batch-cancel') {
+          var decisions = {};
+          if (e.target.id === 'afk-cloud2-batch-submit') {
+            Array.prototype.forEach.call(overlay.querySelectorAll('.afk-cloud2-batch-row'), function (row) {
+              decisions[row.getAttribute('data-batch-slot')] = row.getAttribute('data-selected');
+            });
+          }
+          finish(decisions);   // 先 resolve，再退歷史一格；layer 的 closeFn 之後才觸發也會被 done 擋掉
+          if (layer && window.AFK_UI) AFK_UI.closeLayer(layer);
+        }
       });
     });
   };
@@ -404,19 +405,21 @@
   function panelBodyHTML() {
     if (!cfg.hasPairing()) {
       return '<div class="afk-cloud2-warn">換瀏覽器、清除瀏覽器資料、使用無痕模式，都會讀不到本機記住的配對碼。<br>產生配對碼後請記下來（建議截圖或抄下），換裝置/換瀏覽器需要手動輸入這組碼才能接回進度。</div>' +
-        '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-new-btn">🆕 產生新配對碼（綁定目前存檔位 ' + currentSlot + '）</button>' +
+        '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-new-btn">🆕 產生新配對碼</button>' +
         '<div class="afk-cloud2-hint">或者，如果你已經有配對碼（例如在其他裝置產生過）：</div>' +
         '<input type="text" class="afk-cloud2-input" id="afk-cloud2-input" placeholder="輸入配對碼" maxlength="12" />' +
-        '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-use-btn">使用這組配對碼（綁定目前存檔位 ' + currentSlot + '）</button>';
+        '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-use-btn">使用這組配對碼</button>';
     }
     var syncedAt = cfg.getSyncedAt();
+    var slots = payload.localSlotNumbers();
+    var slotsText = slots.length ? ('本機有資料的存檔位：' + slots.join('、')) : '本機目前沒有任何存檔位有資料';
     return '<div class="afk-cloud2-code">' + esc(cfg.getCode()) + '</div>' +
-      '<div class="afk-cloud2-info">已綁定存檔位 ' + cfg.getBoundSlot() + '</div>' +
+      '<div class="afk-cloud2-info">' + esc(slotsText) + '</div>' +
       '<div class="afk-cloud2-status" id="afk-cloud2-status">上次同步：' + esc(fmtTsShort(syncedAt)) + '</div>' +
-      '<div class="afk-cloud2-hint">正常關閉遊戲或按下方「登出」時會自動同步；也可以隨時手動立即同步。</div>' +
-      '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-upload-btn">⬆️ 立即上傳到雲端</button>' +
-      '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-download-btn">⬇️ 從雲端下載到本機</button>' +
-      '<div class="afk-cloud2-warn">請先正常退出遊戲以同步最新進度，再到其他裝置登入。</div>' +
+      '<div class="afk-cloud2-hint">同步涵蓋所有存檔位(1~8)，只有按下面按鈕才會連網；別台裝置才有的存檔位不會被上傳動作誤刪。</div>' +
+      '<button type="button" class="afk-cloud2-btn" id="afk-cloud2-upload-btn">⬆️ 立即上傳全部存檔位</button>' +
+      '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-download-btn">⬇️ 立即下載全部存檔位</button>' +
+      '<div class="afk-cloud2-warn">請先正常退出遊戲以確保進度已寫入本機存檔，再手動按上傳。</div>' +
       '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary" id="afk-cloud2-forget-btn">忘記這組配對碼（換裝置用）</button>';
   }
 
@@ -434,11 +437,11 @@
     if (newBtn) newBtn.addEventListener('click', function () {
       newBtn.disabled = true; newBtn.innerHTML = '<span class="afk-cloud2-spin"></span> 產生中…';
       api.newCode().then(function (code) {
-        cfg.setPairing(code, currentSlot);
+        cfg.setPairing(code);
         ui.toast('已產生配對碼，請記下來！', 'success');
         ui.refreshPanel();
-        flow.upload('pairing-created');
-      }).catch(function (err) { newBtn.disabled = false; newBtn.innerHTML = '🆕 產生新配對碼（綁定目前存檔位 ' + currentSlot + '）'; ui.toast('產生配對碼失敗：' + err.message, 'error'); });
+        flow.uploadAll('pairing-created').then(function (r) { if (r && r.ok) ui.toast('已將本機存檔上傳到這組配對碼', 'success'); });
+      }).catch(function (err) { newBtn.disabled = false; newBtn.innerHTML = '🆕 產生新配對碼'; ui.toast('產生配對碼失敗：' + err.message, 'error'); });
     });
 
     var useBtn = document.getElementById('afk-cloud2-use-btn');
@@ -447,21 +450,23 @@
       var code = (input && input.value || '').trim().toUpperCase();
       if (!code) { ui.toast('請先輸入配對碼'); return; }
       useBtn.disabled = true; useBtn.innerHTML = '<span class="afk-cloud2-spin"></span> 讀取中…';
-      cfg.setPairing(code, currentSlot);
-      flow.startupCheck();
-      // startupCheck 是背景 fire-and-forget（沿用遊戲啟動時的邏輯，這裡是「輸入配對碼」這個等價時機），
-      // 面板本身先切換到已綁定狀態，讓玩家看到目前狀態，實際比對結果由 toast/衝突視窗呈現。
-      ui.refreshPanel();
+      cfg.setPairing(code);
+      flow.downloadAll().then(function (r) {
+        ui.refreshPanel();
+        if (r && r.ok) ui.toast('✅ 已從雲端同步 ' + (r.applied || 0) + ' 個存檔位', 'success');
+        else if (r && r.reason === 'no-remote') ui.toast('這組配對碼雲端還沒有任何存檔');
+        else ui.toast('讀取失敗，請確認配對碼是否正確', 'error');
+      });
     });
 
     var uploadBtn = document.getElementById('afk-cloud2-upload-btn');
     if (uploadBtn) uploadBtn.addEventListener('click', function () {
       uploadBtn.disabled = true; setStatus('同步中…');
-      flow.upload('manual').then(function (r) {
+      flow.uploadAll('manual').then(function (r) {
         uploadBtn.disabled = false;
-        if (r && r.ok) { ui.toast('✅ 已上傳到雲端', 'success'); ui.refreshPanel(); }
-        else if (r && r.reason === 'no-data') setStatus('綁定的存檔位 ' + cfg.getBoundSlot() + ' 目前沒有角色資料，尚無需同步', true);
-        else if (r && r.cancelled) setStatus('已取消');
+        if (r && r.ok) { ui.toast('✅ 已上傳全部存檔位到雲端', 'success'); ui.refreshPanel(); }
+        else if (r && r.reason === 'no-data') setStatus('本機目前沒有任何存檔位有資料，尚無需同步', true);
+        else if (r && r.reason === 'race') setStatus(r.err.message, true);
         else setStatus('同步失敗', true);
       });
     });
@@ -469,11 +474,10 @@
     var downloadBtn = document.getElementById('afk-cloud2-download-btn');
     if (downloadBtn) downloadBtn.addEventListener('click', function () {
       downloadBtn.disabled = true; setStatus('讀取雲端中…');
-      flow.download(true).then(function (r) {
+      flow.downloadAll().then(function (r) {
         downloadBtn.disabled = false;
-        if (r && r.ok) { ui.toast('✅ 已從雲端下載到本機', 'success'); ui.refreshPanel(); }
+        if (r && r.ok) { ui.toast('✅ 已從雲端同步 ' + (r.applied || 0) + ' 個存檔位', 'success'); ui.refreshPanel(); }
         else if (r && r.reason === 'no-remote') setStatus('雲端尚無資料', true);
-        else if (r && r.cancelled) setStatus('已取消');
         else setStatus('下載失敗', true);
       });
     });
@@ -512,10 +516,6 @@
   // ----- 掛進首頁「⚙ 其他功能」選單（由 afk-storage.js 渲染；未設定 API_BASE 時完全不出現） ---
   window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
   AFK_SETTINGS.add({ label: '☁️ 配對碼雲端同步', visible: function () { return cfg.isConfigured(); }, onClick: ui.openPanel });
-
-  // 2026-07-09 使用者明訂：不攔截 chooseSlot/loadGame，正常存檔/讀檔完全不碰雲端；
-  // 也不在遊戲啟動時自動跑 flow.startupCheck()——雲端同步只在玩家主動按面板按鈕時才發生
-  // (見上面「上傳時機」註解)。flow.startupCheck 仍保留給「使用配對碼」按鈕主動呼叫。
 
   console.log('[AFK-cloud-sync-v2] hooks OK — ' + (cfg.isConfigured() ? '已設定服務網址' : '尚未設定服務網址，僅本機配對碼記錄生效，不會呼叫任何雲端 API') + '。');
 })();
