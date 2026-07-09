@@ -125,6 +125,21 @@
     } catch (e) { console.warn('[AFK-cloud-sync-v2] applyPayload 失敗:', e); return false; }
   };
 
+  // 套用「整包多存檔位文件」裡的其中一個存檔位（存檔+afk輔助鍵+對應倉庫，倉庫從 doc.warehouses
+  // 依 whKey(save.p) 查表取得，因為文件裡倉庫是去重過的，不是每個存檔位各存一份）
+  payload.applySlotFromDoc = function (slot, doc) {
+    var entry = doc && doc.slots && doc.slots[String(slot)];
+    if (!entry || !entry.save) return false;
+    try {
+      _lzSet('lineage_idle_save_' + slot, _saveWrap(JSON.stringify(entry.save)));
+      payload.writeAfkKeys(slot, entry.afk);
+      var key = whKey(entry.save.p);
+      var wh = doc.warehouses && doc.warehouses[key];
+      if (wh) _lzSet(key, JSON.stringify(wh));
+      return true;
+    } catch (e) { console.warn('[AFK-cloud-sync-v2] applySlotFromDoc 失敗:', e); return false; }
+  };
+
   payload.summarize = function (obj) {
     if (!obj || !obj.save || !obj.save.p) return null;
     var p = obj.save.p;
@@ -139,14 +154,21 @@
     return arr;
   };
 
-  // 打包本機所有有資料的存檔位成一份整包文件：{ "1": payloadObj, "3": payloadObj, ... }
+  // 打包本機所有有資料的存檔位成一份整包文件：{ slots: { "1": {slot,save,afk,packedAt}, ... },
+  //   warehouses: { "<whKey>": whObj, ... } }。
+  // 倉庫依模式共用（同模式的存檔位共用同一份倉庫），去重存一份、slot 內不重複內嵌，
+  // 避免多個存檔位共用同一份倉庫時被原封不動複製 N 份，把上傳內容撐爆 413（踩過 2026-07-09）。
   payload.buildAllSlotsDoc = function () {
-    var doc = {};
+    var slots = {};
+    var warehouses = {};
     payload.localSlotNumbers().forEach(function (n) {
       var obj = payload.buildPayload(n);
-      if (obj) doc[String(n)] = obj;
+      if (!obj) return;
+      var key = whKey(obj.save.p);
+      if (obj.wh) warehouses[key] = obj.wh;
+      slots[String(n)] = { slot: obj.slot, save: obj.save, afk: obj.afk, packedAt: obj.packedAt };
     });
-    return doc;
+    return { slots: slots, warehouses: warehouses };
   };
 
   // ===========================================================================
@@ -209,24 +231,33 @@
     return { ok: false, err: err };
   }
 
+  function emptyDoc() { return { slots: {}, warehouses: {} }; }
+
   // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
-  // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選。
+  // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選；
+  // 倉庫（依模式共用）跟著它所屬的存檔位決定一起用哪一邊，不需要另外問。
   flow.uploadAll = function (reason) {
     if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
     var localDoc = payload.buildAllSlotsDoc();
-    if (!Object.keys(localDoc).length) return Promise.resolve({ ok: false, reason: 'no-data' });
+    if (!Object.keys(localDoc.slots).length) return Promise.resolve({ ok: false, reason: 'no-data' });
     return api.putSave(cfg.getCode(), localDoc, cfg.getVersion()).then(function (r) {
       if (r.ok) { cfg.rememberSync(r.version, r.hash); return { ok: true }; }
-      var remoteDoc = (r.remote && r.remote.save) || {};
+      var remoteDoc = (r.remote && r.remote.save) || emptyDoc();
+      var remoteSlots = remoteDoc.slots || {};
+      var remoteWh = remoteDoc.warehouses || {};
+      var localSlots = localDoc.slots;
+      var localWh = localDoc.warehouses;
       var conflicts = [];
-      var merged = {};
-      Object.keys(remoteDoc).forEach(function (k) { merged[k] = remoteDoc[k]; });   // 雲端全部先帶入，別台裝置的存檔位不會憑空消失
-      Object.keys(localDoc).forEach(function (k) {
-        if (!remoteDoc[k]) { merged[k] = localDoc[k]; return; }   // 只有本機有這格，直接併入，不是衝突
-        var lsum = payload.summarize(localDoc[k]);
-        var rsum = payload.summarize(remoteDoc[k]);
-        if (!rsum || !lsum || lsum.ts === rsum.ts) { merged[k] = localDoc[k]; return; }   // 內容一致（或無法比較），直接用本機
-        conflicts.push({ slot: k, localObj: localDoc[k], remoteObj: remoteDoc[k] });
+      var merged = emptyDoc();
+      Object.keys(remoteSlots).forEach(function (k) { merged.slots[k] = remoteSlots[k]; });     // 雲端全部先帶入，別台裝置的存檔位不會憑空消失
+      Object.keys(remoteWh).forEach(function (k) { merged.warehouses[k] = remoteWh[k]; });
+      Object.keys(localSlots).forEach(function (k) {
+        var key = whKey(localSlots[k].save.p);
+        if (!remoteSlots[k]) { merged.slots[k] = localSlots[k]; if (localWh[key]) merged.warehouses[key] = localWh[key]; return; }   // 只有本機有這格，不是衝突
+        var lsum = payload.summarize(localSlots[k]);
+        var rsum = payload.summarize(remoteSlots[k]);
+        if (!rsum || !lsum || lsum.ts === rsum.ts) { merged.slots[k] = localSlots[k]; if (localWh[key]) merged.warehouses[key] = localWh[key]; return; }   // 內容一致（或無法比較），直接用本機
+        conflicts.push({ slot: k, whKeyStr: key, localObj: localSlots[k], remoteObj: remoteSlots[k] });
       });
       function finalize() {
         return api.putSave(cfg.getCode(), merged, r.remote.version).then(function (r2) {
@@ -238,9 +269,15 @@
       return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
         conflicts.forEach(function (c) {
           var choice = decisions[c.slot];
-          if (choice === 'cloud') { merged[c.slot] = c.remoteObj; payload.applyPayload(c.remoteObj, +c.slot); }
-          else if (choice === 'local') { merged[c.slot] = c.localObj; }
-          else { merged[c.slot] = c.remoteObj; }   // 略過：維持雲端現況，不動本機這格
+          if (choice === 'cloud') {
+            merged.slots[c.slot] = c.remoteObj;
+            if (remoteWh[c.whKeyStr]) merged.warehouses[c.whKeyStr] = remoteWh[c.whKeyStr];
+            payload.applySlotFromDoc(+c.slot, remoteDoc);
+          } else if (choice === 'local') {
+            merged.slots[c.slot] = c.localObj;
+            if (localWh[c.whKeyStr]) merged.warehouses[c.whKeyStr] = localWh[c.whKeyStr];
+          }
+          // 略過：merged.slots/warehouses 維持一開始從遠端帶入的值，不動本機這格
         });
         return finalize();
       });
@@ -254,21 +291,22 @@
     return api.getSave(cfg.getCode()).then(function (r) {
       if (!r.exists) return { ok: false, reason: 'no-remote' };
       cfg.rememberSync(r.version, r.hash);
-      var remoteDoc = r.save || {};
+      var remoteDoc = r.save || emptyDoc();
+      var remoteSlots = remoteDoc.slots || {};
       var conflicts = [];
       var applied = 0;
-      Object.keys(remoteDoc).forEach(function (k) {
+      Object.keys(remoteSlots).forEach(function (k) {
         var slot = +k;
         var localSummary = payload.summarizeFromSlot(slot);
-        var remoteSummary = payload.summarize(remoteDoc[k]);
-        if (!localSummary) { payload.applyPayload(remoteDoc[k], slot); applied++; return; }
+        var remoteSummary = payload.summarize(remoteSlots[k]);
+        if (!localSummary) { payload.applySlotFromDoc(slot, remoteDoc); applied++; return; }
         if (!remoteSummary || localSummary.ts === remoteSummary.ts) return;   // 一致，不用動
-        conflicts.push({ slot: k, localObj: payload.buildPayload(slot), remoteObj: remoteDoc[k] });
+        conflicts.push({ slot: k, localObj: payload.buildPayload(slot), remoteObj: remoteSlots[k] });
       });
       if (!conflicts.length) return { ok: true, applied: applied };
       return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
         conflicts.forEach(function (c) {
-          if (decisions[c.slot] === 'cloud') { payload.applyPayload(c.remoteObj, +c.slot); applied++; }
+          if (decisions[c.slot] === 'cloud') { payload.applySlotFromDoc(+c.slot, remoteDoc); applied++; }
         });
         return { ok: true, applied: applied };
       });
