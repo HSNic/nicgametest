@@ -93,7 +93,7 @@ function renderRelicBook() {
             : `<div class="text-xs font-bold text-slate-500">？？？</div>`;
         return `<div class="relative bg-slate-800/70 border ${got ? 'border-sky-700/70' : 'border-slate-700/60'} rounded-lg p-2 flex flex-col items-center gap-1 w-[112px]${got ? ' tip-host cursor-help' : ''}"${got ? ` data-tip-id="${id}"` : ''}>
             ${got ? '<span class="absolute top-1 right-1 text-[9px] px-1 rounded c-relic bg-black/50 font-bold">遺物</span>' : ''}
-            <img src="${imgUrl}" alt="${d.n}" class="w-14 h-14 object-contain${got ? ' relic-glow' : ''}${silh}" onerror="this.onerror=null;this.src='https://placehold.co/56x56/1e293b/334155?text=%3F';">
+            ${got ? '<span class="relic-glow-wrap">' : ''}<img src="${imgUrl}" alt="${d.n}" class="w-14 h-14 object-contain${got ? ' relic-glow' : ''}${silh}" onerror="this.onerror=null;this.src='https://placehold.co/56x56/1e293b/334155?text=%3F';">${got ? '</span>' : ''}
             <div class="text-center w-full">${nameHtml}</div>
         </div>`;
     }).join('');

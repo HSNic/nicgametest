@@ -3,14 +3,15 @@ function summonAttack(sm, owner) {
     if(!sm) return;
     let t = getTarget(); if(!t) return;
     let cha = (owner.d && owner.d.cha) || 0;
+    let _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(owner) : { dmg: 0, hit: 0 };   // 🏺 喚獸師的訓練鞭：召喚物額外傷害/命中（掃 owner 裝備欄）
     let idx = mapState.mobs.findIndex(m => m && m.uid === t.uid);
 
     // === 迷魅術：被迷魅怪物（單次攻擊，額外獲得 =魅力 的命中與傷害）===
     if(sm.skId === 'sk_charm') {
-        let hv = Math.max(1, Math.min(20, owner.lv + sm.hitBonus + cha - t.lv + mobEffAC(t) + (hasSummonCtrlRing(owner) ? 5 : 0)));   // 🔧 召喚控制戒指：召喚物命中+5
+        let hv = Math.max(1, Math.min(20, owner.lv + sm.hitBonus + cha - t.lv + mobEffAC(t) + _sgb.hit + (hasSummonCtrlRing(owner) ? 5 : 0)));   // 🔧 召喚控制戒指：召喚物命中+5；🏺 喚獸師鞭 +命中
         let r = roll(1, 20);
         if(!((r === 20) || (r !== 1 && hv >= r) || (r === 19 && hasSummonCtrlRing(owner)))) { logCombat(`${sm.n} 的攻擊未命中。`, 'miss'); return; }
-        let dmg = Math.max(1, roll(sm.dmgDice[0], sm.dmgDice[1]) + cha - (t.dr || 0));
+        let dmg = Math.max(1, roll(sm.dmgDice[0], sm.dmgDice[1]) + cha + _sgb.dmg - (t.dr || 0));
         t.justHit = 'normal'; t.curHp -= dmg; mobWake(t);
         logCombat(`<span class="text-purple-300">${sm.n}</span> 攻擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg} 點傷害。`, 'player');
         if(t.curHp <= 0 && idx !== -1) killMob(idx); else renderMobs();
@@ -29,18 +30,18 @@ function summonAttack(sm, owner) {
     for(let i = 0; i < hits; i++) {
         if(t.curHp <= 0) break;
         // 命中值 = 召喚者等級 + 偏移 + 魅力 - 目標等級 + 目標AC（d20）
-        let hv = Math.max(1, Math.min(20, owner.lv + hitLvOff + chaEff - t.lv + mobEffAC(t) + (hasSummonCtrlRing(owner) ? 5 : 0)));   // 🔧 召喚控制戒指：召喚物命中+5
+        let hv = Math.max(1, Math.min(20, owner.lv + hitLvOff + chaEff - t.lv + mobEffAC(t) + _sgb.hit + (hasSummonCtrlRing(owner) ? 5 : 0)));   // 🔧 召喚控制戒指：召喚物命中+5；🏺 喚獸師鞭 +命中
         let r = roll(1, 20);
         if(!((r === 20) || (r !== 1 && hv >= r) || (r === 19 && hasSummonCtrlRing(owner)))) { logCombat(`${sm.n} 的攻擊未命中。`, 'miss'); continue; }
         let dmg;
         if(sm.kind === 'ranged') {
             let flat = Math.floor(cha * owner.lv / (sm.elemScale || 20));   // 屬性精靈：魅力 x (等級/scale)
-            dmg = summonElementDamage(sm.dmgDice, sm.ele, t, flat);
+            dmg = summonElementDamage(sm.dmgDice, sm.ele, t, flat + _sgb.dmg);
             t.justHit = sm.ele !== 'none' ? sm.ele : 'magic';
         } else {
             let flatBase = chaEff / (sm.dmgDiv || 5);                          // 近戰固定加成基底 = 魅力/dmgDiv（🏅 召喚精通 ×1.2）
             let flat = sm.dmgLvDiv ? Math.floor(flatBase * (1 + owner.lv / sm.dmgLvDiv)) : Math.floor(flatBase);   // 造屍術等具 dmgLvDiv：再乘上 (1+召喚者等級/dmgLvDiv)
-            dmg = Math.max(1, roll(sm.dmgDice[0], sm.dmgDice[1]) + flat - (t.dr || 0) - mobHardSkin(t));   // 🔧 硬皮：額外物理減傷（召喚物近戰；但不消磨硬皮值）
+            dmg = Math.max(1, roll(sm.dmgDice[0], sm.dmgDice[1]) + flat + _sgb.dmg - (t.dr || 0) - mobHardSkin(t));   // 🔧 硬皮：額外物理減傷（召喚物近戰；但不消磨硬皮值）；🏺 喚獸師鞭 +傷害
             t.justHit = 'normal';
         }
         t.curHp -= dmg; mobWake(t);
@@ -177,6 +178,7 @@ function manualCast(skId) {
     if (player._setIllusion3 && isSupportSkill(sk)) cost = Math.max(1, Math.ceil(cost / 2));   // 🔮 幻覺3/5：輔助技能 MP 消耗 -50%
     if (cost > 0 && player.cls === 'elf' && hasMastery('e_magic') && sk.ele && sk.ele !== 'none' && sk.ele === player.elfEle) cost = Math.max(1, Math.ceil(cost * 0.5));   // 🏅 魔導精通：同屬性魔法消耗MP -50%(2026-07 30%→50%)
     if ((sk.n === '加速術' || sk.n === '強力加速術') && playerHasWindHelm()) cost = 0;   // 🏝️ 風之頭盔：加速術/強力加速術免MP（裝備或放在背包皆可）
+    if (sk.n === '寒冰氣息' && player.eq && player.eq.wpn && DB.items[player.eq.wpn.id] && DB.items[player.eq.wpn.id].freeChill) cost = 0;   // ❄️ 殘冰的死亡氣息：施放寒冰氣息不消耗 MP
     if(player.mp < cost) { logSys('MP 不足。'); return; }
     if(sk.hpCost && player.hp <= sk.hpCost) { logSys('HP 不足。'); return; }
 
@@ -261,6 +263,8 @@ function royalMagicFreeCast() {
     _royalFreeCast = true;
     try { castSkill(_id); } finally { _royalFreeCast = false; }
 }
+let _silenceLogAt = 0;   // ⏱️ 沉默／魔法封印提示節流：自動施法每 tick 會重試→原本每 tick 洗一次頻。共用時間戳，最多每 1 秒顯示 1 次。
+function _logSilenceOnce(msg){ let now = (typeof Date !== 'undefined') ? Date.now() : 0; if(now - _silenceLogAt < 1000) return; _silenceLogAt = now; logSys(msg); }
 function castSkillInner(skId) {
     let sk = DB.skills[skId];
     if(!sk) return false;
@@ -269,11 +273,11 @@ function castSkillInner(skId) {
     if(skId === 'sk_magic_shield' && (player.magicShieldCd || 0) > 0) return false;   // 魔法屏障抵擋技能後冷卻中，無法施放
     
     if(player.statuses.silence > 0) {   // 🔧 沉默：所有魔法皆無法施放（含魔法相消術——只有沉默/魔法封印能擋下相消術）
-        logSys(`沉默狀態中，無法施展魔法。`);
+        _logSilenceOnce(`沉默狀態中，無法施展魔法。`);   // ⏱️ 節流：最多每秒 1 次，避免自動施法洗頻
         return false;
     }
     if(player.statuses.magicseal > 0) {   // 🔧 魔法封印（怪物技能「沉默」所施加）：同上，魔法相消術亦遭封印
-        logSys(`魔法封印狀態中，無法施展技能。`);
+        _logSilenceOnce(`魔法封印狀態中，無法施展技能。`);   // ⏱️ 節流：共用沉默時間戳
         return false;
     }
     
@@ -307,6 +311,7 @@ function castSkillInner(skId) {
     if (player._setIllusion3 && isSupportSkill(sk)) cost = Math.max(1, Math.ceil(cost / 2));   // 🔮 幻覺3/5：輔助技能 MP 消耗 -50%
     if (cost > 0 && player.cls === 'elf' && hasMastery('e_magic') && sk.ele && sk.ele !== 'none' && sk.ele === player.elfEle) cost = Math.max(1, Math.ceil(cost * 0.5));   // 🏅 魔導精通：同屬性魔法消耗MP -50%(2026-07 30%→50%)
     if ((sk.n === '加速術' || sk.n === '強力加速術') && playerHasWindHelm()) cost = 0;   // 🏝️ 風之頭盔：加速術/強力加速術免MP（裝備或放在背包皆可）
+    if (sk.n === '寒冰氣息' && player.eq && player.eq.wpn && DB.items[player.eq.wpn.id] && DB.items[player.eq.wpn.id].freeChill) cost = 0;   // ❄️ 殘冰的死亡氣息：施放寒冰氣息不消耗 MP
     if (_echoFree) cost = 0;   // 🏅 迴響精通：連發那次不消耗 MP
     if (_royalFreeCast) cost = 0;   // 👑 魔法精通：免費額外施放選定攻擊技
     if (sk.throwAxe && hasMastery('k_dualaxe')) cost = 0;   // ⚔️ 雙斧精通：戰斧投擲不消耗 MP
@@ -531,6 +536,7 @@ function castSkillInner(skId) {
                 if(!res.hit) { hitsLog.push('Miss'); continue; }
                 landed++;
                 if(sk.skillAddDmg) res.dmg = Math.max(1, res.dmg + sk.skillAddDmg);   // ⚔️ 衝擊之暈：一般攻擊傷害 +10
+                if(skId === 'sk_elf_triple' && wpn && wpn.fullHpMultTriple && t.curHp === t.hp) res.dmg = Math.max(1, Math.floor(res.dmg * wpn.fullHpMultTriple));   // 🏺 遺忘者的狙擊弓：三重矢對滿血敵人傷害 ×2（僅第一箭·命中後 curHp 已降·gate skId 避免衝擊之暈共用此迴圈時誤觸）
                 // 🔮 紅獅 5/5 已於 getPhysicalDmg 內套用（避免重複），此處不再乘
                 // 遠距離物理技能命中滿血被動怪物，賦予 3 秒延遲（整段只觸發一次）
                 if(!delayDone && t.curHp === t.hp && t.beh === '被動' && res.ranged) { t._delayTicks = 30; delayDone = true; }

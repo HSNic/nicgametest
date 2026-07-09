@@ -201,6 +201,7 @@
                 img.alt = data.n || pos.k;
                 img.draggable = false;
                 img.onerror = function () { this.style.display = 'none'; };
+                if (typeof isRelic === 'function' && isRelic(data)) img.classList.add('relic-glow');   // 🏺 已裝備遺物：藍光呼吸＋星芒（與背包一致）
                 slot.appendChild(img);
                 if (item.en) {
                     const badge = document.createElement('span');

@@ -871,6 +871,14 @@ function vfxPlayerHit(dmg) {
         if (bar) { bar.classList.remove('vfx-hurt'); void bar.offsetWidth; bar.classList.add('vfx-hurt'); bar.addEventListener('animationend', () => bar.classList.remove('vfx-hurt'), { once: true }); }
     } catch (e) {}
 }
+// 🗡️ 怪物施法震動（死亡騎士施法時整個戰場輕微震動·cosmetic-only·吃 __vfxOff·重用 vfx-shake 動畫）
+function vfxCastShake() {
+    try {
+        if (window.__vfxOff) return;
+        let bv = document.getElementById('battle-view');
+        if (bv) { bv.classList.remove('vfx-shake'); void bv.offsetWidth; bv.classList.add('vfx-shake'); bv.addEventListener('animationend', () => bv.classList.remove('vfx-shake'), { once: true }); }
+    } catch (e) {}
+}
 
 // 🎚️ 戰鬥特效開關（僅標題畫面提供；遊戲中不再出現）：玩家選擇持久化於 localStorage，載入時套用到 window.__vfxOff
 const _VFX_PREF_KEY = 'lineage_vfx_off';
@@ -915,6 +923,7 @@ if (typeof castSkill === 'function' && !castSkill._vfxWrapped) {
     castSkill = function (skId) {
         let sk = DB.skills[skId];
         let _pele = (sk && sk.ele && sk.ele !== 'none' && !sk.weaponDmg && !sk.throwAxe) ? sk.ele : (sk ? _VFX_PROJECTILE_SKILLS[skId] : null);   // 屬性攻擊魔法 ＋ 白名單投射技能(光箭/究極光裂/心靈破壞/三重矢/戰斧投擲)
+        if (_pele && sk && typeof SPELL_FX !== 'undefined' && SPELL_FX[sk.n]) _pele = null;   // 🎯 v3.1.29 有「動態圖投射物」(proj·光箭/冰箭/火箭)→免 CSS 投射；v3.1.31 放寬（用戶：究極光裂術有動態動畫也不用）＝技能只要有註冊任何 SPELL_FX 動態特效（含目標身上型 h/w）就不播 CSS 投射·只有「完全沒有動態特效」的技能保留 CSS 投射視覺
         let proj = !window.__vfxOff && !!_pele;
         let before = null;
         if (proj) { before = mapState.mobs.map(m => (m && !m._dead) ? { uid: m.uid, hp: m.curHp, rect: _vfxSlotRect(m.uid) } : null); }
@@ -941,6 +950,7 @@ function _renderMobsImpl() {
     _initMobListGuard();
     if(_mobPointerDown) { _mobRebuildPending = true; return; }   // 🚀 按住怪物卡期間延後重繪→點擊切換目標不被中斷
     let _slotHtmls = [], _forceHit = [];   // 🚀 改差異更新：先各格產生 html 字串，最後只重建有變動的格
+    let _showMobEleFlag = (typeof _relicShowMobEle === 'function') && _relicShowMobEle();   // 🏺 巨大螞蟻的複眼：狀態直接顯示敵人屬性（一次計算·全格共用）
 
     let _back = backSlotsActive();                                   // 🆕 五格模式：原三格(前排)＋後排兩格
     let _order = _back ? [0, 1, 2, 3, 4] : [0, 1, 2];                // 🆕 v2.7.47 前排(0,1,2)由左而右→再後排(3,4)由左而右；視覺左右序＝目標鎖定序一致(不再交錯)
@@ -993,8 +1003,8 @@ function _renderMobsImpl() {
             let _weaponFx2 = MOB_ANIM_NAMES.has(m.n) && (typeof MOB_ANIM_WEAPON_FX2 !== 'undefined') && MOB_ANIM_WEAPON_FX2.has(m.n);
             let _weaponLayer2 = _weaponFx2 ? `<img class="mob-anim-weapon2 w-24 h-24 p-1 object-contain pointer-events-none" src="assets/anim/${_animDir(m.n)}/idle_w2_0.png" alt="" aria-hidden="true" onerror="this.style.display='none'">` : '';
             _slotHtmls[_k] = `<div class="mob-target ${act}${_rowCls}${BOSS_BIG_MAPS.includes(mapState.current) ? ' boss-slot' : (m.boss ? ' boss-zoom' : '')}" data-uid="${m.uid}"${_scat}>
-                        <div class="flex justify-center text-sm mb-1 mob-name">
-                            <span class="${getMobNameClass(m)}">${m.n}</span>
+                        <div class="flex justify-center items-center text-sm mb-1 mob-name">
+                            <span class="${getMobNameClass(m)}">${m.n}</span>${(_showMobEleFlag && m.e && m.e !== 'none') ? ` <span class="text-[11px] font-bold" style="margin-left:3px;color:${(typeof RELIC_ELE_COLOR !== 'undefined' && RELIC_ELE_COLOR[m.e]) || '#cbd5e1'};" title="敵人屬性（巨大螞蟻的複眼）">[${(typeof RELIC_ELE_LABEL !== 'undefined' && RELIC_ELE_LABEL[m.e]) || ''}]</span>` : ''}
                         </div>
                         ${badges}
                         <div class="flex justify-center mb-1 mob-img-wrap">
@@ -1403,7 +1413,11 @@ function _battleSpriteProbe(form) {
     _morphBattleCache[form.key] = 'probing';
     let out = { shadow: {}, weapon: {} };
     let pending = form.wpn ? 17 : 15;   // 🗡️ v3.0.70 職業形態多探 2 項：武器專屬 skill（<wpn>_skill_·黑暗妖精雙刀/鋼爪·龍騎士雙手劍/鎖鏈劍·戰士各武器）
-    let finish = () => { if (--pending <= 0) _morphBattleCache[form.key] = out; };
+    let finish = () => { if (--pending <= 0) {
+        // 🏹 弓/十字弓無專屬技能動畫(bow_skill_)：施放技能(如妖精三重矢)時原退回「通用 skill_」空手施法姿勢→改借用弓攻擊(bow_attack)姿勢，持弓者施放技能不再變空手（玩家＋傭兵共用此快取·同套用影子層）
+        if (form.wpn === 'bow' && !out.wskill && out.attack) { out.wskill = out.attack; if (out.shadow && !out.shadow.wskill && out.shadow.attack) out.shadow.wskill = out.shadow.attack; }
+        _morphBattleCache[form.key] = out;
+    } };
     let probeSeq = (target, key, pfx, minF) => {
         let frames = [], _min = minF || 2;
         let tryLoad = (i) => {
