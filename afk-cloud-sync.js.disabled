@@ -1,7 +1,10 @@
 /* ============================================================================
  * ⏸️ 2026-07-09 暫停：使用者實測後認為體驗有問題，要求先暫停開發。index.html 已移除
- *   這支外掛的 <script> 引用（不會被載入），程式碼保留在這裡供之後參考/重啟。完整開發
- *   紀錄、已修 bug 清單、暫停原因、重啟步驟見
+ *   這支外掛的 <script> 引用（不會被載入），檔名也從 afk-cloud-sync.js 改成
+ *   afk-cloud-sync.js.disabled（讓 stamp-sw-version.mjs／check-hook-points.mjs／
+ *   prepush skill 這類用 /^afk-.*\.js$/ 認定「活躍外掛」的腳本不會再理它），程式碼內容
+ *   完全沒動，保留供之後參考/重啟。重啟時記得先 git mv 改回原檔名。完整開發紀錄、
+ *   已修 bug 清單、暫停原因、重啟步驟見
  *   Lineage/加掛版/docs/交接與接手/雲端同步功能開發紀錄_暫停_20260709.md。
  *
  * afk-cloud-sync.js — 跨裝置雲端存檔同步（Google Drive drive.appdata）
