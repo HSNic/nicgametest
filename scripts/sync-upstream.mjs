@@ -72,6 +72,7 @@ const PLUGINS = [
   { file: 'afk-history.js',  comment: '離線掛機歷史紀錄:首頁設定選單列出各角色最近 5 筆離線收益(純唯讀讀 afk_hist_<slot>;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-mobname.js',  comment: '顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-training.js', comment: '木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-itemsearch.js', comment: '物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-analytics.js', comment: 'Cloudflare Web Analytics beacon 注入:統計人數/開啟次數(只在正式站台送;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-classic-list.js', comment: '道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫,不動原作者本體;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-item-subfilter.js', comment: '道具/武器/防具分頁加子分類篩選(下拉選單;可獨立維護,原作者更新後重新加回此行即可)' },

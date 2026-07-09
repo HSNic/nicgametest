@@ -310,10 +310,11 @@
       if (typeof window.renderTabs !== 'function' || window.renderTabs.__mBagDefer) return;
       var origRT = window.renderTabs;
       var THROTTLE_MS = 250, SELSEL = '#tab-weapons,#tab-armors,#tab-items,#tab-equip,#tab-skill,#item-modal';
-      var dirty = false, lastRun = -1e9, trail = null, flushing = false;
+      var dirty = false, dirtyForce = false, lastRun = -1e9, trail = null, flushing = false;   // dirtyForce(2026-07-09併入原加掛版作者新版):延後期間有沒有 force 呼叫——補跑只在真的有 force 被延後時才 force,免得掉寶的非強制重繪被升級成 force、繞過核心 renderTabs 的「快速廢品/強化選擇模式凍結」守衛
       function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
       function bagOpen() { return document.body.classList.contains('mview-bag'); }
       function selOpen() { var ae = document.activeElement; try { return !!(ae && ae.tagName === 'SELECT' && ae.closest && ae.closest(SELSEL)); } catch (e) { return false; } }
+      function markDirty(force) { dirty = true; dirtyForce = dirtyForce || !!force; }
       // 2026-07-08(手機背包點擊不順+批次販賣按鈕閃爍回報):補跑一律 force=true 呼叫,原本直接呼叫
       // 閉包裡的 origRT,兩個副作用都要修:
       //   ① force=true 繞過原生 js/10-ui-tabs.js renderTabs() 自己的「使用者正按著面板時延後重建」
@@ -321,13 +322,14 @@
       //   ② 若後面又有別的外掛(如 afk-batch-sell.js)monkey-patch window.renderTabs,直接呼叫
       //      origRT 會整個繞過那層 wrapper,牠補插的按鈕(批次販賣入口)就會在這次補跑後消失,
       //      要等下一次「非節流、走完整鏈」的呼叫才補回來 → 視覺上是按鈕一閃一閃。
-      // 改法:① 補跑不再強制 force=true(內容真的有變,簽章比對本來就會通過,照常渲染);
+      // 改法:① 補跑改用 dirtyForce 追蹤的實際值(見上,2026-07-09 併入原加掛版作者新版的修法,
+      //         取代先前「一律不強制」的寫法——延後期間若真的曾有 force 呼叫,補跑要照實傳遞);
       //      ② 補跑改呼叫目前最外層的 window.renderTabs(可能已被其他外掛再包一層),用 flushing
       //         旗標避免遞迴重新套用節流判斷,讓外層 wrapper 的收尾邏輯(如補插按鈕)照樣跑得到。
-      function schedTrail(delay) { if (!trail) trail = setTimeout(function () { trail = null; if (dirty) run([]); }, delay); }
+      function schedTrail(delay) { if (!trail) trail = setTimeout(function () { trail = null; if (dirty) { var f = dirtyForce; run(f ? [true] : []); } }, delay); }
       function run(args) {
-        if (selOpen()) { dirty = true; schedTrail(200); return; }   // 下拉開著時不重建(會把它關掉)→ 比照 afk-fixes select-guard,延後
-        dirty = false; lastRun = now();
+        if (selOpen()) { markDirty(args && args[0]); schedTrail(200); return; }   // 下拉開著時不重建(會把它關掉)→ 比照 afk-fixes select-guard,延後
+        dirty = false; dirtyForce = false; lastRun = now();
         flushing = true;
         try { return window.renderTabs.apply(window, args || [true]); }
         finally { flushing = false; }
@@ -339,16 +341,16 @@
         if (typeof state !== 'undefined' && state && state.ff) return origRT.apply(this, arguments);
         if (!detectMobile()) return origRT.apply(this, arguments);
         if (flushing) return origRT.apply(this, arguments);         // run() 為了觸發完整 wrapper 鏈重新呼叫進來,直接做真正的渲染,不要再套一次節流判斷
-        if (!bagOpen()) { dirty = true; return; }                  // 戰鬥/設定畫面看不到背包 → 跳過,記 dirty
+        if (!bagOpen()) { markDirty(arguments[0]); return; }        // 戰鬥/設定畫面看不到背包 → 跳過,記 dirty(含是否 force)
         var t = now();
         if (t - lastRun >= THROTTLE_MS) return run(arguments);     // 節流窗外 → 立即(自己的操作即時)
-        dirty = true; schedTrail(THROTTLE_MS - (t - lastRun));     // 窗內(連續掉寶)→ 併入 trailing
+        markDirty(arguments[0]); schedTrail(THROTTLE_MS - (t - lastRun));     // 窗內(連續掉寶)→ 併入 trailing
       };
       wrapped.__mBagDefer = true;
       window.renderTabs = wrapped;
       _flushDeferredTabs = function (toBattle) {
         if (toBattle) { if (trail) { clearTimeout(trail); trail = null; } return; }   // 進戰鬥畫面:取消待補(留 dirty,下次開背包再補),不重建看不到的東西
-        if (dirty) { if (trail) { clearTimeout(trail); trail = null; } run([]); }  // 切到背包/設定:立刻補最新一份
+        if (dirty) { if (trail) { clearTimeout(trail); trail = null; } run(dirtyForce ? [true] : []); }  // 切到背包/設定:立刻補最新一份(照實傳遞 force)
       };
     })();
 

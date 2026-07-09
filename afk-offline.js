@@ -409,6 +409,18 @@
     killTally = {};   // 📜 本次補跑的擊殺計數歸零
     gainTally = {};   // ⚡ 本次補跑的獲得計數歸零
 
+    // 🎯 魔物追蹤:until 是牆鐘時間,離線中過期的話補跑時 spawnMob 的「until > Date.now()」整段不成立
+    //   → 明明關遊戲時追蹤還有效,離線收益卻完全吃不到追蹤。使用者決定(2026-07-07):離線當下追蹤仍有效
+    //   → 整段離線時間都視為有效——補跑期間暫時把 until 撐到結算之後,結束時還原原值
+    //   (過期的照樣過期、沒過期的剩餘時數不變,線上行為零影響)。
+    //   offStart=離線起點:真實離線用心跳 closeTs;debug forceCatchup 無 timing → 視同「剛剛過去 totalTicks」。
+    var offStart = (timing && timing.closeTs) || (Date.now() - totalTicks * TICK_MS);
+    var trackUntil0 = null;
+    if (player.tracking && player.tracking.until && player.tracking.until > offStart) {
+      trackUntil0 = player.tracking.until;
+      player.tracking.until = Date.now() + totalTicks * TICK_MS + 3600000;   // 撐過整段補跑(含結算本身的真實耗時)綽綽有餘
+    }
+
     var sliceMs = sliceFor(totalTicks);   // 依補跑長短決定畫面更新間隔:短→順、長→快
     var isClimb = !!(prePride && prePride.climb && !prePride.ranked && typeof enterPrideFloor === 'function');   // 排名挑戰不自動續
     var isObl = !isClimb && !!(preObl && preObl.phase && typeof enterOblivionMap === 'function');   // 🏝️ 遺忘之島旅程:同攀登,還原 state.oblivion 後用 enterOblivionMap 進場(島地圖非選單地圖)
@@ -458,17 +470,21 @@
     var FAST_RESAMPLE_TICKS = 1200;   // 升級後重取樣:2 分鐘
     var FAST_MIN_KILLS = 8;           // 取樣至少殺 8 隻,平均殺速才勉強可信(低於此→延長,仍不足→全模擬)
     var FAST_GOOD_KILLS = 60;         // 樣本殺數低於此 → 平均殺速統計誤差偏大(~±13%),延長取樣一次收斂
-    var FAST_MIN_HP_PCT = 70;         // 取樣期間最低血量 % 低於此 → 有死亡風險,不快轉
+    var FAST_MIN_HP_PCT = 70;         // 血量安全門檻起點 %(取樣 + BOSS safe 共用):真模擬 done=0 時的門檻
+    var HP_FLOOR_ZERO_TICKS = 12000;  // 血量門檻「線性降到 0」的時點:真模擬連續存活滿 20 分鐘(12000 拍)沒死 → 門檻歸 0(之後一律切快速、BOSS 一律 safe)。撐過這段=打得過→完全信任;死了外層撞死即停,根本走不到門檻歸 0。
     var FAST_MIN_REMAIN = 6000;       // 取樣後剩不到 10 分鐘 → 全模擬本來就快,不值得切
     var fastEligible = !isClimb && !isObl && !isKing && totalTicks >= (FAST_SAMPLE_TICKS + FAST_MIN_REMAIN) && !_forceNoFast;
     _forceNoFast = false;   // 🧪 一次性:用過即歸零,不影響之後的真實離線結算
     var fastMode = false, fastOff = false;   // fastOff = 本次補跑永久退出快速段
+    // 血量安全門檻(取樣 + BOSS safe 共用):隨真模擬存活拍數 done 從 70% 線性降到 0(20 分鐘歸 0)。
+    //   即時用 done 算,故取樣評估、BOSS safe 判定各自用「當下」的門檻;越撐越信任,撐滿 20 分鐘完全放行。
+    function hpFloorNow() { return Math.max(0, (FAST_MIN_HP_PCT / 100) * (1 - done / HP_FLOOR_ZERO_TICKS)); }
     // 🐲 BOSS 策略(懶驗證):每「種」BOSS(按名字)第一次遇到 → 逐拍真模擬打到倒下,記錄實際耗時與安全度;
     //   之後同名 BOSS:安全的 → 即殺但時間按「該 BOSS 實測耗時」推進(不是小怪均速);對打時血量掉太深的 → 每次都真打。
     //   打輸=外層撞死即停;打不動=照實耗完時間。純 BOSS 圖因此自然接近全真模擬。
-    var fastBossUid = null, fastBossName = '', fastBossStart = 0, fastBossMinHp = 1;
-    var bossStats = {};   // {怪名: {ticks:實測耗時, safe:對打全程血量未低於安全線}}
-    var ticksPerKill = 0, consumePerTick = null, consumeAcc = null;
+    var fastBossUid = null, fastBossName = '', fastBossStart = 0, fastBossMinHp = 1, fastBossKills0 = 0;
+    var bossStats = {};   // {怪名: {ticks:實測耗時, safe:對打全程血量未低於安全線, minor:對戰期間同場被清掉的小怪數}}
+    var ticksPerKill = 0, consumePerTick = null, consumeAcc = null, buffSecAcc = 0;
     var sampleFrom = 0, sampleKills0 = 0, sampleCnt0 = null, sampleGain0 = null, sampleMinHp = 1;
     var sampleEnd = fastEligible ? FAST_SAMPLE_TICKS : Infinity, sampleGrew = false;
     var lastLv = player.lv;
@@ -488,9 +504,12 @@
       sampleGain0 = {}; for (var k in gainTally) sampleGain0[k] = gainTally[k];
       sampleMinHp = 1;
     }
-    function evalSample() {   // 取樣窗結束:夠安全 → 進快速段;殺數不足 → 延長一次;仍不行/太危險 → 全模擬
+    function evalSample() {   // 取樣窗結束:夠安全 → 進快速段;殺數不足 → 延長一次;血量沒過(隨時間下降的)門檻 → 繼續真模擬觀察
       var kills = tallySum(killTally) - sampleKills0;
-      if (sampleMinHp < FAST_MIN_HP_PCT / 100) { fastOff = true; console.info('[AFK] 快速結算不啟用:取樣最低血量 ' + Math.round(sampleMinHp * 100) + '%(有死亡風險),全程真模擬。'); return; }
+      // 血量門檻隨真模擬存活拍數線性下降(hpFloorNow,70% → 20 分鐘歸 0):穩定低血但打不死的角色(吸血流卡低檔)
+      //   撐越久門檻越低,最晚 20 分鐘門檻歸 0 必過 → 不會整晚全模擬。done 在「尚未切快速」期間就等於真模擬存活拍數;
+      //   角色若真的會被磨死,取樣期間就死了、外層撞死即停,根本走不到這裡評估。
+      if (sampleMinHp < hpFloorNow()) { sampleGrew = false; beginSample(done); sampleEnd = done + FAST_SAMPLE_TICKS; return; }   // 沒過→再真模擬一段(那時門檻更低),直到過關或時間耗盡
       if (kills < FAST_GOOD_KILLS && !sampleGrew) { sampleGrew = true; sampleEnd = done + FAST_SAMPLE_TICKS * 2; return; }   // 殺數不足以收斂平均殺速 → 延長取樣(再 +10 分鐘)
       if (kills < FAST_MIN_KILLS) {
         fastOff = true; console.info('[AFK] 快速結算不啟用:取樣擊殺數太少(' + kills + '),樣本不可信,全程真模擬。'); return;
@@ -552,6 +571,23 @@
     function fastAdvance(adv) {   // 推進虛擬時間 adv 拍:done / state.ticks / 消耗品(每拍速率) / 自動賣廢品;回 false = 消耗品斷貨補不上
       done += adv; if (done > totalTicks) done = totalTicks;
       state.ticks += Math.round(adv);   // 絕對拍計數跟上(召喚/buff 的 endTick、賣廢品排程都依此)
+      // ⏳ 玩家 buff 是「秒數」計時、只在 tick() 每秒遞減 → 快速段不跑 tick() 會凍結。
+      //   凍結的後果:召喚物依絕對 endTick 在快速段照樣到期消失,但召喚 buff 的秒數還是正的
+      //   → 回線上後自動施放判定「buff 還在」不重新召喚,精靈就這樣不見(2026-07-07 玩家回報,妖精強力屬性精靈)。
+      //   同步扣秒讓 buff 跟時間走:歸零後回線上第一輪 autoActions 即自動重施(含重新召喚),與在線掛機行為一致。
+      buffSecAcc += adv / 10;
+      var _secs = Math.floor(buffSecAcc);
+      if (_secs > 0 && player && player.buffs) {
+        buffSecAcc -= _secs;
+        var _ended = false;
+        for (var bk in player.buffs) {
+          if (player.buffs[bk] > 0) {
+            player.buffs[bk] -= _secs;
+            if (player.buffs[bk] <= 0) { player.buffs[bk] = 0; _ended = true; }
+          }
+        }
+        if (_ended) { try { calcStats(); } catch (e) {} }   // 到期重算(比照 tick() 的 _buffEnded → calcStats)
+      }
       for (var id in consumePerTick) {   // 消耗品照取樣「每拍」速率扣;斷貨且補不上 → 戰局質變,退回全模擬
         consumeAcc[id] = (consumeAcc[id] || 0) + consumePerTick[id] * adv;
         while (consumeAcc[id] >= 1) { consumeAcc[id] -= 1; if (!fastConsumeOne(id)) return false; }
@@ -565,19 +601,58 @@
       } catch (e) {}
       return true;
     }
+    function fastTeleportAwayBoss(m) {   // 🌀 快速段模擬「遇 BOSS 自動瞬移逃離」:1:1 重放線上 autoActions 的瞬移分支;成功甩掉回 true
+      try {
+        var tChk = document.getElementById('set-teleport');
+        if (!(tChk && tChk.checked)) return false;                                   // 未勾選自動瞬移 → 照打
+        if (!m || !m.boss || m.noAutoTeleport) return false;                         // 非 BOSS、或 noAutoTeleport(卡瑞/樓梯/傳送門)→ 不瞬移
+        // 頂層條件照 autoActions(js/07):攻城區/純BOSS房 BOSS 即目標不逃;攀登/遺忘之島/時空裂痕本就不走快速段,照抄不吃虧
+        if (isSiegeArea(mapState.current) || PURE_BOSS_MAPS.includes(mapState.current)) return false;
+        if (state.prideClimb || state.oblivion || state.riftRun) return false;
+        // 找卷軸,沒有就依 set-auto-buy-teleport 自動買 1 張(與 autoActions 完全一致)
+        var item = player.inv.find(function (i) { return i && i.id === 'scroll_teleport'; });
+        if (!item) {
+          var buyChk = document.getElementById('set-auto-buy-teleport');
+          var cost = shopPrice(DB.items.scroll_teleport.p);
+          if (buyChk && buyChk.checked && player.gold >= cost) { player.gold -= cost; gainItem('scroll_teleport', 1, true, true); item = player.inv.find(function (i) { return i && i.id === 'scroll_teleport'; }); }
+        }
+        if (!item) return false;                                                     // 沒卷軸又補不到 → 退回硬打,同線上
+        var bossUid = m.uid;
+        // ⭐ 直接走原作 useItem(silent):它自己套用「行動限制/軍王之室/prideTeleportBlocked(排名·11F+無支配符)/遺忘之島」全部守衛,
+        //    被擋下就不 consume、不 doTeleport(卷軸不會白扣)。不自己刻地圖清單 → 永遠與原作瞬移規則同步,不分歧。
+        useItem(item.uid, true);
+        return !mapState.mobs.some(function (x) { return x && x.uid === bossUid; });  // BOSS 已被 doTeleport 清掉 → 瞬移成功;仍在(被守衛擋下)→ 回 false 照打
+      } catch (e) { return false; }
+    }
+    function fastKillMinors(n) {   // 🐲 BOSS 秒殺時,補回「對戰那段時間同場被 AOE/傭兵/寵物清掉的小怪」收益。
+      //   只走 spawnMob→killMob→settleDeadMobs 拿真實掉落/經驗;不推進時間、不扣消耗品——那段時間與消耗已由呼叫端 fastAdvance(_bs.ticks) 一次涵蓋。
+      //   抽到 BOSS 就跳過(這輪只補小怪;主 BOSS 收益已由本體那隻計入,不重複打第二隻 BOSS)。
+      for (var e = 0; e < n; e++) {
+        try {
+          spawnMob(0);
+          var mm = mapState.mobs[0];
+          if (!mm) break;
+          if (mm.boss) { mapState.mobs[0] = null; continue; }
+          killMob(0);
+          settleDeadMobs();
+        } catch (e2) { break; }
+      }
+    }
     function fastKillOnce() {   // 快速段的一步:出一隻 → 即殺 → 清算;回 false = 退回全模擬
       try {
         spawnMob(0);
         var _m0 = mapState.mobs[0];
         if (!_m0) return false;
         if (_m0.boss) {   // 🐲 BOSS:第一次(或未驗證安全)→ 真模擬對打;已驗證安全 → 即殺但時間按「該 BOSS 實測耗時」推進
+          if (fastTeleportAwayBoss(_m0)) return fastAdvance(1);   // 🌀 勾了自動瞬移且該圖可瞬移 → 甩掉不打(約當一拍;下輪 spawnMob 重抽)
           var _bs = bossStats[_m0.n];
           if (_bs && _bs.safe) {
             killMob(0);
             settleDeadMobs();
+            fastKillMinors(_bs.minor || 0);   // 補回這隻 BOSS 對戰期間同場小怪的收益(時間/消耗由下方 fastAdvance 一次涵蓋)
             return fastAdvance(_bs.ticks);
           }
-          fastBossUid = _m0.uid; fastBossName = _m0.n || '?'; fastBossStart = done; fastBossMinHp = 1;
+          fastBossUid = _m0.uid; fastBossName = _m0.n || '?'; fastBossStart = done; fastBossMinHp = 1; fastBossKills0 = tallySum(killTally);   // 記真打起始殺數 → 倒下時算對戰期間清掉的小怪數
           console.info('[AFK] ⚔ 快速結算遇到 BOSS「' + fastBossName + '」(首次)→ 切回真模擬對打,倒下後同名 BOSS 才可快轉。');
           return true;   // 不推進時間、不扣消耗品——接下來的真模擬拍會照實計
         }
@@ -607,9 +682,10 @@
               if (!_bm || _bm._dead || _bm.uid !== fastBossUid) {   // BOSS 倒下(或場面被重置)→ 記錄實測耗時/安全度,回快速段
                 fastBossUid = null;
                 var _durB = Math.max(1, done - fastBossStart);
-                var _safeB = fastBossMinHp >= FAST_MIN_HP_PCT / 100;
-                bossStats[fastBossName] = { ticks: _durB, safe: _safeB };
-                console.info('[AFK] ⚔ BOSS「' + fastBossName + '」倒下:實測 ' + Math.round(_durB) + ' 拍' + (_safeB ? ',之後同名 BOSS 即殺、時間按此推進。' : ',對打時血量偏低(' + Math.round(fastBossMinHp * 100) + '%) → 之後每次都真打。'));
+                var _safeB = fastBossMinHp >= hpFloorNow();   // 安全線跟取樣共用同一條門檻(隨存活時間降到 0):撐滿 20 分鐘後 BOSS 首遇打得贏就 safe → 秒殺
+                var _minorB = Math.max(0, (tallySum(killTally) - fastBossKills0) - 1);   // 對戰期間總殺數 − BOSS 本身 1 = 同場被 AOE/傭兵/寵物清掉的小怪數
+                bossStats[fastBossName] = { ticks: _durB, safe: _safeB, minor: _minorB };
+                console.info('[AFK] ⚔ BOSS「' + fastBossName + '」倒下:實測 ' + Math.round(_durB) + ' 拍、同場小怪 ' + _minorB + ' 隻' + (_safeB ? ',之後同名 BOSS 即殺、時間按此推進並補回小怪。' : ',對打時血量偏低(' + Math.round(fastBossMinHp * 100) + '%) → 之後每次都真打。'));
               }
               if (fastBossUid == null && player.lv !== lastLv) {   // BOSS 經驗大,常直接升級 → 重新取樣殺速
                 lastLv = player.lv;
@@ -709,6 +785,7 @@
       gotoMap(homeTown());
     }
     if (state.ff !== prevFf0) { state.ff = prevFf0; state.inTick = prevInTick0; }   // 還原 ff(攀登存活分支上面已還原 → 此處不動作)
+    if (trackUntil0 !== null && player.tracking) player.tracking.until = trackUntil0;   // 🎯 還原魔物追蹤原到期時間(見補跑開頭;一定要在下方 saveGame 之前,免得撐長的假 until 被存進存檔)
 
     // 重啟 live loop(startGameTimers 內含去重,且重設 _loopLast=null → 不會把結算花掉的真實秒數再補一次)
     try { startGameTimers(); } catch (e) {}
