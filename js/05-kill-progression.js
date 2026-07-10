@@ -233,6 +233,8 @@ function killMob(idx) {
         // 🔧 金幣不再逐殺輸出於系統日誌；改由 gameLoop 累積、flushAwaySummary 以「掛機期間獲得總金幣」統一顯示。
 
     }
+    // 🦴 v3.1.71 用戶要求：取消「怪物直接掉落席琳遺骸」——遺骸唯一取得管道＝席琳結晶（NPC 伊奧兌換）／菈克希絲拆分舊詞綴裝備。
+    //    原掉落機率公式已移轉到下方「席琳結晶」掉落（見該區塊）。
 	// 誘捕判定（誘捕上限改於「使用肉」時以 floor(魅力/7) 判定）
     if (player.buffs.taming > 0) {
         let collarDrop = null;
@@ -375,13 +377,6 @@ function killMob(idx) {
     // 🎴 卡片掉落（血盟標籤以外·一般＝經典機率·不乘 classicDropMult·一律進背包不自動賣）
     if (typeof rollCardDrops === 'function') rollCardDrops(mob);
 
-    // === 40等以上 BOSS（夢幻之島 + 攻城區/siegeEnemy 除外）：賦予祝福卷軸稀有掉落，各自獨立判定 ===
-    if (mob.boss && mob.lv >= 40 && mapState.current !== 'dream_island' && !isSiegeArea(mapState.current) && !mob.siegeEnemy) {
-        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_wpn', 1);   // 0.1%  賦予武器祝福卷軸（🔮席琳×3）
-        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_arm', 1);   // 0.1%  賦予盔甲祝福卷軸
-        if (Math.random() < 0.0001 * _dropMult) gainItem('new_item_bless_acc', 1);   // 0.01% 賦予飾品祝福卷軸
-    }
-
     // === 區域額外掉落：眠龍洞穴1~3樓(zone_15/16/17) / 妖精森林周邊(zone_01) 所有怪物 ===
     // 粗糙的米索莉塊 / 精靈玉 / 元素石，各 20%；學會「世界樹的呼喚」則各 30%
     if (AREA_BONUS_MAPS.includes(mapState.current)) {
@@ -392,16 +387,12 @@ function killMob(idx) {
     }
 
     // === 🔮 席琳結晶：席琳的世界限定掉落（固定機率，不吃掉落倍率）===
-    // 血盟與 Lv20 以下不掉（血盟本就無 _sherine）；21~30 非BOSS 0.001%、31~40 非BOSS 0.002%、
-    // 41+ 非BOSS 0.003%、夢幻之島BOSS 0.01%、四大龍（安塔瑞斯/法利昂/巴拉卡斯/林德拜爾）10%、其餘BOSS 0.1%
+    // 🦴 v3.1.71 用戶改制（原「等級分段表＋四大龍10%」全數取代）；⚠️v3.1.79 用戶釐清單位＝「百分比」：
+    //    機率＝0.001%×怪物等級（頭目＝0.01%×頭目等級）→ Lv100 頭目＝1%（原誤植為小數比例·Lv100 頭目變 100% 必掉）。
+    //    瘋狂的席琳世界再 ×3。結晶＝遺骸的唯一產出來源（NPC 伊奧：1 顆換 1 件指定部位遺骸）。
     if (mob._sherine) {
-        let _cr = 0;
-        if (['安塔瑞斯', '法利昂', '巴拉卡斯', '林德拜爾'].includes(mob.n)) _cr = 0.10;
-        else if (mob.boss) _cr = (mapState.current === 'dream_island') ? 0.0001 : 0.001;
-        else if ((mob.lv || 1) >= 41) _cr = 0.00003;
-        else if ((mob.lv || 1) >= 31) _cr = 0.00002;
-        else if ((mob.lv || 1) >= 21) _cr = 0.00001;
-        if (_cr > 0 && Math.random() < _cr * classicDropMult() * (mob._sherineMad ? 3 : 1)) {   // 🔮 瘋狂的席琳世界：結晶掉率 ×3（一般怪／頭目皆然）
+        let _cr = (mob.boss ? 0.0001 : 0.00001) * (mob.lv || 1) * (mob._sherineMad ? 3 : 1);
+        if (_cr > 0 && Math.random() < _cr * classicDropMult()) {
             gainItem('sherine_crystal', 1);
             logSys(`<span class="c-sherine font-bold">✦✦ 席琳結晶 從 ${mob.n} 的殘骸中浮現！✦✦</span>`);
         }

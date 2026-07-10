@@ -22,6 +22,7 @@ const EQUIP_CATEGORIES = [
     { key: 'chainsword', name: '鎖鏈劍',   group: '武器' },
     { key: 'bow',        name: '弓',       group: '武器' },
     { key: 'xbow',       name: '十字弓',   group: '武器' },
+    { key: 'quiver',     name: '箭筒',     group: '武器' },   // 🏺 v3.2.0 遺物箭筒（isArrow+relic·改造便利箭筒/艾庫尤卡的永續箭筒）：一般箭矢仍不收錄；本分類只在「遺物收集冊」出現（裝備收集冊 buildEquipIndex 跳過遺物→陣列空→分頁自動隱藏·EQUIP_CAT_BONUS 無此鍵→無全收集加成）
     { key: 'wand',       name: '魔杖',     group: '武器' },
     { key: 'qigu',       name: '奇古獸',   group: '武器' },
     { key: 'wpn_other',  name: '其他武器', group: '武器' },
@@ -84,7 +85,7 @@ const EQUIP_CAT_BONUS = {
 function equipCatKey(id, d) {
     if (!d) return null;
     if (d.type === 'wpn') {
-        if (d.isArrow) return null;                                  // 箭矢＝彈藥，不收錄
+        if (d.isArrow) return (typeof isRelic === 'function' && isRelic(d)) ? 'quiver' : null;   // 🏺 v3.2.0 遺物箭筒歸「箭筒」分類（供遺物收集冊）；一般箭矢＝彈藥，不收錄
         if (d.isBow) return /十字弓|弩/.test(d.n || '') ? 'xbow' : 'bow';
         if (d.qigu) return 'qigu';
         if (d.chainsword) return 'chainsword';

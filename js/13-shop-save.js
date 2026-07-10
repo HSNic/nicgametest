@@ -515,7 +515,7 @@ function updateCreateUI() {
 
 function onToggleClassic(el) {
     if (!el.checked) return;   // 取消勾選不需確認
-    let ok = confirm('⚔ 經典模式（硬核挑戰）\n\n開啟後，此角色將「永久」套用下列規則，建立後無法關閉：\n\n‧ 死亡 → 損失該等級 5% 最大經驗（不會降等）\n‧ 無法賦予裝備祝福、無法進行職業精通\n‧ 無法進入「席琳的世界」\n\n（掉落率、經驗值與金幣獲得皆與一般模式相同）\n\n確定要以「經典模式」創建此角色嗎？');   // ⚠️v3.0.82 經驗×0.5／金幣÷2 已移除、v3.0.85 掉落×1/10 已移除 → 文案同步
+    let ok = confirm('⚔ 經典模式（硬核挑戰）\n\n開啟後，此角色將「永久」套用下列規則，建立後無法關閉：\n\n‧ 死亡 → 損失該等級 5% 最大經驗（不會降等）\n‧ 無法進行職業精通\n‧ 無法進入「席琳的世界」\n\n確定要以「經典模式」創建此角色嗎？');   // 🎮 v3.2.9 文案精簡:移除「無法賦予裝備祝福」與「掉落率/經驗值/金幣相同」說明(用戶要求)
     if (!ok) { el.checked = false; return; }
 }
 function startGame() {
@@ -546,7 +546,7 @@ function startGame() {
     let b = createBase[curCreate.cls];
     player.base = { str: b.str+curCreate.str, dex: b.dex+curCreate.dex, con: b.con+curCreate.con, int: b.int+curCreate.int, wis: b.wis+curCreate.wis, cha: b.cha+curCreate.cha };
     player.lv = 1; player.exp = 0; player.gold = 1000;
-    player.inv = []; player.eq = { wpn: null, helm: null, armor: null, shield: null, cloak: null, tshirt: null, gloves: null, boots: null, ring1: null, ring2: null, ring3: null, ring4: null, amulet: null, ear1: null, ear2: null, belt: null }; player.junkPrefs = {};
+    player.inv = []; player.eq = { wpn: null, helm: null, armor: null, shield: null, cloak: null, tshirt: null, gloves: null, boots: null, ring1: null, ring2: null, ring3: null, ring4: null, amulet: null, ear1: null, ear2: null, belt: null, rem_claw: null, rem_eye: null, rem_blood: null, rem_flesh: null, rem_heart: null, rem_bone: null, rem_fang: null, rem_scale: null }; player.junkPrefs = {};   // 🦴 v3.1.68 席琳遺骸 8 欄(舊存檔缺鍵無害:undefined 視同空·裝備時動態建鍵)
     player.skills = [];
     player.summon = null; player.charmed = null; player.manualCd = {}; player.hot = null; player.hots = {}; player.elfEle = null; player.buffs = { haste: 0, brave: 0, blue: 0, cautious: 0, elfcookie: 0, poly: 0, shield: 0 };
     

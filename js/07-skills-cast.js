@@ -131,8 +131,9 @@ function illuSummonTick(owner) {
     owner._illuCd = owner._illuCd || {};
     let d = owner.d || {};
     for (let sid in MAP) {
-        // 🩸 v2.6.26 玩家：需該幻覺 buff 生效；傭兵：學過該技即產生幻象（stat aura 由隊長 teamIlluAura 提供·故不吃自身 buff·避免雙套）
-        let _active = (owner === player) ? ((owner.buffs[sid] || 0) > 0) : !!(owner.skills && owner.skills.includes(sid));
+        // 🔮 v3.2.2 玩家與傭兵統一：需該幻覺 buff 生效才召幻象（原傭兵「學過即召」＝隊伍面板關掉也照打·開關名不符實）。
+        //    傭兵現可於隊伍面板勾選自動維持幻覺（_isMercSelfBuff 已放行 illuSummon）；未勾＝無 buff＝不召幻象、也不提供光環。
+        let _active = (owner.buffs && (owner.buffs[sid] || 0) > 0);
         if (!_active) { owner._illuCd[sid] = 0; continue; }
         let c = MAP[sid];
         if ((owner._illuCd[sid] = (owner._illuCd[sid] || c.iv) - 1) > 0) continue;
@@ -163,6 +164,7 @@ function manualCast(skId) {
     let sk = DB.skills[skId];
     if(!sk || !player.skills.includes(skId)) return;
     if(inAbsBarrier()) { logSys('絕對屏障期間與世界隔絕，無法行動。'); return; }   // 🛡️ 屏障中不得手動施放任何技能（含本技能再施放）
+    if(player.statuses && (player.statuses.silence > 0 || player.statuses.magicseal > 0)) { logSys('你被沉默／魔法封印，無法施放魔法。'); return; }   // 🤐 v3.1.77 稽核中#10：手動施放補沉默/魔法封印閘（castSkillInner 有、原手動沒有→沉默中可傳送逃脫）
     // 傳送術：行動限制狀態（石化／麻痺／冰凍／暈眩）無法手動施放
     if(sk.mEff === 'teleport' && player.statuses &&
        (player.statuses.stone > 0 || player.statuses.paralyze > 0 || player.statuses.freeze > 0 || player.statuses.stun > 0 || player.statuses.sleep > 0)) {
@@ -290,6 +292,8 @@ function castSkillInner(skId) {
     // 🔧 黑暗妖精：會心一擊（消耗 HP 50% + 剩餘所有 MP；傷害 = 重擊一般攻擊(無視硬皮)×爆擊×(消耗MP佔上限%×10)；對血盟 x2）
     if (sk.darkCrit) {
         let _t = getTarget(); if (!_t || _t.curHp <= 0) return false;
+        if (player.cds.atkSk > 0) return false;   // ⚔️ v3.1.77 稽核中#11：比照其他攻擊技吃攻擊技冷卻（原分支位於冷卻閘之前＝唯一不受冷卻的 atk 技）
+        if ((player.mp || 0) <= 0) return false;   // 🩸 v3.1.77 稽核中#11：MP=0 時倍率為 0 → 燒半血只打 1 點且不觸發 castLock 可反覆自殘·必須有 MP 才施放
         if (player.hp <= player.mhp * 0.5) return false;   // HP 不足以負擔代價
         let mult = (player.mmp > 0 ? player.mp / player.mmp : 0) * 10;   // 100%MP→×10、50%→×5
         player.hp = Math.max(1, Math.floor(player.hp - player.mhp * 0.5));
@@ -304,6 +308,7 @@ function castSkillInner(skId) {
         logCombat(`<span class="font-bold" style="color:#f0abfc;text-shadow:0 0 8px #d946ef;">【會心一擊】</span>對 <span class="${getMobColor(_t.lv)}">${_t.n}</span> 造成 ${dmg} 點致命傷害！`, 'player-crit');
         let _i = mapState.mobs.findIndex(m => m && m.uid === _t.uid);
         if (_t.curHp <= 0) { if (_i !== -1) killMob(_i); } else renderMobs();
+        player.cds.atkSk = getAutoCastInterval();   // ⚔️ v3.1.77 稽核中#11：施放後進入攻擊技冷卻（比照其他 atk 技）
         calcStats(); updateUI(); return true;
     }
 
@@ -370,7 +375,7 @@ function castSkillInner(skId) {
         if(sk.hot) {
             if(player.hots && player.hots[skId] && player.hots[skId].ticksLeft > 0) return false;  // 🍃 該技能團隊 HoT 已在持續中→不重複(防自動施放洗版/耗MP)；不同技能(生命的祝福/體力回復術)可並存、同技能後放取代先放
             player.mp -= cost;
-            applyTeamHot(skId, sk, player.d);   // 🍃 施放時全隊(玩家＋全體傭兵)持續回復
+            applyTeamHot(skId, sk, player.d, player);   // 🍃 施放時全隊(玩家＋全體傭兵)持續回復；🏺 v3.1.80 傳施放者供 hotHealMult 快照
             player.cds.healSk = getAutoCastInterval();  // 🔧 HoT 不再把共用治癒冷卻鎖到結束：重複施放已由上方守衛擋住；長鎖會餓死其他自動治癒（高級治癒術/生命之泉等）
             logCombat(`施放 ${sk.n}，全隊開始持續回復 HP。`, 'heal');
             return true;
@@ -506,10 +511,8 @@ function castSkillInner(skId) {
                 if (state.ticks - _reqWpnWarnAt > 600) { _reqWpnWarnAt = state.ticks; logSys(`<span class="text-slate-400">${sk.n} 需要「雙手（非弓）武器」，目前武器不符，已暫停施放。</span>`); }   // 🛡️ 審計#15：原本靜默不施放零提示→每 60 秒提示一次
                 return false;
             }
-            // 三重矢：必須裝備弓
+            // 三重矢：必須裝備弓（🧹 v3.1.79 大掃除：移除 reqWpn 'nonbow' 死閘——全技能無此值·衝擊之暈實際用 'w2h'·原註解誤導）
             if(sk.reqWpn === 'bow' && (!player.eq.wpn || !DB.items[player.eq.wpn.id].isBow)) return false;
-            // 衝擊之暈：必須裝備弓以外的武器（需有武器，且非弓）
-            if(sk.reqWpn === 'nonbow' && (!player.eq.wpn || DB.items[player.eq.wpn.id].isBow)) return false;
             let wpn = player.eq.wpn ? DB.items[player.eq.wpn.id] : null;
             let arrowData = null;
 
@@ -713,23 +716,9 @@ function castSkillInner(skId) {
         if(sk.reqWpnBlunt && (!player.eq.wpn || !(getWeaponTags(player.eq.wpn.id).includes('單手鈍器') || getWeaponTags(player.eq.wpn.id).includes('雙手鈍器')))) return false;   // ⚔️ 戰斧投擲：須裝備單手／雙手鈍器
         if(sk.reqShield && !player.eq.shield && !(player.eq.wpn && getWeaponTags(player.eq.wpn.id).includes('武士刀'))) return false;   // 武士刀：免盾亦可施展
         if(sk.summon) { setupSummon(skId, sk); player.mp -= cost; calcStats(); return true; }
-        // 淨化類：無對應可解除的負面狀態則不施放
-        if(skId === 'sk_antidote' || skId === 'sk_holy_light' || skId === 'sk_cancel') {
-            let _purifyOk = (skId === 'sk_antidote') ? (player.statuses.poison > 0)
-                : (skId === 'sk_holy_light') ? (player.statuses.stone > 0 || player.statuses.paralyze > 0)
-                : (player.statuses.freeze > 0 || player.statuses.stone > 0 || player.statuses.poison > 0 || player.statuses.paralyze > 0 || player.statuses.burn > 0 || player.statuses.scald > 0);
-            if(!_purifyOk) return false;
-        }
-        if(skId === 'sk_cancel') {
-            player.statuses.freeze = 0; player.statuses.stone = 0; player.statuses.poison = 0; player.statuses.paralyze = 0; player.statuses.burn = 0; player.statuses.scald = 0;
-        } else if(skId === 'sk_antidote') {
-            player.statuses.poison = 0;
-        } else if(skId === 'sk_holy_light') {
-            player.statuses.stone = 0; player.statuses.paralyze = 0;
-        } else {
-            player.buffs[skId] = sk.dur;
-            if(sk.awaken && player.mastery !== 'k_awaken') { ['sk_dragon_awaken_antares','sk_dragon_awaken_falion','sk_dragon_awaken_baraka'].forEach(_ak => { if(_ak !== skId) player.buffs[_ak] = 0; }); }   // 🐉 覺醒互斥：非覺醒精通時同時只能維持一種覺醒
-        }
+        // 🧹 v3.1.79 大掃除：移除不可達的舊版淨化分支（sk_antidote/sk_holy_light/sk_cancel 的 type 皆為 'heal'→一律在上方 heal 淨化分支處理並 return·永遠到不了本 buff 分支；現行規則＝teamCleanseOne 一次只解一人·舊分支「只解玩家自身」語意已過時）
+        player.buffs[skId] = sk.dur;
+        if(sk.awaken && player.mastery !== 'k_awaken') { ['sk_dragon_awaken_antares','sk_dragon_awaken_falion','sk_dragon_awaken_baraka'].forEach(_ak => { if(_ak !== skId) player.buffs[_ak] = 0; }); }   // 🐉 覺醒互斥：非覺醒精通時同時只能維持一種覺醒
         if(sk.haste) player.buffs.haste = Math.max(player.buffs.haste || 0, sk.dur); // 加速術 → 套用 haste 效果
         player.mp -= cost;
         if(sk.hpCost) player.hp = Math.max(1, player.hp - effHpCost(sk));  // 消耗 HP（冥想術/堅固防護/隱身術；🐉 龍血精通減半）
@@ -743,10 +732,12 @@ function castSkillInner(skId) {
 // 🍃 團隊 HoT（生命的祝福 / 體力回復術）單一真相：施放時登錄「全隊持續回復」到 player.hots[skId]。
 //   ・player.hots 為 dict(skId→HoT 實例)→不同技能可並存；同 skId 後放覆蓋先放（取代/刷新）。
 //   ・dStats＝施法者衍生值(玩家 player.d 或傭兵 ally.d)→spCoef 由施法者魔法傷害決定；每 interval 於 js/03 tick 對「玩家＋全體非倒地傭兵」各回復一次。
-function applyTeamHot(skId, sk, dStats) {
+function applyTeamHot(skId, sk, dStats, caster) {
     if (!player.hots) player.hots = {};
     let mDmg = (dStats && dStats.magicDmg) || 0;
-    player.hots[skId] = { skId: skId, healDice: sk.healDice, healBase: sk.healBase, valDice: sk.valDice, magicDmg: mDmg, spCoef: 1 + (3 * mDmg / 16), interval: sk.hot.interval, ticksLeft: sk.hot.ticks, cd: sk.hot.interval, skName: sk.n, msg: sk.msg };
+    let _hm = 1;   // 🏺 v3.1.80 治癒者的恢復魔棒：施放者（玩家或傭兵）持有 hotHealMult 武器 → 此 HoT 每跳回復 ×N（施放時快照·中途換武器不影響已存在的 HoT）
+    try { let _cw = caster && caster.eq && caster.eq.wpn && DB.items[caster.eq.wpn.id]; if (_cw && _cw.hotHealMult) _hm = _cw.hotHealMult; } catch (e) {}
+    player.hots[skId] = { skId: skId, healDice: sk.healDice, healBase: sk.healBase, valDice: sk.valDice, magicDmg: mDmg, spCoef: 1 + (3 * mDmg / 16), interval: sk.hot.interval, ticksLeft: sk.hot.ticks, cd: sk.hot.interval, skName: sk.n, msg: sk.msg, healMult: _hm };
 }
 function autoActions() {
     let hpPct = (player.hp / player.mhp) * 100;

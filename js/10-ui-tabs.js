@@ -177,7 +177,12 @@ function renderTabs(force) {
 
     let eDiv = document.getElementById('tab-equip'); eDiv.innerHTML = '';
     { let _wd = player.d || {}; let _t = _wd.loadTier || 0; let _hdr = document.createElement('div'); _hdr.className = 'classic-list-toolbar text-center py-0.5 rounded bg-slate-900/60 border border-slate-700 text-sm font-bold leading-tight' + (_t >= 1 ? ' cursor-help' : ''); if (_t >= 1) { _hdr.title = _t === 1 ? '負重50%↑：HP/MP不自然恢復' : (_t === 2 ? '負重82%↑：HP/MP不自然恢復、停自動施法、攻速變慢' : '負重100%↑：HP/MP不自然恢復、停自動施法、攻速大幅變慢'); } _hdr.innerHTML = `<span class="text-slate-400">負重 </span><span class="${getLoadColor(_t)}">${_wd.weightPct||0}%</span>`; eDiv.appendChild(_hdr); }
-    const slots = [{k:'wpn',n:'武器'}, ...((player.cls === 'warrior' && (player.skills.includes('sk_warrior_dualaxe') || player.eq.offwpn)) ? [{k:'offwpn',n:'副手武器'}] : []), {k:'shield',n:'副手'},{k:'helm',n:'頭盔'},{k:'armor',n:'盔甲'},{k:'tshirt',n:'T恤'},{k:'cloak',n:'斗篷'},{k:'gloves',n:'手套'},{k:'boots',n:'長靴'},{k:'amulet',n:'項鍊'},{k:'ear1',n:'耳環'},{k:'ear2',n:'耳環'},{k:'ring1',n:'戒指'},{k:'ring2',n:'戒指'},{k:'ring3',n:'戒指'},{k:'ring4',n:'戒指'},{k:'belt',n:'腰帶'},{k:'pet',n:'寵物裝備'},{k:'doll',n:'魔法娃娃'},{k:'arrow',n:'箭矢'}];   // ⚔️ offwpn：戰士學會迅猛雙斧後顯示副手武器欄
+    const _baseSlots = [{k:'wpn',n:'武器'}, ...((player.cls === 'warrior' && (player.skills.includes('sk_warrior_dualaxe') || player.eq.offwpn)) ? [{k:'offwpn',n:'副手武器'}] : []), {k:'shield',n:'副手'},{k:'helm',n:'頭盔'},{k:'armor',n:'盔甲'},{k:'tshirt',n:'T恤'},{k:'cloak',n:'斗篷'},{k:'gloves',n:'手套'},{k:'boots',n:'長靴'},{k:'amulet',n:'項鍊'},{k:'ear1',n:'耳環'},{k:'ear2',n:'耳環'},{k:'ring1',n:'戒指'},{k:'ring2',n:'戒指'},{k:'ring3',n:'戒指'},{k:'ring4',n:'戒指'},{k:'belt',n:'腰帶'},{k:'pet',n:'寵物裝備'},{k:'doll',n:'魔法娃娃'},{k:'arrow',n:'箭矢'}];   // ⚔️ offwpn：戰士學會迅猛雙斧後顯示副手武器欄
+    const _remSlots = (typeof SHERINE_REMAINS !== 'undefined') ? SHERINE_REMAINS.map(r => ({ k: r.id, n: '遺骸' + r.n })) : [];   // 🦴 v3.1.68 席琳遺骸 8 格（欄位鍵=物品id·浮動裝備視窗 js/19 PAGE_SLOTS 不含→不顯示）
+    // 🦴 v3.1.75 遺骸固定在 1.8 皮膚格線的「最後兩排」：viewport 為 4 欄 × 8 排＝32 格（見 css .classic-inventory-viewport / decorateClassicInventoryTab 補滿 32），
+    //    故一般裝備欄之後補 (32 − 遺骸數 − 基本欄位數) 個空白填充格，讓 8 格遺骸剛好落在第 25~32 格（副手武器欄出現時基本欄位 +1、填充格自動 −1）。
+    const _padCells = Math.max(0, 32 - _remSlots.length - _baseSlots.length);
+    const slots = [..._baseSlots, ...Array.from({ length: _remSlots.length ? _padCells : 0 }, () => ({ filler: true })), ..._remSlots];
     
     let setCheck = {}, _setSeen = {};
     for (let k in player.eq) {
@@ -207,17 +212,31 @@ function renderTabs(force) {
     if(setCheck['bluepirate'] >= 4) activeSets.push('bluepirate');   // 🏴‍☠️ 藍海賊套裝：4 件齊→欄位底色亮起
 
     slots.forEach(s => {
+        if (s.filler) {   // 🦴 v3.1.75 填充格：與 decorateClassicInventoryTab 尾端補的空格同款（無邊框互動·非 .list-item）
+            let f = document.createElement('div');
+            f.className = 'classic-grid-empty'; f.setAttribute('aria-hidden', 'true');
+            eDiv.appendChild(f);
+            return;
+        }
         let eq = player.eq[s.k];
-        let isSetActive = false;
-        if(eq && DB.items[eq.id].set && activeSets.includes(DB.items[eq.id].set)) isSetActive = true;
-        // 🔮 席琳套裝：該裝備的套裝效果組別達 2 件以上（觸發套裝能力）→ 欄位底色變綠
-        let isSherineActive = !!(eq && eq.seteff && player._sherineSetCnt && (player._sherineSetCnt[eq.seteff.slice(0, 2)] || 0) >= 2);
+        let isSetActive = false, _setN = 0;
+        if(eq && DB.items[eq.id].set && activeSets.includes(DB.items[eq.id].set)) { isSetActive = true; _setN = setCheck[DB.items[eq.id].set] || 0; }
+        // 🔮 席琳套裝：⚠️v3.1.68 綠色反光只給「遺骸欄」（套裝效果改由遺骸承載）；一般裝備欄的舊詞綴不再發光（不計件）
+        // 🦴 v3.1.73 遺骸欄三階視覺（實體 CSS class·見 style.css：1.8 皮膚 !important 會蓋掉 Tailwind 的 bg/ring/shadow）
+        //    未觸發(<2 件) → rem-slot-dim：把圖示綠光壓弱；已觸發(2/3/5 件) → rem-slot-lit + rem-tier-N：綠框 + 反光遮罩掃光
+        let _remGrp = (s.k.startsWith('rem_') && eq && eq.seteff) ? eq.seteff.slice(0, 2) : null;
+        let _remN = _remGrp ? ((player._sherineSetCnt && player._sherineSetCnt[_remGrp]) || 0) : 0;
+        let isSherineActive = _remN >= 2;
+        let _remCls = !_remGrp ? ''
+            : (isSherineActive ? ` rem-slot-lit ${_remN >= 5 ? 'rem-tier-5' : (_remN >= 3 ? 'rem-tier-3' : 'rem-tier-2')}` : ' rem-slot-dim');
+        // 🛡️ v3.1.74 一般套裝：同樣的框光＋反光遮罩，配色改琥珀金；階數依實際裝備件數（2/3/5）
+        let _setCls = isSetActive ? ` set-slot-lit ${_setN >= 5 ? 'set-tier-5' : (_setN >= 3 ? 'set-tier-3' : 'set-tier-2')}` : '';
 
         let el = document.createElement('div');
         // 🔧 底色優先序：席琳套裝(綠) > 舊套裝(琥珀金，原綠色讓給席琳) > 一般
         el.className = `list-item text-base rounded mb-1 ${isSherineActive
             ? 'bg-green-900 border border-green-400 ring-1 ring-green-400/60 shadow-[0_0_10px_rgba(74,222,128,0.6)]'
-            : (isSetActive ? 'bg-amber-900 border border-amber-400 ring-1 ring-amber-400/60 shadow-[0_0_10px_rgba(245,158,11,0.55)]' : 'bg-slate-800')}`;
+            : (isSetActive ? 'bg-amber-900 border border-amber-400 ring-1 ring-amber-400/60 shadow-[0_0_10px_rgba(245,158,11,0.55)]' : 'bg-slate-800')}${_remCls}${_setCls}`;
         if(eq) {
             let d = DB.items[eq.id];
             let imgUrl = getIconUrl(d);
@@ -376,7 +395,7 @@ function decorateClassicInventoryTab(div){
     viewport.className='classic-inventory-viewport';
     Array.from(div.children).filter(x=>!x.classList.contains('classic-list-toolbar')&&!x.classList.contains('sticky')).forEach(x=>viewport.appendChild(x));
     // 532 原圖的實際格線為 4 欄 × 8 排（x=45~191、y=21~309）；內部格位才是捲動內容。
-    let used=viewport.querySelectorAll('.list-item').length;
+    let used=viewport.querySelectorAll('.list-item,.classic-grid-empty').length;   // 🦴 v3.1.75 裝備欄會自行插入 .classic-grid-empty 填充格（把遺骸推到最後兩排）→ 一併計入，否則這裡會重複補格撐出第 9 排
     for(let n=used;n<32;n++){
         let empty=document.createElement('div');
         empty.className='classic-grid-empty';
@@ -632,7 +651,11 @@ const WEAPON_TAGS = {
     // 🏺 遺物 第五批新增（v3.1.52）：灼熱蜥蜴長舌/殺人蜂尾刺(出血)、上古蜘蛛之爪=單手劍+武士刀(反擊+居合)、鎧甲守衛巨劍=雙手劍(切割靠 eff)；無所畏懼的突擊(chainsword)/幻夢火炎靈魂(qigu)/光束強化魔杖(isWand)/改造便利箭筒(isArrow) 靠旗標自判免 tag
     relic_lizard_tongue:['矛'], relic_killerbee_sting:['匕首'], relic_ancient_spider_claw:['單手劍','武士刀'], relic_guardian_greatsword:['雙手劍'],
     // 🐍 提卡爾：庫庫爾坎之矛/鞭笞藤/倒勾獠牙=矛(雙手矛·出血)、毒牙=匕首(出血)、易碎泥偶=雙手鈍器(重擊靠 eff+tag 自動貫穿)、玩具鎚=單手鈍器(鈍擊+自動貫穿)；鐵手甲/吹箭(isBow)/枯竭魔杖(名稱含杖)/獻祭亡靈(qigu) 靠旗標/名稱自判免 tag
-    wpn_kukulkan_spear:['矛'], relic_eto_whip:['矛'], relic_serpent_fang:['矛'], relic_kaira_fang:['匕首'], relic_mud_idol:['雙手鈍器'], relic_teo_hammer:['單手鈍器']
+    wpn_kukulkan_spear:['矛'], relic_eto_whip:['矛'], relic_serpent_fang:['矛'], relic_kaira_fang:['匕首'], relic_mud_idol:['雙手鈍器'], relic_teo_hammer:['單手鈍器'],
+    // 🏺 遺物 第十三批（v3.1.80）：護身斧/恢復魔棒/流星鎚=單手鈍器(鈍擊＋自動貫穿)、串刺刑具=矛(出血·雙手)、方尖碑=雙手鈍器(重擊靠 eff＋自動貫穿)、刺劍=匕首(出血)、雙刃劍=雙刀(雙擊靠 eff)；
+    //    彈弓(isBow)/雙尾鞭(chainsword)/熱情魔杖(名稱含魔杖→自動貫穿)/黑暗魔導書(isWand·名稱無杖字→def 顯式 ignHardSkin) 靠旗標/名稱自判免 tag
+    relic_executor_axe:['單手鈍器'], relic_healer_wand:['單手鈍器'], relic_minotaur_flail:['單手鈍器'],
+    relic_executor_skewer:['矛'], relic_weathered_obelisk:['雙手鈍器'], relic_shadow_stinger:['匕首'], relic_soulreaper_dual:['雙刀']
 };
 function getWeaponTags(id){ return WEAPON_TAGS[id] || []; }
 // ⚔️ 雙擊機率 comboRate：未明定者依武器標籤套預設（鋼爪 33% / 雙刀 25%）；個別武器可在 def 寫 comboRate 覆寫（底比斯歐西里斯雙刀30 / 死亡之指20 / 恨之鋼爪50 / 破壞雙刀·破壞鋼爪30）。日後新增 combo 武器自動取得預設機率。
@@ -663,10 +686,12 @@ function buildItemDescHTML(item) {
     if(!d) return '';
     let desc = d.d || "";
     // 🔮 席琳套裝效果：寫在資訊欄（綠色標題＋淺綠加成說明），不冠在名稱前
+    // ⚠️v3.1.68 套裝效果改由「席琳遺骸」承載：遺骸(d.remains)照常列加成；一般裝備上的舊詞綴補註「不再計入」提示（顯示保留·可由菈克希絲拆分）
     if (item.seteff) {
         let _g = item.seteff.slice(0, 2);
         let _lines = (SHERINE_SET_TEXT[_g] || []).map(t => `<span class="text-green-200">・${t}</span>`).join('<br>');
-        desc = `<span class="c-sherine font-bold">✦ 席琳套裝效果：${_g}</span><br>${_lines}`
+        let _legacy = d.remains ? '' : `<br><span class="text-amber-300 text-sm">（舊詞綴：已不計入套裝效果，可請席琳神殿的菈克希絲拆分為遺骸）</span>`;
+        desc = `<span class="c-sherine font-bold">✦ 席琳套裝效果：${_g}</span><br>${_lines}${_legacy}`
              + (desc ? `<br>${desc}` : '');
     }
     if(d.type === 'wpn') {
@@ -693,8 +718,9 @@ function buildItemDescHTML(item) {
         // 瑪那魔杖等「命中恢復MP」武器：依此物品的強化等級(+N)動態顯示恢復量
         if(d.eff === 'mp_drain' || d.mpOnHit) {
             let en = capEn(item.en, d);
-            let mpGain = 1 + Math.max(0, en - 6);
-            desc += `<br><span class="text-sky-300">命中時恢復 ${mpGain} 點 MP（+7 起每強化 +1）。</span>`;
+            let mpGain = mpOnHitAmount(d, en);   // 💧 單一真相 mpOnHitAmount（js/03）：固定量(mpOnHitAmt) → 基底(mpOnHitBase)＋突破安定值加成
+            let _grow = (d.mpOnHitAmt == null) ? '（+7 起每強化 +1）' : '';   // 🏺 固定恢復量者（邪惡蜥蜴的眼瞳 +6）不隨強化成長→不顯示成長註記
+            desc += `<br><span class="text-sky-300">命中時恢復 ${mpGain} 點 MP${_grow}。</span>`;
         }
         if(d.mpROverSafe) {
             let en = capEn(item.en, d);
@@ -712,7 +738,7 @@ function buildItemDescHTML(item) {
     }
     if(d.type === 'arm' || d.type === 'acc') {
         // 順便修復防禦為 0 (例如 T恤) 時不顯示的問題
-        if(d.ac !== undefined) desc += `<br><span class="text-blue-300">防禦(AC): -${d.ac}</span>`;
+        if(d.ac !== undefined) desc += `<br><span class="text-blue-300">防禦(AC): ${d.ac >= 0 ? '-' + d.ac : '+' + (-d.ac)}</span>`;   // 🩹 v3.1.76 負值 ac（曼波帽子 -1＝防禦變弱·確認為刻意設計）：原字串前綴寫死「-」會顯示成「--1」→ 負值改顯示 +N
         let isRanged = (d.ranged === true);
         let hitLabel = isRanged ? "遠距離命中" : "近距離命中";
         let dmgLabel = isRanged ? "遠距離傷害" : "近距離傷害";
@@ -2008,7 +2034,7 @@ function setAllyAutoBuff(slot, sid, on) {
         let sk = DB.skills[sid]; a.buffs[sid] = 0; if (sk && sk.haste) a.buffs.haste = 0;
         try { if (typeof _allyLevelRecompute === 'function') _allyLevelRecompute(a); } catch (e) {}
     }
-    if (typeof TEAM_AURA_SKILLS !== 'undefined' && TEAM_AURA_SKILLS.includes(sid)) { try { if (typeof calcStats === 'function') calcStats(); } catch (e) {} }   // 🌟 v3.0.100 團隊光環開關→刷新玩家 d（化身攻擊光環注入玩家；關閉時傭兵化身已於上方清 0）
+    if ((typeof TEAM_AURA_SKILLS !== 'undefined' && TEAM_AURA_SKILLS.includes(sid)) || (DB.skills[sid] && DB.skills[sid].illuSummon)) { try { if (typeof calcStats === 'function') calcStats(); } catch (e) {} }   // 🌟 v3.0.100 團隊光環開關→刷新玩家 d（化身攻擊光環注入玩家；關閉時傭兵化身已於上方清 0）；🔮 v3.2.2 幻覺（歐吉/巫妖/高崙）關閉時同樣要刷新，否則玩家 d 殘留 +4傷/+4命/+2魔傷 直到下次重算
     try { saveGame(); } catch (e) {}
     _squadSig = '';   // 強制下一輪重建隊伍面板→更新勾選外觀（邊框/文字色於建構時決定）
     try { renderSquadPanel(); } catch (e) {}

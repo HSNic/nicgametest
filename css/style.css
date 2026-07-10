@@ -129,6 +129,54 @@
             0%, 100% { filter: drop-shadow(0 0 4px rgba(74,222,128,0.5)); }
             50%      { filter: drop-shadow(0 0 8px rgba(74,222,128,0.95)) drop-shadow(0 0 16px rgba(34,197,94,0.5)); }
         }
+        /* ===== 🦴 v3.1.73 席琳遺骸裝備欄（8 格·js/10 依件數掛 class）=====
+           ⚠️ 1.8 皮膚 `.classic-inventory-viewport > .list-item` 以 !important 鎖 background/border/box-shadow，
+              Tailwind 的 bg-green-900 / ring-* / shadow-[...] 在此天生無效（實測 computed 與空格完全相同）。
+              故「已觸發」的框光必須用同等特異性選擇器 + !important 才蓋得過。
+           ・未觸發(.rem-slot-dim)：只把圖示的綠光壓弱（覆寫共用的 sherineIcon 動畫，不影響背包/其他頁的遺骸圖示）。
+           ・已觸發(.rem-slot-lit)：綠框 + ::after 反光遮罩（沿格子斜掃過的光澤），依 2/3/5 件三階增強。 */
+        .rem-slot-dim .sherine-glow-icon { animation: sherineIconDim 2.8s ease-in-out infinite; }
+        @keyframes sherineIconDim {
+            0%, 100% { filter: drop-shadow(0 0 1px rgba(74,222,128,0.20)); }
+            50%      { filter: drop-shadow(0 0 2.5px rgba(74,222,128,0.34)); }
+        }
+        .classic-inventory-viewport > .list-item.rem-slot-lit { border-color: #4ade80 !important; box-shadow: inset 0 0 6px #000, 0 0 7px rgba(74,222,128,0.40) !important; }
+        .classic-inventory-viewport > .list-item.rem-slot-lit.rem-tier-3 { border-color: #6ee7a8 !important; box-shadow: inset 0 0 6px #000, 0 0 11px rgba(74,222,128,0.60) !important; }
+        .classic-inventory-viewport > .list-item.rem-slot-lit.rem-tier-5 { border-color: #bbf7d0 !important; box-shadow: inset 0 0 6px #000, 0 0 16px rgba(134,239,172,0.85), 0 0 26px rgba(34,197,94,0.45) !important; }
+        /* 反光遮罩：父層(.list-item)已 position:relative + overflow:hidden（1.8 皮膚），故光澤條自動被裁在格子內。
+           z-index 4＝壓在圖示上、但低於鎖定徽章(z-index 6)。pointer-events:none 不擋點擊。 */
+        .rem-slot-lit::after {
+            content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 55%;
+            z-index: 4; pointer-events: none; mix-blend-mode: screen;
+            background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.22) 38%, rgba(190,255,214,0.55) 50%, rgba(255,255,255,0.22) 62%, transparent 100%);
+            transform: translateX(-130%);
+            animation: remSheen 3.6s ease-in-out infinite;
+        }
+        .rem-slot-lit.rem-tier-3::after { animation-duration: 2.9s; background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.30) 38%, rgba(190,255,214,0.72) 50%, rgba(255,255,255,0.30) 62%, transparent 100%); }
+        .rem-slot-lit.rem-tier-5::after { animation-duration: 2.1s; width: 62%; background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.42) 34%, rgba(220,255,235,0.95) 50%, rgba(255,255,255,0.42) 66%, transparent 100%); }
+        @keyframes remSheen { 0% { transform: translateX(-130%); } 55%, 100% { transform: translateX(290%); } }
+        /* ===== 🛡️ v3.1.74 一般套裝裝備欄（同上格式·顏色改琥珀金）=====
+           與遺骸欄同一套結構（框光 + ::after 反光遮罩 + 2/3/5 件三階），沿用 remSheen 關鍵影格，只換配色。
+           階數依「實際裝備件數」而非套裝門檻：套裝亮起(達門檻)後，件數越多光越強。 */
+        .classic-inventory-viewport > .list-item.set-slot-lit { border-color: #fbbf24 !important; box-shadow: inset 0 0 6px #000, 0 0 7px rgba(245,158,11,0.40) !important; }
+        .classic-inventory-viewport > .list-item.set-slot-lit.set-tier-3 { border-color: #fcd34d !important; box-shadow: inset 0 0 6px #000, 0 0 11px rgba(245,158,11,0.60) !important; }
+        .classic-inventory-viewport > .list-item.set-slot-lit.set-tier-5 { border-color: #fde68a !important; box-shadow: inset 0 0 6px #000, 0 0 16px rgba(252,211,77,0.85), 0 0 26px rgba(217,119,6,0.45) !important; }
+        .set-slot-lit::after {
+            content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 55%;
+            z-index: 4; pointer-events: none; mix-blend-mode: screen;
+            background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.22) 38%, rgba(255,231,170,0.55) 50%, rgba(255,255,255,0.22) 62%, transparent 100%);
+            transform: translateX(-130%);
+            animation: remSheen 3.6s ease-in-out infinite;
+        }
+        .set-slot-lit.set-tier-3::after { animation-duration: 2.9s; background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.30) 38%, rgba(255,225,150,0.72) 50%, rgba(255,255,255,0.30) 62%, transparent 100%); }
+        .set-slot-lit.set-tier-5::after { animation-duration: 2.1s; width: 62%; background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.42) 34%, rgba(255,240,205,0.95) 50%, rgba(255,255,255,0.42) 66%, transparent 100%); }
+        /* 無障礙：使用者要求減少動態 → 停掃光與呼吸，改為靜態微光。
+           ⚠️ filter 必須 !important：`#game-screen img{filter:contrast(1.06) saturate(1.05)}`(本檔 488 行)是 ID 選擇器，
+              特異性高於 class；平時靠「動畫關鍵影格的 filter 凌駕一般宣告」才蓋得過，動畫一關掉靜態 filter 就會輸給它。 */
+        @media (prefers-reduced-motion: reduce) {
+            .rem-slot-lit::after, .set-slot-lit::after { animation: none; transform: none; opacity: .18; width: 100%; }
+            .rem-slot-dim .sherine-glow-icon { animation: none; filter: drop-shadow(0 0 1.5px rgba(74,222,128,0.26)) !important; }
+        }
         /* 區域背景：背景圖由 JS 依地圖/分類設為 inline 樣式（特殊地圖逐張不同）；卡片較不透明，使背景不過於顯眼 */
         #battle-view.has-bg { background-size: cover; background-position: center; background-repeat: no-repeat; background-color: #0b1220; border-radius: 0.5rem; }   /* no-repeat：條狀背景(沙漠)用 contain 時留白處不平鋪；background-color：留白填深色(像電影黑邊)。16:9 圖維持 cover 滿版、看不到底色 */
         #battle-view.has-bg .mob-target { background: transparent !important; border-color: transparent !important; box-shadow: none; text-shadow: 0 1px 3px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.85); }   /* 🔧 狩獵區去框：怪物原圖直接呈現於背景，只保留名稱/血量/狀態(加字陰影保可讀) */
@@ -421,6 +469,8 @@
         }
         .vfx-particle { position: absolute; border-radius: 50%; transform: translate(-50%,-50%); will-change: transform,opacity; }
         .vfx-blood { position: absolute; border-radius: 50%; transform: translate(-50%,-50%); will-change: transform,opacity; pointer-events: none; }   /* 🩸 命中濺血小血滴：小顆、不上發光陰影→不搶眼 */
+        /* 🏹 弓箭投射物（playArrowFx）：原生像素尺寸、不旋轉（左上/右上兩張方向圖）、飛行由 element.animate 驅動 */
+        .vfx-arrow { position: absolute; transform: translate(-50%,-50%); will-change: transform,opacity; pointer-events: none; image-rendering: crisp-edges; image-rendering: pixelated; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
         /* ✨ 怪物死亡：衝擊波環 + 白閃殘影（vfxKill 以 element.animate 驅動·邊框色/尺寸由 JS 內聯指定） */
         .vfx-killring { position: absolute; border-radius: 50%; transform: translate(-50%,-50%); border: 4px solid #ff8a5c; pointer-events: none; will-change: transform,opacity; }
         .vfx-ghost { position: absolute; transform: translate(-50%,-50%); object-fit: contain; pointer-events: none; will-change: transform,opacity,filter; }

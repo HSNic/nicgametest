@@ -39,21 +39,10 @@ function gainItem(id, cnt=1, silent=false, forceNormal=false, affixOld=false) {
         if (_forceBless) bless = true;   // 🔧 v3.1.27 製作材料含祝福裝備→成品必定祝福（僅在此裝備詞綴分支·寵物白板 _noAffixCtx 已於上方擋掉）
     }
 
-    // 🔮 席琳套裝效果：指定部位（武器/頭盔/盔甲/手套/長靴/斗篷/腰帶）※項鍊已改為腰帶
-    //  - 席琳的世界擊殺掉落：一般怪0.1%、恩賜怪0.5%、頭目5%（9 組均勻抽一；🔮 瘋狂的席琳世界再 ×3）
-    //  - 席琳製作（_forceSherineSet）：必定附帶隨機一種
+    // 🔮 席琳套裝詞綴：⚠️v3.1.68 起「不再出現於裝備上」——原掉落擲骰(0.1%/0.5%/5%)與席琳製作(_forceSherineSet)附加皆停用。
+    //   套裝效果改由「席琳遺骸」承載（gainSherineRemains·killMob 掉落／NPC 伊奧兌換／菈克希絲拆分）；
+    //   既有裝備上的舊詞綴保留顯示（名稱前綴/資訊欄）但不再計入套裝件數（recomputeStats 只掃遺骸欄）。
     let seteff = false;
-    if (d) {
-        let _slotOk = sherineSetEligible(d);
-        if (_slotOk && _sherineLootCtx && lootRng('setdrop') < (_sherineLootCtx.boss ? 0.05 : (_sherineLootCtx.grace ? 0.005 : 0.001)) * (_sherineLootCtx.mad ? 3 : 1)) {   // 🎲 committed RNG
-            seteff = SHERINE_EFFECTS[Math.floor(lootRng('setpick') * SHERINE_EFFECTS.length)];
-            logSys(`<span class="c-sherine font-bold">✦ 掉落的裝備蘊含著席琳的祝福：【${seteff}】！</span>`);
-        }
-        if (_slotOk && !seteff && _forceSherineSet) {
-            seteff = SHERINE_EFFECTS[Math.floor(lootRng('setpick') * SHERINE_EFFECTS.length)];
-            logSys(`<span class="c-sherine font-bold">✦ 席琳結晶引導出套裝效果：【${seteff}】！</span>`);
-        }
-    }
 
     let _tEn = 0;   // 🏛️ v3.0.83 傳統模式已取消：掉落自帶強化值停用（任何來源恆 +0·手動強化照常）
     let _probe = { id: id, en: _tEn, bless: bless, anc: anc, attr: attr, seteff: seteff };
@@ -74,6 +63,23 @@ function gainItem(id, cnt=1, silent=false, forceNormal=false, affixOld=false) {
     try { if (_vfxLootCtx && d && d.gachaWeight === 1 && typeof vfxRareDrop === 'function') vfxRareDrop(d.n); } catch(e){}   // ✨ VFX：潘朵拉權重=1 的稀有掉落金色閃光
     try { if (typeof autoSortInventory === 'function') autoSortInventory(); } catch (e) {}   // 🔧 v2.6.73 獲得物品時自動排列背包（每 10 秒最多 1 次·節流在函式內）
     return itemInfo; // 👈 讓拉霸機可以讀取最終產生的物品
+}
+
+// 🦴 v3.1.68 取得席琳遺骸（唯一入口：killMob 掉落／NPC 伊奧兌換／菈克希絲拆分）：
+//   remId＝SHERINE_REMAINS 的物品 id（rem_claw…rem_scale）、group＝席琳詞綴組名（SHERINE_EFFECTS 之一）。
+//   比照 gainItem 的簽章疊加：同部位同詞綴自動疊 cnt（itemSig 已含 seteff→魔女之爪與紅獅之爪分開堆）。
+function gainSherineRemains(remId, group, silent) {
+    let d = DB.items[remId];
+    if (!d || !group) return null;
+    let _probe = { id: remId, en: 0, bless: false, anc: false, attr: false, seteff: group };
+    let ex = player.inv.find(i => sameItemSig(i, _probe));
+    if (ex) ex.cnt += 1;
+    else player.inv.push({ id: remId, uid: uid(), cnt: 1, en: 0, bless: false, anc: false, attr: false, seteff: group, lock: false, junk: false });
+    let itemInfo = { id: remId, cnt: 1, en: 0, bless: false, anc: false, attr: false, seteff: group };
+    if (!silent) logSys(`<span class="c-sherine font-bold">✦ 獲得席琳遺骸：${getItemFullName(itemInfo)}！</span>`);
+    renderTabs();
+    if (typeof auditTrackGain === 'function') auditTrackGain(itemInfo);
+    return itemInfo;
 }
 
 // ===== 🔥 屬性詞綴定義（v3.0.77 屬性強化系統改版：4 屬性 × 5 階，只能存在於武器） =====
@@ -544,8 +550,6 @@ const DARK_BLOCK = [
     '神官頭飾','神官法袍','神官長靴','神官斗篷','神官手套',   // 🔧 神官系列：黑暗妖精禁用（僅法師/妖精）
     '巨蟻女皇的金翅膀'   // 🔧 依文本（騎士/妖精）：黑暗妖精禁用（銀翅膀文本含黑暗妖精則可用）
 ];
-// 🔧 既有十字弓白名單：這些（輸入此規則前已存在的）十字弓黑暗妖精照舊可用；其餘/之後新增的十字弓改依文本(req)
-const DARK_XBOW_LEGACY = ['wpn_31', 'wpn_xbow_dark', 'wpn_xbow_gloom', 'wpn_xbow_rasta'];
 function darkEquipOk(d, id) {
     if (!d) return false;
     if (d.type === 'wpn') {
@@ -555,9 +559,10 @@ function darkEquipOk(d, id) {
         let tags = getWeaponTags(id);
         if (tags.includes('匕首') || tags.includes('單手劍') || tags.includes('鋼爪') || tags.includes('雙刀') || tags.includes('武士刀')) return true;   // 🔧 黑暗妖精亦可使用武士刀
         if (d.isBow) {
-            // 🔧 既有十字弓：黑暗妖精照舊可用（沿用通用規則的既有清單）；之後新增的十字弓一律依文本（req 含 dark 才可用）
-            if (DARK_XBOW_LEGACY.includes(id)) return true;
-            return (d.n || '').includes('十字弓') && (d.req || '').includes('dark');
+            // 🖤 v3.2.4 用戶要求：刪除「十字弓通則」（原 DARK_XBOW_LEGACY 白名單＋更早的名稱含十字弓判斷）——弓具可否使用一律逐把由 req 顯式標示。
+            //    req 必須明確列出 dark 才可用（十字弓 wpn_31 已補 dark 保留現狀）；req:'all' 的一般長弓不可用（黑暗妖精不使用長弓·刻意非疏漏）。
+            //    ⚠️新增弓/十字弓要給黑暗妖精＝req 加 dark；不給＝req 不列 dark（部分十字弓如 拉斯塔巴德重十字弓/惡魔十字弓/寂靜十字弓 即不開放）。
+            return typeof d.req === 'string' && d.req !== 'all' && d.req.split(',').includes('dark');
         }
         return false;                                                   // 單手鈍器/雙手鈍器/魔杖/雙手劍/矛 等：禁用
     }

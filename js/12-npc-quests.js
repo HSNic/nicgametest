@@ -691,12 +691,9 @@ function leavePledge(faction) {
 // 按鈕版面：原本的全寬兌換鈕改為左右各半（左＝一般兌換、右＝席琳兌換）。
 // 僅提供給「成品部位可附加套裝效果」的兌換（武器/頭盔/盔甲/手套/長靴/斗篷/腰帶）。
 function sherineExBtns(label, normalCall, sherineCall) {
-    let _shBtn = player.classicMode   // 🎮 經典模式：隱藏席琳兌換選項（一般兌換鈕 flex-1 自動撐滿整列）
-        ? ''
-        : `<button class="btn flex-1 bg-green-900 hover:bg-green-800 border-green-600 py-3 text-base font-bold" onclick="${sherineCall}" title="額外消耗 1 個席琳結晶：成品必定附帶一種席琳套裝效果"><span class="c-sherine">席琳兌換</span>：${label}</button>`;
+    // ⚠️v3.1.68 席琳兌換綠鈕全面移除：套裝詞綴不再出現於裝備上（改由席琳遺骸承載·NPC 伊奧兌換）→ 只回一般兌換鈕（sherineCall 參數保留簽章相容·不再使用）
     return `<div class="flex gap-2 w-full">
         <button class="btn flex-1 bg-blue-800 py-3 text-base font-bold" onclick="${normalCall}">兌換：${label}</button>
-        ${_shBtn}
     </div>`;
 }
 // 席琳兌換前置檢查（於原材料檢查通過後、扣除材料前呼叫）：沒有結晶 → 提示並中止
@@ -708,8 +705,9 @@ function sherineExCheck(sherine) {
     }
     return true;
 }
-// 席琳兌換發放獎勵：扣 1 個結晶並使成品必定附帶套裝效果（取代各兌換函式中的 gainItem）
+// 席琳兌換發放獎勵：⚠️v3.1.68 席琳詞綴不再附加於裝備（強制 sherine=false·不扣結晶·dead code 保留簽章相容）
 function sherineExGain(rewardId, sherine) {
+    sherine = false;   // 🦴 v3.1.68 裝備不再附席琳詞綴（遺骸系統取代）
     if (sherine) {
         questConsumeId('sherine_crystal', 1);   // 🔧 背包優先，不足扣倉庫
         _forceSherineSet = true;
@@ -733,6 +731,7 @@ function trialQtyBar() {
 function trialQtyAdj(d) { let el = document.getElementById('trial-qty'); if (!el) return; el.value = Math.max(1, (parseInt(el.value) || 1) + d); }
 function trialQtyVal() { let el = document.getElementById('trial-qty'); let v = el ? parseInt(el.value) : 1; return (!v || v < 1) ? 1 : v; }
 function trialRun(reqs, rewardId, sherine) {
+    sherine = false;   // 🦴 v3.1.68 席琳詞綴不再附加於裝備（遺骸系統取代·綠鈕已移除·此為縱深防護：任何殘留呼叫都不再扣結晶/附詞綴）
     let norm = reqs.map(r => Array.isArray(r) ? r : [r, 1]);
     let maxN = Math.min.apply(null, norm.map(p => Math.floor(questCountId(p[0]) / (p[1] || 1))));
     if (!isFinite(maxN)) maxN = 0;
@@ -751,6 +750,89 @@ function trialRun(reqs, rewardId, sherine) {
     return qty;
 }
 function trialExName(n, rewardId) { return `${DB.items[rewardId].n}${n > 1 ? ` ×${n}` : ''}`; }
+
+// ===== 🦴 v3.1.68 席琳遺骸 NPC（席琳神殿）=====
+// 伊奧：席琳結晶 1 顆 → 兌換指定部位遺骸（8 選 1·必附隨機一種席琳詞綴·committed lootRng 防 SL 重抽）
+// 版型比照「製作」(renderUniversalCraft js/14)：左＝遺骸圖示＋名稱＋兌換材料(craftReqHtml)，右＝數量輸入＋兌換鈕。
+function renderIoExchange(div) {
+    let html = `<div class="text-slate-300 text-sm mb-1 px-1">伊奧：「席琳的力量凝於遺骸之中。獻上結晶，選擇你要的部位吧——至於它承載哪一種祝福，由席琳決定。」</div>
+        <div class="text-slate-400 text-xs mb-3 px-1">每件消耗 <span class="c-sherine font-bold">席琳結晶 ×1</span>（背包優先，不足扣共用倉庫）。兌換出的遺骸必附<span class="c-sherine">隨機一種席琳套裝詞綴</span>；集齊相同套裝名的遺骸（裝備欄底部 8 格）即可發動套裝效果。</div>`;
+    SHERINE_REMAINS.forEach(r => {
+        let d = DB.items[r.id];
+        let reqHtml = craftReqHtml([{ id: 'sherine_crystal', cnt: 1 }]);   // 🔧 共用製作的需求列（顏色/數量/含倉庫存量判定一致）
+        html += `
+        <div class="list-item bg-slate-800 rounded mb-2 border border-slate-700 p-3 hover:bg-slate-700 transition-colors" style="display:flex !important; justify-content:space-between !important; align-items:center !important; width:100% !important; box-sizing:border-box !important;">
+            <div class="flex items-center gap-4 min-w-0 flex-1">
+                <div class="w-12 h-12 bg-slate-900 rounded border border-slate-600 flex items-center justify-center shrink-0">
+                    <img src="${getIconUrl(d)}" onerror="this.style.display='none';" class="w-10 h-10 object-contain pointer-events-none">
+                </div>
+                <div class="flex flex-col items-start gap-1.5">
+                    <span class="c-sherine font-bold text-lg leading-none truncate">${d.n}</span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-slate-400 text-sm">兌換材料：</span>${reqHtml}
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <input type="number" min="1" value="1" id="io-qty-${r.id}" onclick="event.stopPropagation()" class="w-14 px-1 py-2 bg-slate-900 border border-slate-600 rounded text-center text-white font-bold">
+                <button class="btn bg-green-900 hover:bg-green-800 border-green-600 py-2 px-6 font-bold shadow" onclick="doIoExchange('${r.id}')"><span class="c-sherine">兌換</span></button>
+            </div>
+        </div>`;
+    });
+    div.innerHTML = `<div class="p-2">${html}</div>`;
+}
+function doIoExchange(remId) {
+    if (!SHERINE_REMAINS.some(r => r.id === remId)) return;
+    let qtyInput = document.getElementById(`io-qty-${remId}`);
+    let qty = Math.max(1, parseInt(qtyInput && qtyInput.value) || 1);
+    let have = questCountId('sherine_crystal');   // 🔧 含共用倉庫
+    if (have < 1) { logSys('<span class="text-red-400 font-bold">材料不足，無法兌換。</span><span class="text-red-300">（尚缺：席琳結晶 1）</span>'); return; }
+    let n = Math.min(qty, have);   // 結晶不足時自動以持有量為上限（比照製作 makeCount）
+    let tally = {};
+    for (let i = 0; i < n; i++) {
+        questConsumeId('sherine_crystal', 1);   // 🔧 背包優先，不足扣共用倉庫
+        let _g = SHERINE_EFFECTS[Math.floor(lootRng('ioaff') * SHERINE_EFFECTS.length)];   // 🎲 committed RNG：兌換當下逐件擲定詞綴（防存讀檔重抽）
+        gainSherineRemains(remId, _g, true);   // silent：改由下方彙總一行
+        tally[_g] = (tally[_g] || 0) + 1;
+    }
+    let parts = Object.keys(tally).map(g => `<span class="c-sherine font-bold">${g}${DB.items[remId].n}</span>${tally[g] > 1 ? ` ×${tally[g]}` : ''}`);
+    logSys(`<span class="c-sherine font-bold">✦ 伊奧的兌換</span>：${parts.join('、')}（消耗 席琳結晶 ×${n}）`);
+    saveGame();
+    let _c = document.getElementById('interaction-content'); if (_c) renderIoExchange(_c);   // 就地重渲染（更新結晶持有數，可連續兌換）
+}
+// 菈克希絲：把「身上穿著、帶席琳詞綴」的裝備拆分＝裝備保留其他詞綴/強化值（僅席琳詞綴消失）＋獲得同詞綴的對應部位遺骸。
+//   部位映射＝SHERINE_REMAINS.eqSlot（武器→之爪…盔甲→之鱗）；⚔️ 戰士副手武器欄(offwpn)視同武器→之爪。
+function renderLachesisSplit(div) {
+    let html = `<div class="p-4">
+        <div class="text-slate-300 text-sm mb-1">菈克希絲：「命運的絲線纏在你的裝備上……讓我為你解開。裝備還是那件裝備，席琳的祝福則化為遺骸歸你。」</div>
+        <div class="text-slate-400 text-xs mb-3">拆分「身上穿著」帶<span class="c-sherine">席琳套裝詞綴</span>的裝備：裝備保留強化值與其他詞綴（僅席琳詞綴消失），並獲得<span class="c-sherine">相同詞綴</span>的對應部位遺骸（如 +12 魔女 祝福的 闊劍 → +12 祝福的闊劍＋魔女之爪）。</div>`;
+    let _rows = '';
+    let _slots = SHERINE_REMAINS.map(r => ({ slot: r.eqSlot, remId: r.id, remN: r.n })).concat([{ slot: 'offwpn', remId: 'rem_claw', remN: '之爪' }]);
+    _slots.forEach(m => {
+        let e = player.eq && player.eq[m.slot];
+        if (!e || !e.seteff) return;
+        let _g = e.seteff.slice(0, 2);
+        _rows += `<div class="flex items-center gap-2 mb-2">
+            <span class="flex-1 ${getItemColor(e)} font-bold text-sm">${getItemFullName(e)}</span>
+            <button class="btn bg-purple-900 hover:bg-purple-800 border-purple-600 py-2 px-4 text-sm font-bold" onclick="doLachesisSplit('${m.slot}')">拆分 → <span class="c-sherine">${_g}${m.remN}</span></button>
+        </div>`;
+    });
+    html += _rows || `<div class="text-slate-500 text-sm py-6 text-center">你身上沒有穿著帶席琳套裝詞綴的裝備。</div>`;
+    html += `</div>`;
+    div.innerHTML = html;
+}
+function doLachesisSplit(slotKey) {
+    let e = player.eq && player.eq[slotKey];
+    if (!e || !e.seteff) return;
+    let _map = (slotKey === 'offwpn') ? SHERINE_REMAINS.find(r => r.eqSlot === 'wpn') : SHERINE_REMAINS.find(r => r.eqSlot === slotKey);
+    if (!_map) return;   // 非映射部位（理論上不會發生：清單只列映射欄位）
+    let _g = e.seteff.slice(0, 2);
+    e.seteff = false;   // 僅席琳詞綴消失：強化值(en)/祝福(bless)/古代(anc)/屬性(attr) 全保留·裝備維持穿著
+    gainSherineRemains(_map.id, _g, true);
+    logSys(`<span class="c-sherine font-bold">✦ 菈克希絲拆下了裝備上的席琳詞綴：獲得 ${_g}${_map.n}！</span>`);
+    calcStats(); renderTabs(true); saveGame();
+    let _c = document.getElementById('interaction-content'); if (_c) renderLachesisSplit(_c);   // 就地重渲染（清單更新，可連續拆分）
+}
 
 // ===== 🔥 v3.0.78 試煉接取制（15/30/45 級）：須達等級向 NPC 接取 → 試煉道具才開始掉落（100%·達需求即停·禁倉庫）→ 一次性完成領「全部」獎勵 =====
 //   狀態：player.trialQ[key] = 0/undefined 未接取、1 進行中、2 已完成（完成後無法再接取、道具不再掉落）。
