@@ -54,6 +54,36 @@
     var parts = order.filter(function (o) { return cats[o[0]] > 0; }).map(function (o) { return o[1] + cats[o[0]]; });
     return parts.length ? '（' + parts.join('/') + '）' : '';
   }
+  // 讀某存檔位「最新一筆」離線紀錄(afk-offline.js summarize() 寫入的 afk_hist_<slot>,含完整物品/擊殺清單;
+  //   跟 afk-history.js 讀同一份資料,回傳整個陣列(最多 5 筆,新→舊)供「查看明細」展開時列出
+  //   包含這次剛結算的與之前的歷史紀錄,不只顯示最新一筆。)
+  function readHistList(n) {
+    try {
+      var arr = JSON.parse(localStorage.getItem('afk_hist_' + n) || '[]');
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function oneRecordHTML(r) {
+    var html = '<div class="m-bs-detail-row">📍 ' + esc(r.map || '?') + '</div>';
+    if (r.items && r.items.length) {
+      html += '<div class="m-bs-detail-row"><b>物品：</b>' + r.items.map(function (it) {
+        return '<span class="' + esc(it.c || '') + '">' + esc(it.n) + '×' + it.cnt + '</span>';
+      }).join('、') + '</div>';
+    }
+    if (r.kills && r.kills.length) {
+      var ks = r.kills.slice().sort(function (a, b) { return b.cnt - a.cnt; });
+      html += '<div class="m-bs-detail-row"><b>擊殺：</b>' + ks.map(function (k) { return esc(k.n) + '×' + k.cnt; }).join('、') + '</div>';
+    }
+    return html;
+  }
+  function detailHTML(list) {
+    if (!list.length) return '';
+    return '<div class="m-bs-detail">' + list.map(function (r, idx) {
+      return '<div class="m-bs-detail-entry">' +
+        '<div class="m-bs-detail-tag">' + (idx === 0 ? '本次結算' : '第 ' + (idx + 1) + ' 筆（較舊）') + '</div>' +
+        oneRecordHTML(r) + '</div>';
+    }).join('') + '</div>';
+  }
 
   function init() {
     if (typeof player === 'undefined' || typeof currentSlot === 'undefined' ||
@@ -71,6 +101,65 @@
 
     window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
     AFK_SETTINGS.add({ label: '⏱️ 批次結算所有存檔位', onClick: confirmStart });
+
+    // 使用者實測回饋:批次結算時的結果只有這個彈窗看得到,那個角色若不是「目前正在玩的」,
+    //   之後真正登入時完全看不到這筆結算——因為 logSys 訊息是即時 DOM,不會存進存檔。
+    //   解法:批次結算完一格就把「這一格剛結算完的 afk_hist 最新一筆」整份存進
+    //   afk_batchpending_<slot>(不是存布林旗標);再包一層 loadGame(此時已是
+    //   afk-offline.js 包過的版本),任何「真正的下一次登入」(不管是不是透過本外掛)都會
+    //   把這份存起來的結果重新印一次到系統日誌,才清除旗標。
+    //   ⚠ 為什麼要整份存起來、不能只存布林旗標再到時候重讀 afk_hist_<slot>[0]:
+    //   如果「下次真正登入」時這個存檔位同時也有一段新的離線缺口,會觸發另一次真正的
+    //   runCatchup,它的 summarize() 也會把新結果推進 afk_hist_<slot> 陣列頭——若補記
+    //   邏輯等到那時才去讀 [0],讀到的會是這次新缺口的結果,不是原本要補記的那一筆。
+    function setPending(n) {
+      try {
+        var rec = readHistList(n)[0];   // 這一格剛結算完(afk-offline.js summarize() 剛寫入)的最新一筆
+        if (rec) localStorage.setItem('afk_batchpending_' + n, JSON.stringify(rec));
+      } catch (e) {}
+    }
+    function tryDeliverPending() {
+      try {
+        var key = 'afk_batchpending_' + currentSlot;
+        var raw = localStorage.getItem(key);
+        if (!raw) { console.info('[AFK-batch-settle] 存檔 ' + currentSlot + ' 沒有待補記的批次結算通知。'); return; }
+        localStorage.removeItem(key);
+        var r;
+        try { r = JSON.parse(raw); } catch (e) { console.warn('[AFK-batch-settle] 待補記資料毀損,略過補記。', e); return; }
+        if (!r || typeof logSys !== 'function') { console.warn('[AFK-batch-settle] 找不到 logSys 或資料為空,無法補記。'); return; }
+        console.info('[AFK-batch-settle] 存檔 ' + currentSlot + ' 補記批次結算通知:', r);
+        var parts = [];
+        if (r.gold > 0) parts.push('金幣 +' + r.gold.toLocaleString());
+        if (r.lv > 0) parts.push('升 ' + r.lv + ' 級');
+        if (r.exp > 0) parts.push('經驗 +' + r.exp.toLocaleString());
+        if (r.items && r.items.length) parts.push(r.items.map(function (it) { return it.n + '×' + it.cnt; }).join('、'));
+        var line = '<span class="text-cyan-300 font-bold">📦 批次結算補記：</span>之前用「批次結算」幫這個角色補算過離線收益' +
+          (parts.length ? '，獲得 ' + parts.join('、') : '') +
+          (r.died ? '<span class="text-red-400 font-bold">（中途死亡）</span>' : '') + '。';
+        logSys(line);
+      } catch (e) { console.warn('[AFK-batch-settle] 補記日誌失敗', e); }
+    }
+    // ⚠️ 踩過的坑:logSys 在 state.ff(補跑/快轉中)為 true 時是 no-op(js/01-drops-config.js
+    //   logSys 開頭 `if(state.ff) return;`,補跑期間刻意不洗版)。若這次登入「同時也有真正的
+    //   新離線缺口」,loadGame() 呼叫後 runCatchup 還在跑(async,state.ff 仍是 true),此時立刻
+    //   呼叫 logSys 補記會被靜音吞掉、console 卻顯示有呼叫過(看似正常,實際訊息消失)。
+    //   解法:呼叫前先等 window.__afk.busy 變成 false(比照批次結算本體等待補跑完成的做法),
+    //   確保這次登入的補跑(如果有)已經跑完、state.ff 已還原,才真的補記。
+    var DELIVER_POLL_MS = 100, DELIVER_MAX_TRIES = MAX_WAIT_MS / DELIVER_POLL_MS;   // 逾時上限跟批次結算本體的 MAX_WAIT_MS 一致(8分鐘),涵蓋重度角色補跑耗時
+    function waitBusyThenDeliver(triesLeft) {
+      if (window.__afk.busy) {
+        if (triesLeft <= 0) { console.warn('[AFK-batch-settle] 等待補跑結束逾時,放棄這次補記(下次登入再試)。'); return; }
+        setTimeout(function () { waitBusyThenDeliver(triesLeft - 1); }, DELIVER_POLL_MS);
+        return;
+      }
+      tryDeliverPending();
+    }
+    var _origLoadGameForDeliver = loadGame;
+    window.loadGame = function () {
+      var r = _origLoadGameForDeliver.apply(this, arguments);
+      try { waitBusyThenDeliver(DELIVER_MAX_TRIES); } catch (e) {}
+      return r;
+    };
 
     // 使用者實測回饋:這是「跨存檔位管理」功能,放在「選擇存檔位(載入進度)」畫面比首頁設定選單更直覺、更容易被發現。
     // 兩個入口都留著(設定選單維持既有習慣;這裡多開一個更貼近使用情境的捷徑),monkey-patch openSlotSelect 加一顆按鈕。
@@ -126,6 +215,8 @@
       }
     }
 
+    var _detailExpand = {}, _rowCache = {};   // _detailExpand[n]=是否展開明細;_rowCache[n]=最近一次 setRow 的(sum,state),供 toggle 明細時重繪
+
     function rowHTML(n, sum, state) {
       // state: 'pending' | 'running' | 'skip-empty' | 'skip-none' | 'done' | 'timeout' | 'error'
       var label = sum ? (esc(sum.cls) + ' Lv.' + esc(sum.lv) + (sum.name ? '　' + esc(sum.name) : '')) : '（空）';
@@ -148,6 +239,11 @@
           if (last.items) parts.push(last.items + ' 種物品' + itemCatsSuffix(last.itemCats));
           if (last.died) parts.push('<span class="m-bs-died">中途死亡</span>');
           body = '<span class="m-bs-done">' + (parts.length ? parts.join('、') : '完成(無明顯收益)') + '　(耗時 ' + fmtDur(state.elapsed || 0) + ')</span>';
+          var hist = readHistList(n).slice(0, 2);   // 使用者要求:明細只需要「本次＋上一筆」,不用列全部歷史(afk_hist 最多存5筆)
+          if (hist.length) {
+            body += ' <button type="button" class="m-bs-detail-btn" data-act="detail" data-n="' + n + '">' + (_detailExpand[n] ? '收起明細 ▲' : '🔍 查看明細 ▼') + '</button>';
+            if (_detailExpand[n]) body += detailHTML(hist);
+          }
           break;
       }
       return '<div class="m-bs-row"><span class="m-bs-head">' + head + '</span><span class="m-bs-body">' + body + '</span></div>';
@@ -156,11 +252,13 @@
     function buildRows() {
       var wrap = document.getElementById('m-bs-rows');
       var html = '';
+      _detailExpand = {};
       for (var n = 1; n <= SLOT_COUNT; n++) html += '<div id="m-bs-row-' + n + '"></div>';
       wrap.innerHTML = html;
       for (n = 1; n <= SLOT_COUNT; n++) setRow(n, slotSummary(n), { kind: 'pending' });
     }
     function setRow(n, sum, state) {
+      _rowCache[n] = { sum: sum, state: state };
       var el = document.getElementById('m-bs-row-' + n);
       if (el) el.innerHTML = rowHTML(n, sum, state);
     }
@@ -209,6 +307,7 @@
         totals.exp += last.exp || 0;
         totals.lv += last.lv || 0;
         totals.slots++;
+        setPending(n);   // 標記「待補記」:這個角色下次真正登入時,把這筆結算結果重新顯示在系統日誌裡(現在只有批次視窗看得到)
         setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
       }
 
@@ -243,6 +342,14 @@
         '</div>';
       document.body.appendChild(modal);
       document.getElementById('m-bs-close').addEventListener('click', closeModal);
+      document.getElementById('m-bs-rows').addEventListener('click', function (e) {
+        var b = e.target.closest('[data-act="detail"]');
+        if (!b) return;
+        var n = parseInt(b.getAttribute('data-n'), 10);
+        _detailExpand[n] = !_detailExpand[n];
+        var c = _rowCache[n];
+        if (c) setRow(n, c.sum, c.state);
+      });
     }
 
     function injectCss() {
@@ -267,6 +374,13 @@
         '.m-bs-err{color:#f87171;}',
         '.m-bs-done{color:#86efac;}',
         '.m-bs-died{color:#fca5a5;font-weight:bold;}',
+        '.m-bs-detail-btn{margin-left:6px;min-height:32px;padding:2px 10px;border-radius:7px;font-size:11.5px;font-weight:bold;cursor:pointer;font-family:inherit;border:1px solid #475569;background:#1e293b;color:#93c5fd;}',
+        '.m-bs-detail-btn:active{background:#334155;}',
+        '.m-bs-detail{margin-top:6px;display:flex;flex-direction:column;gap:6px;}',
+        '.m-bs-detail-entry{padding:8px 10px;background:#0b1424;border:1px solid #1e293b;border-radius:7px;display:flex;flex-direction:column;gap:5px;font-size:12.5px;}',
+        '.m-bs-detail-tag{color:#7dd3fc;font-size:11px;font-weight:bold;}',
+        '.m-bs-detail-row{color:#cbd5e1;word-break:break-word;}',
+        '.m-bs-detail-row b{color:#94a3b8;font-weight:bold;}',
         '#m-bs-foot{flex:0 0 auto;padding:10px 14px;border-top:1px solid #1e293b;display:flex;flex-direction:column;gap:8px;}',
         '.m-bs-summary{color:#e2e8f0;font-size:13.5px;font-weight:bold;}',
         '.m-bs-toast{background:#164e63;border:1px solid #0891b2;color:#a5f3fc;font-size:12.5px;line-height:1.6;padding:8px 10px;border-radius:8px;}'
