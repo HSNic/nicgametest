@@ -12,10 +12,11 @@
 
 ## 📁 所有紀錄檔(md)一律寫進 `Lineage/加掛版/docs/`,不要寫進專案資料夾裡(2026-07-08 使用者明訂)
 
-- **背景**:工作資料夾(`idle-lineage-class-YYYYMMDD-HHMM-NNN`)每次改完程式碼或同步完新版都會改名、流水號累加——紀錄檔如果放在專案資料夾底下的 `docs/`,資料夾一改名,之前的連結、路徑就全部斷掉、下一個接手的 session 也很難找歷史。**`Lineage/加掛版/docs/` 是跟專案資料夾同層的固定位置,不會隨資料夾改名而變動**,所以往後所有「紀錄檔」(交接紀錄、同步紀錄/差異分析、版本異動紀錄、風險清單、發布/上架流程、外掛依賴矩陣…)一律直接寫在這裡,不要寫進專案資料夾內的 `docs/`(2026-07-08 起,專案資料夾內已不再有 `docs/`,原有全部檔案都搬過去了)。
+- **背景(歷史沿革)**:工作資料夾原本(2026-07-06~2026-07-10)是 `idle-lineage-class-YYYYMMDD-HHMM-NNN` 這種每次改完程式碼或同步完新版就改名、流水號累加的命名方式——紀錄檔如果放在專案資料夾底下的 `docs/`,資料夾一改名,之前的連結、路徑就全部斷掉、下一個接手的 session 也很難找歷史。**2026-07-10 起,使用者已決定工作資料夾固定命名為 `idle-lineage-class`(不含日期/流水號),往後不再改名**——因為 Git 本身已經足以追蹤版本歷史,不需要再靠改資料夾名稱當版本標記,而且資料夾改名容易牽動 `.claude/skills/` 等內部設定與外部書籤。**`Lineage/加掛版/docs/` 仍是跟專案資料夾同層的固定位置**,所有「紀錄檔」(交接紀錄、同步紀錄/差異分析、版本異動紀錄、風險清單、發布/上架流程、外掛依賴矩陣…)一律直接寫在這裡,不要寫進專案資料夾內的 `docs/`(專案資料夾內已不再有 `docs/`)。
 - **從專案資料夾內下指令時的相對路徑是 `../docs/<分類>/`**(專案資料夾與 `Lineage/加掛版/docs/` 是兄弟目錄)。分類資料夾與用途說明見 `Lineage/加掛版/docs/README.md`(索引),目前分類:`交接與接手/`、`同步/`、`版本異動紀錄/`、`發布上架/`、`風險與外掛/`;新的紀錄類型找不到對應分類就新開一個,並回頭補進 `README.md` 的分類表。
 - **這個 `docs/` 不在任何 git repo 版控內**(它是 `Lineage/加掛版/` 底下的純資料夾,`Lineage/加掛版/idle-lineage-class-*` 才是 git repo),寫完不用/不能 `git add`,純粹是檔案系統上的固定文件庫。程式碼本體、`CLAUDE.md`、`scripts/`、`.claude/` 仍留在專案資料夾內、照常進 git。
-- **判準**:新建或修改一份「給人看的紀錄/流程/分析文件」時,先想「這份文件半年後、資料夾改名 N 次後,還有人找得到嗎?」——會被找的紀錄檔就該進 `../docs/`,只跟這次修改的程式碼本身有關、不需要跨 session 找的說明(例如 commit message)才留在原地或不必落檔。
+- **判準**:新建或修改一份「給人看的紀錄/流程/分析文件」時,先想「這份文件半年後還有人找得到嗎?」——會被找的紀錄檔就該進 `../docs/`,只跟這次修改的程式碼本身有關、不需要跨 session 找的說明(例如 commit message)才留在原地或不必落檔。
+- **🔒 工作資料夾名稱固定為 `idle-lineage-class`,不要再改名/加日期流水號(2026-07-10 使用者明訂)**:過去每次改動就重新命名資料夾的習慣已經停用。改名這件事本身沒有帶來額外的版本保護(Git commit 歷史就足夠),卻會讓 `.claude/skills/`、使用者的終端機書籤/捷徑、之前對話裡提到的路徑全部要跟著改一次,徒增麻煩與斷連結風險。**之後任何情境都不要主動建議或詢問是否要重新命名這個資料夾**,固定用 `idle-lineage-class` 這個路徑即可。
 
 ## 📱 每一個修改都要考慮手機版,不能只顧電腦版(2026-07-08 使用者明訂)
 
@@ -184,6 +185,11 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 
 ## 📚 小百科(afk-wiki.js)維護準則
 
+> **⏸️ 2026-07-10 使用者明訂:暫停由這邊(本使用者/本 session)主動更新小百科(`afk-wiki.js`)與掉落查詢(`afk-dex.js`)的內容**——這兩支目前是 **pp771007** 那邊在維護,使用者自己只是讀取/使用,不是這兩塊功能的維護者。**原因:兩人同時改同一支檔案容易互相覆蓋或撞出合併衝突。**
+> - **同步原作者新版(index.html/js/\*.js/css/\*.css)不受影響、照常進行**——那是不同檔案,不會跟 pp771007 的小百科/掉落查詢工作衝突。
+> - 但同步後**不要**自動接著跑 `/update-wiki` 或手動補小百科/掉落查詢的內容差異(即使發現新遺物/新地圖/數值上限之類需要更新的地方,也只寫進同步差異分析記錄檔提醒,不要自己動手改 `afk-wiki.js`/`afk-dex.js`)。
+> - 這條是暫停,不是永久——之後使用者要恢復自己維護,或指示可以動了,再解除即可。
+>
 > **🛠️ 此 SOP 已包成 `/update-wiki` skill(`.claude/skills/update-wiki/`)。** 使用者說「更新小百科 / 同步小百科」時**直接跑 `/update-wiki`**——它把「git pull → 讀 checkpoint → 逐檔 diff → 檔→頁對照 → render 實測 → 更新 checkpoint」整套固化好了。本節是同一套 SOP 的詳述背景;**操作層的鐵則(尤其新踩的雷)優先寫進 skill**,本節保留為原理/細則參考。(push 前準備另有 `/prepush` skill,見下「每次 push 前的檢查清單」。)
 >
 > **🔴 鐵則:更新小百科資料前,第一件事一定要先 `git pull`(`git fetch origin && git pull --rebase origin main`)。**
@@ -337,6 +343,10 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 ## Git / GitHub
 
 - commit / push 時**不要**帶上 Claude 作者資訊或 `Co-Authored-By` 標記(沿用全域規則)。
+- **🔓 push 前置檢查(`/prepush`)全綠後,Claude 可以直接執行 `git push`,不需每次詢問**(2026-07-10 使用者明訂,推翻同日稍早「push 一律由使用者自己執行」的暫定規則——那條是環境當下沒有 push 權限時的權宜之計,使用者確認後已改成:remote 走 HTTPS 用 `gh auth setup-git` 的憑證、`/prepush` 檢查全綠就可以直接 push)。
+  - **push 前一定要先跑完 `/prepush`(bump 改動外掛的 `?v=` → `stamp-sw-version.mjs` → smoke test → 衝突標記/重複 script 檢查),全綠才 push;任一步紅就停下回報,不要硬推。**
+  - push 完仍照原本流程走:背景輪詢等 GitHub Pages 重建完成才回報「已上線」,之後主動接續打 tag/開 Release 那套(見下面對應章節)。
+  - 這條的前提是這台環境的 remote 已改成 HTTPS 並掛 `gh` 憑證(`git remote -v` 應顯示 `https://github.com/HSNic/nicgametest.git`)——如果哪天又變回 SSH 且連不上(`Permission denied (publickey)`),代表環境設定被改了,先回報使用者確認,不要自己亂試。
 
 ### 🔴 push 被擋→`git pull --rebase` 出現衝突時:不可盲目 `git add -A && rebase --continue`(會把衝突標記 commit 進去)
 
@@ -352,15 +362,15 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 1. **🚨 輪詢一律丟「背景任務」跑(`run_in_background`),不要在主回合同步 `sleep` 等**——同步等會讓那 1~2 分鐘完全不能回使用者訊息(使用者明確抱怨過)。push 完就把下面這支輪詢丟背景、自己繼續待命/接話,背景跑完會通知,再回報「上線了」。
 2. **判準以「curl 抓線上實際版本號」為權威,不要只信 `gh api pages/builds/latest`**——build API 在連續多次 push 時會回報延遲的 commit(踩過:API 還停在前一個 commit,但 curl 線上版本其實已是最新)。背景輪詢直接比對線上外掛 `?v=`:
    ```bash
-   # 背景輪詢:直到線上 index.html 的外掛版本 = 剛 bump 的版本(或直接 grep 你改的那支)
+   # 背景輪詢:直到線上 version.json 的 code 值 = 這次 stamp-sw-version 產生的值(最簡單直接)
    for i in $(seq 1 14); do
-     v=$(curl -s --ssl-no-revoke "https://pp771007.github.io/idle-lineage-class/index.html?cb=$(date +%s)" | grep -oE 'afk-wiki\.js\?v=[0-9a-z]+')
-     echo "[$i] $v"; [ "$v" = "afk-wiki.js?v=<剛 bump 的版本>" ] && { echo BUILT; break; }; sleep 15
+     v=$(curl -s --ssl-no-revoke "https://hsnic.github.io/nicgametest/version.json?cb=$(date +%s)")
+     echo "[$i] $v"; echo "$v" | grep -q "<這次 stamp 出來的 code 值>" && { echo BUILT; break; }; sleep 15
    done
    ```
-   (`gh api repos/pp771007/idle-lineage-class/pages/builds/latest --jq '{status,commit}'` 可當輔助參考,但不要當唯一判準。)
+   (`gh api repos/HSNic/nicgametest/pages/builds/latest --jq '{status,commit}'` 可當輔助參考,但不要當唯一判準。)
 3. 背景輪詢回報「BUILT」後**才**通知使用者「已上線、可重整看到新版」(訊息從 Telegram 來就用 `reply`)。
-- GitHub Pages 站台:`https://pp771007.github.io/idle-lineage-class/`(本 fork,非原作者 shines871)。
+- GitHub Pages 站台:`https://hsnic.github.io/nicgametest/`(repo `HSNic/nicgametest`,非原作者 shines871)。**⚠️ 2026-07-10 修正:這裡先前誤寫成 `pp771007.github.io/idle-lineage-class`,那是錯的網域/repo 名稱,曾害背景輪詢打錯網址查了一輪都查不到——`pp771007` 是協助維護小百科/掉落查詢那位協作者的帳號,跟站台網域無關,不要搞混。**
 
 ### 🔴 push 上線後,主動接著問/做「打 tag + 開 GitHub Release」,不要等使用者提醒(2026-07-08 使用者明訂)
 
