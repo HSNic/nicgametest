@@ -406,6 +406,7 @@
   async function runCatchup(totalTicks, withOverlay, huntMap, prePride, preObl, timing) {
     if (catchingUp) return;
     catchingUp = true;
+    if (window.__afk) window.__afk.busy = true;   // 🏦 對外曝光補跑中旗標(供 afk-batch-settle.js 批次結算多存檔位時輪詢,知道何時可換下一個存檔位)
     killTally = {};   // 📜 本次補跑的擊殺計數歸零
     gainTally = {};   // ⚡ 本次補跑的獲得計數歸零
 
@@ -859,6 +860,7 @@
     } catch (e) {}
     stamp();
     catchingUp = false;
+    if (window.__afk) window.__afk.busy = false;   // 🏦 補跑結束,對外旗標同步清掉
   }
 
   // 載入後決定要不要結算離線。preMap/preTs 由 loadGame wrapper 在「原 loadGame 執行前」擷取——
@@ -1023,6 +1025,8 @@
     readTs: readTs,
     mapName: mapName,   // 對外:地圖 id→中文名(供 afk-mobile 在匯入頁顯示「掛在哪張地圖」)
     histKey: histKey,   // 對外:目前角色的離線紀錄 key(供 afk-history)
+    busy: false,   // 🏦 是否有補跑(runCatchup)正在進行中,供 afk-batch-settle.js 批次結算多存檔位時輪詢
+    last: null,   // 最近一次 runCatchup 完成的結算摘要({mins,gold,exp,lv,died,ticks,items},見 summarize())；battle-settle 用來讀取每個存檔位的結果
     forceCatchup: function (mins, noFast) { _forceNoFast = !!noFast; runCatchup(Math.floor((mins || 60) * 60000 / TICK_MS), true, (typeof mapState !== 'undefined' && mapState && mapState.current) || ''); }   // 帶當前地圖,否則 gotoMap(undefined) 空轉零收益;noFast=true 強制全模擬(A/B 用)
   };
 
