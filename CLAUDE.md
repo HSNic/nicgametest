@@ -373,10 +373,16 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 3. 背景輪詢回報「BUILT」後**才**通知使用者「已上線、可重整看到新版」(訊息從 Telegram 來就用 `reply`)。
 - GitHub Pages 站台:`https://hsnic.github.io/nicgametest/`(repo `HSNic/nicgametest`,非原作者 shines871)。**⚠️ 2026-07-10 修正:這裡先前誤寫成 `pp771007.github.io/idle-lineage-class`,那是錯的網域/repo 名稱,曾害背景輪詢打錯網址查了一輪都查不到——`pp771007` 是協助維護小百科/掉落查詢那位協作者的帳號,跟站台網域無關,不要搞混。**
 
-### 🔴 push 上線後,主動接著問/做「打 tag + 開 GitHub Release」,不要等使用者提醒(2026-07-08 使用者明訂)
+### 🔴 push 上線後,主動接著把 tag + GitHub Release 整套做完,不要等使用者提醒、也不用使用者手動操作(2026-07-10 更新,推翻原本「步驟3-4使用者做」的分工)
 
 **踩過**:合併一批功能(同步+介面優化+光圈特效)push 上線後,只回報「已上線」就結束,沒有主動接著走 `../發布上架/發布Release流程.md` 的打 tag/開 Release 流程,被使用者問「github一樣要有版本,怎麼沒有提示我」才想起來。
 
-- **判準**:凡是「一批功能/修改完成、確認上線沒問題」的時間點(不是每次小 commit 都要,但只要使用者說「完成」「可以上線」這種收尾語氣,或這批改動明顯是一個階段性成果),**主動**做完 `發布Release流程.md` 步驟 1-2(確認 build 版本號、本機建 `git tag -a v<build> -m "..."`,這兩步不需要密碼、我自己做),然後**主動**告訴使用者接下來換他做步驟 3-4(push tag、開網頁 Release),附上完整指令與內文草稿(可以直接從版本異動紀錄玩家版複製),不要只講「push 完成了」就停在那裡等使用者自己想起來還有 tag/Release 這回事。
-- 使用者確認 Release 開好後,**主動**用 `curl "https://api.github.com/repos/<owner>/<repo>/releases/latest"` 驗證 `tag_name`/`body` 正確,回報確認結果。
-- 這條跟上面「push 後等 GitHub Pages 重建」是同一個精神的延伸:**上線不是 push 完就結束,還有 tag+Release 這一步,要主動走完整套流程、不要漏講。**
+- **2026-07-10 使用者再次明訂**:`發布Release流程.md` 原本把步驟 3(push tag)、步驟 4(開網頁 Release)劃給使用者做,理由是「需要密碼/需要瀏覽器登入」——但 remote 早就已經改成 HTTPS + `gh auth setup-git` 憑證(見上面「Git / GitHub」章節),`gh` CLI 本身已登入且有 `repo` 權限,**push tag 不需要密碼、開 Release 也不需要瀏覽器登入,兩者都能直接用命令列做完**,不需要使用者插手。使用者原話:「你不是可以幫我一起,以後都你做就好了」。
+- **判準/新流程**:凡是「一批功能/修改完成、確認上線沒問題」的時間點,`git push` 完之後**主動一次做完全部 5 步**,不再分批問使用者:
+  1. 確認 `version.json` 的 build 值。
+  2. `git tag -a v<build> -m "..."` 建本機 tag。
+  3. `git push origin v<build>` 推上去(HTTPS+gh憑證,不需密碼)。
+  4. `gh release create v<build> --repo <owner>/<repo> --title "加掛版 build <build>" --notes "<內文>"`(內文可直接從版本異動紀錄玩家版最新一筆整理;`gh release create` 預設非 draft、非 prerelease,不需要額外選項)。
+  5. `curl "https://api.github.com/repos/<owner>/<repo>/releases/latest"` 驗證 `tag_name`/`name`/`draft`/`prerelease`/`body` 正確,回報使用者「已發布 Release:<網址>」。
+- **`發布Release流程.md` 裡「誰做哪一步」那張表已過期**(還寫著步驟3-4是使用者做),之後有空要回頭一併更新那份文件,說明改用 `gh release create`;沒更新前,**以這裡(CLAUDE.md)最新規則為準**。
+- 這條跟上面「push 後等 GitHub Pages 重建」是同一個精神的延伸:**上線不是 push 完就結束,還有 tag+Release 這一步,要主動走完整套流程、不假手使用者、不要漏講。**
