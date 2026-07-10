@@ -23,10 +23,14 @@
     var st = document.createElement('style');
     st.id = 'afk-isearch-css';
     st.textContent = [
-      '.afk-isearch{position:sticky;top:0;z-index:5;padding:2px 0 4px;background:inherit;flex:none;}',
-      '.afk-isearch input{width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;font-family:inherit;outline:none;}',
+      '.afk-isearch{position:sticky;top:0;z-index:5;padding:2px 0 4px;background:inherit;display:flex;align-items:center;gap:6px;}',
+      '.afk-isearch input{flex:1 1 auto;min-width:0;box-sizing:border-box;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;font-family:inherit;outline:none;}',
       '.afk-isearch input:focus{border-color:#b89243;}',
-      '.afk-isearch input::placeholder{color:#64748b;}'
+      '.afk-isearch input::placeholder{color:#64748b;}',
+      // 道具/武器/防具分頁的「整理背包(↕)」鈕(原本 afk-classic-list.js 定位成獨立一排的絕對定位小鈕)
+      // 被搬進這裡跟搜尋框同排(見 ensureTabSearch);改回一般排版排一起,下拉選單仍靠 position:relative 錨定。
+      '.afk-isearch .classic-sort-wrap{position:relative!important;flex:0 0 auto!important;width:auto!important;height:auto!important;}',
+      '.afk-isearch .classic-sort-button{width:26px;height:26px;box-sizing:border-box;}'
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -63,13 +67,22 @@
       var div = document.getElementById(t.tabId);
       if (!div) return;
       var inputId = 'afk-isearch-' + t.key;
-      if (!document.getElementById(inputId)) {
+      var box = document.getElementById(inputId) ? document.getElementById(inputId).parentElement : null;
+      if (!box) {
         // 重建過了 → 重注入。快速操作頭部(第一個子元素,若存在)標記不過濾,搜尋框插在它後面。
         if (div.firstElementChild && !div.firstElementChild.classList.contains('afk-isearch')) div.firstElementChild.dataset.afkKeep = '1';
-        var box = makeBox(inputId, t.key, function () { filterChildren(div, q[t.key], box); });
+        box = makeBox(inputId, t.key, function () { filterChildren(div, q[t.key], box); });
         div.insertBefore(box, div.firstElementChild ? div.firstElementChild.nextSibling : null);
       }
-      filterChildren(div, q[t.key], document.getElementById(inputId) && document.getElementById(inputId).parentElement);
+      // 排序切換鈕(↕):原作 decorateClassicInventoryTab 每次重建都在 .classic-inventory-shell 內生一個全新節點,
+      // afk-classic-list.js 把它 CSS 定位成獨立一排;搬進搜尋框同一列(box),不佔獨立一排(使用者要求)。
+      var sortWrap = div.querySelector('.classic-sort-wrap');
+      if (sortWrap && sortWrap.parentElement !== box) {
+        box.appendChild(sortWrap);
+        var vp = div.querySelector('.classic-inventory-viewport');
+        if (vp) vp.style.setProperty('padding-top', '0', 'important');   // 鈕搬走了,原本留給它的頂部空白一併收掉
+      }
+      filterChildren(div, q[t.key], box);
     });
   }
 

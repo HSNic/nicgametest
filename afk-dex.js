@@ -12,12 +12,29 @@
 (function () {
   'use strict';
 
-  var MAX_RESULTS = 60;
+  // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
+  // 故 standalone 下降低單次渲染上限、拉長防抖,減少同步渲染的耗時與頻率。
+  var _isStandalone = (function () {
+    try {
+      return (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches ||
+              window.matchMedia('(display-mode: fullscreen)').matches)) ||
+             window.navigator.standalone === true;
+    } catch (e) { return false; }
+  })();
+  var MAX_RESULTS = _isStandalone ? 30 : 60;
   var INDEX = [];   // [{ id, mob, maps:[名稱], drops:[[id,名稱,pct]], hay:可搜尋字串(小寫) }]
   // 搜尋打字防抖:每次按鍵只重設計時器,停手這麼久才真的過濾+重渲染(降低逐字輸入的 INP)。
-  var SEARCH_DEBOUNCE_MS = 150;
+  var SEARCH_DEBOUNCE_MS = _isStandalone ? 350 : 150;
   var _searchTimer = null;
-  function debouncedSearch() { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(function () { _searchTimer = null; doSearch(); }, SEARCH_DEBOUNCE_MS); }
+  var _composing = false;   // 注音/拼音組字中:期間不重渲染,compositionend 才真正觸發,避免組字被同步渲染卡住
+  function debouncedSearch() {
+    if (_composing) return;
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function () {
+      _searchTimer = null;
+      if (window.requestAnimationFrame) requestAnimationFrame(doSearch); else doSearch();
+    }, SEARCH_DEBOUNCE_MS);
+  }
   var DROPPED_SET = {};   // itemId -> true:被任一隻怪掉落過(由 buildIndexes 統一收集;用於判斷物品「有沒有怪掉的固定來源」)
 
   function ready(fn) {
@@ -572,7 +589,7 @@
     if (!d) return '<div class="m-dex-hint">查無此物品資料。</div>';
     var icon = '';
     try { icon = (typeof getIconUrl === 'function') ? getIconUrl(d) : ''; } catch (e) {}
-    var img = icon ? '<img class="m-dex-iimg" src="' + esc(icon) + '" alt="" onerror="this.style.display=\'none\'">' : '';
+    var img = icon ? '<img class="m-dex-iimg" src="' + esc(icon) + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'">' : '';
     var nameCls = d.legend ? ' c-legend' : '';
     var head = opts.noHead ? '' : ('<div class="m-dex-ihead">' + img + '<div class="m-dex-iname-big' + nameCls + '">' + esc(d.n) + '</div></div>');
     var handTxt = (d.type === 'wpn' && typeof isTwoHandedWpn === 'function') ? ('・' + (isTwoHandedWpn(d) ? '雙手' : '單手')) : '';   // 🗡️ 武器標單手/雙手(用遊戲 isTwoHandedWpn:弓或w2h且非oneHand=雙手)
@@ -840,7 +857,10 @@
       '</div>' +
       '<div id="m-dex-itempop"><div id="m-dex-itempop-card"><button id="m-dex-itempop-close" type="button" title="關閉" aria-label="關閉">✕</button><div id="m-dex-itempop-body"></div></div></div>';
     document.body.appendChild(m);
-    document.getElementById('m-dex-input').addEventListener('input', debouncedSearch);
+    var dexInput = document.getElementById('m-dex-input');
+    dexInput.addEventListener('compositionstart', function () { _composing = true; });
+    dexInput.addEventListener('compositionend', function () { _composing = false; debouncedSearch(); });
+    dexInput.addEventListener('input', debouncedSearch);
     document.getElementById('m-dex-mode').addEventListener('change', doSearch);
     document.getElementById('m-dex-close').addEventListener('click', userCloseTop);
     document.getElementById('m-dex-clear').addEventListener('click', function () {

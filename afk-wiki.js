@@ -938,10 +938,27 @@
     { k: 'npc', n: 'NPC總覽' }
   ];
   var state = { tab: 'equipbook', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn' };   // 預設分頁=分頁列第一個(收藏-裝備)
+  // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
+  // 故 standalone 下拉長防抖,減少同步渲染的頻率。
+  var _isStandalone = (function () {
+    try {
+      return (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches ||
+              window.matchMedia('(display-mode: fullscreen)').matches)) ||
+             window.navigator.standalone === true;
+    } catch (e) { return false; }
+  })();
   // 搜尋打字防抖:每次按鍵只重設計時器,停手這麼久才真的過濾+重渲染(降低逐字輸入的 INP)。
-  var SEARCH_DEBOUNCE_MS = 150;
+  var SEARCH_DEBOUNCE_MS = _isStandalone ? 350 : 150;
   var _searchTimer = null;
-  function debouncedRender() { if (_searchTimer) clearTimeout(_searchTimer); _searchTimer = setTimeout(function () { _searchTimer = null; render(); }, SEARCH_DEBOUNCE_MS); }
+  var _composing = false;   // 注音/拼音組字中:期間不重渲染,compositionend 才真正觸發,避免組字被同步渲染卡住
+  function debouncedRender() {
+    if (_composing) return;
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function () {
+      _searchTimer = null;
+      if (window.requestAnimationFrame) requestAnimationFrame(render); else render();
+    }, SEARCH_DEBOUNCE_MS);
+  }
 
   // 把內文裡任何「分頁名」(夾在「」裡、且整段剛好等於某個分頁名)做成可點的跳頁連結。
   // 用「整段精確等於分頁名」當條件:像「席琳套裝」「席琳的世界」不會誤中分頁「席琳」,避免把一般引號詞變連結。
@@ -992,10 +1009,17 @@
     });
     var input = document.getElementById('m-wiki-input');
     var clearBtn = document.getElementById('m-wiki-clear');
+    input.addEventListener('compositionstart', function () { _composing = true; });
+    input.addEventListener('compositionend', function () {
+      _composing = false;
+      state.q = input.value;
+      clearBtn.classList.toggle('show', !!input.value);
+      debouncedRender();
+    });
     input.addEventListener('input', function () {
       state.q = input.value;
       clearBtn.classList.toggle('show', !!input.value);   // state.q 與清除鈕即時更新
-      debouncedRender();                                   // 重的過濾/渲染延後 → 打字不卡
+      debouncedRender();                                   // 重的過濾/渲染延後 → 打字不卡(組字中由 debouncedRender 內部擋下)
     });
     clearBtn.addEventListener('click', function () { input.value = ''; state.q = ''; clearBtn.classList.remove('show'); render(); input.focus(); });
     // 職業魔法分頁的「職業篩選」按鈕(事件委派;body innerHTML 重繪後仍有效)
@@ -1815,7 +1839,7 @@
       var d = e.d, id = e.id;
       var nameCls = d.legend ? 'c-legend' : 'text-slate-100';
       var ic = ''; try { ic = (typeof getIconUrl === 'function') ? getIconUrl(d) : ''; } catch (eIc) {}
-      var icImg = ic ? '<img src="' + esc(ic) + '" alt="" style="width:26px;height:26px;object-fit:contain;flex:none;border-radius:4px;" onerror="this.style.display=\'none\'">' : '';
+      var icImg = ic ? '<img src="' + esc(ic) + '" alt="" loading="lazy" decoding="async" style="width:26px;height:26px;object-fit:contain;flex:none;border-radius:4px;" onerror="this.style.display=\'none\'">' : '';
       return '<div class="m-wiki-card m-eq-card">' +
         '<div class="m-eq-head" data-eq="' + esc(id) + '" style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
           '<span style="display:flex;align-items:center;gap:7px;flex-shrink:0;">' + icImg + '<span class="' + nameCls + ' font-bold" style="white-space:nowrap;">' + esc(d.n) + (d.legend ? ' ✦' : '') + '</span></span>' +
