@@ -18,6 +18,10 @@ function recomputeStats() {
     d.crushDr = 0; d.meleeHaste = 0; d.atkSpdPct = 0;   // 🏺 遺物 第二批：受重擊減傷% / 裝近戰武器攻速% / 通用攻速%
     d.thornsDmg = 0; d.instakillFull = 0; d.onDmgHeal = null; d.onDmgHealCd = 0; d.onDmgHealName = '';   // 🏺 遺物 第三批：受擊反傷固定值 / 命中滿血怪即死率 / 受擊自癒技能id（onDmgHealCd=冷卻秒數、onDmgHealName=來源名稱）
     d.hurtExplode = 0;   // 🏺 遺物 第四批 爆彈花蕊：受擊時對自己與全體敵人的火魔傷固定值
+    d.fireNullify = false;   // 🏺 遺物 火熱愛意：免疫受到的火屬性傷害（每10秒最多1次·js/04 火魔傷攔截·player._fireNullCd 節流）
+    d.wearerEle = '';        // 🏺 遺物 火焰/寒冷化身：裝備者化為某屬性→受剋屬性傷害增加、剋制屬性傷害減少（js/04 受擊路徑 elementCounterMult(mob.e, wearerEle)）
+    d.physDrGated = 0;       // 🐍 遺物 祭祀儀式陶罐：受一般攻擊傷害減少%（每3秒最多1次·js/04 enemyPhysicalAttack·player._physDrCd 節流）
+    d.lowMpRegenBonus = 0;   // 🐍 遺物 蛇神的凝視：MP<15% 時 MP自然恢復量額外+N（js/03 regenTick）
     d.moveSpeedPct = 0;  // 🏺 遺物 寄居蟹背殼：移動速度%（負=變慢→怪物重生變慢·js/03 重生延遲讀取·與加速buff相乘）
     d.poisonHealMult = 0;   // 🏺 遺物 毒液化身：受到毒性 DoT 時恢復所受傷害×此倍率的 HP（js/03 中毒 tick 讀取·0=無）
     d.rangedDmg = 0; d.rangedHit = 0; d.rangedCrit = 0;
@@ -78,7 +82,7 @@ function recomputeStats() {
           if (_eqHas('acc_curse_green')) { d.dex += 2; d.cha -= 2; }
       }
     }
-    // 🪆 魔法娃娃全收集：裝備收集冊 doll 部位全收集(50 隻) → 六維各 +1（提前套用→吃進 AC/HP/MP/近遠魔傷害/命中/爆擊等衍生值；受下方 80 上限夾擠）。
+    // 🪆 魔法娃娃全收集：裝備收集冊 doll 部位全收集(50 隻) → 六維各 +1（提前套用→吃進 AC/HP/MP/近遠魔傷害/命中/爆擊等衍生值；受下方 100 上限夾擠）。
     //    收集判定走 player.equipDex(共用桶)；recomputeStats 只對玩家執行(p 恆＝player)，傭兵不走此路徑故不吃。label 由 js/16 EQUIP_CAT_BONUS.doll 顯示。
     if (typeof equipCatComplete === 'function' && equipCatComplete('doll')) { d.str += 1; d.dex += 1; d.con += 1; d.int += 1; d.wis += 1; d.cha += 1; }
 
@@ -88,11 +92,11 @@ function recomputeStats() {
         if (d.str === _mx) d.str += 1; if (d.dex === _mx) d.dex += 1; if (d.con === _mx) d.con += 1;
         if (d.int === _mx) d.int += 1; if (d.wis === _mx) d.wis += 1; if (d.cha === _mx) d.cha += 1; } }
 
-    // 🎯 六維屬性效果上限 80：效果表(getStr/Dex/Int/Con/Wis... 系列)最高只設定到 80，超過 80 無對應能力。
-    //    故在此(Phase 1 加總完、Phase 2 換算前)把最終屬性夾擠至 ≤80：
-    //    ① 讓 HP/MP 線性成長(getConGrowth/getWisGrowth·原本無上限)亦止於 80；② 資訊欄(讀 d.str)顯示不超過 80，避免玩家誤會配更高有加成。
-    //    註：只夾「衍生最終值 d.*」，不動 player.base/alloc/panacea(原始配點保留、可回憶蠟燭退還)；各效果自身更低的內部上限(ER封60/MpReduce封45/MR封60)不受影響。
-    { let _ATTR_CAP = 80;
+    // 🎯 六維屬性效果上限 100（v3.1.51 由 80 拓展）：效果表(getStr/Dex/Int/Con/Wis... 系列·js/01)已依 60→80 段曲線鏡射設定到 100，超過 100 無對應能力。
+    //    故在此(Phase 1 加總完、Phase 2 換算前)把最終屬性夾擠至 ≤100：
+    //    ① 讓 HP/MP 線性成長(getConGrowth/getWisGrowth·原本無上限)亦止於 100；② 資訊欄(讀 d.str)顯示不超過 100，避免玩家誤會配更高有加成。
+    //    註：只夾「衍生最終值 d.*」，不動 player.base/alloc/panacea(原始配點保留、可回憶蠟燭退還)；各效果自身更低的內部上限(ER封60/MpReduce封45/MR封60·項圈計數封60)刻意不隨拓展、維持原值。
+    { let _ATTR_CAP = 100;
       d.str = Math.min(_ATTR_CAP, d.str); d.dex = Math.min(_ATTR_CAP, d.dex); d.int = Math.min(_ATTR_CAP, d.int);
       d.con = Math.min(_ATTR_CAP, d.con); d.wis = Math.min(_ATTR_CAP, d.wis); d.cha = Math.min(_ATTR_CAP, d.cha); }
 
@@ -311,6 +315,10 @@ d.mr += (baseMr + bonusMr);
         if(ed.instakillFull) d.instakillFull += ed.instakillFull;  // 🏺 遺物 隱蔽的死亡草葉：一般攻擊命中滿血怪即死率
         if(ed.onDmgHeal) { d.onDmgHeal = ed.onDmgHeal; d.onDmgHealCd = ed.onDmgHealCd || 5; d.onDmgHealName = ed.n; }   // 🏺 遺物 白螞蟻蛋殼(初級/5秒) / 孵育螞蟻精華(中級/8秒)：受擊自癒技能 id＋冷卻秒數＋來源名稱（cd 由 _shellHealCd 節流·僅單一副手槽→無疊加）
         if(ed.hurtExplode) d.hurtExplode += ed.hurtExplode;   // 🏺 遺物 爆彈花蕊：受擊爆裂火魔傷固定值
+        if(ed.fireNullify) d.fireNullify = true;              // 🏺 遺物 火熱愛意：免疫火屬性傷害（10秒節流·js/04 攔截）
+        if(ed.wearerEle) d.wearerEle = ed.wearerEle;          // 🏺 遺物 火焰/寒冷化身：裝備者化為某屬性（受擊屬性剋制·js/04）
+        if(ed.physDrGated) d.physDrGated += ed.physDrGated;   // 🐍 遺物 祭祀儀式陶罐：受一般攻擊傷害減少%（3秒節流·js/04）
+        if(ed.lowMpRegenBonus) d.lowMpRegenBonus += ed.lowMpRegenBonus;   // 🐍 遺物 蛇神的凝視：MP<15% 時 MP自然恢復額外+N（js/03 regenTick）
         if(ed.moveSpeedPct) d.moveSpeedPct += ed.moveSpeedPct;   // 🏺 遺物 寄居蟹背殼：移動速度%（影響怪物重生延遲）
         if(ed.poisonHealMult) d.poisonHealMult = Math.max(d.poisonHealMult, ed.poisonHealMult);   // 🏺 遺物 毒液化身：毒性 DoT 轉治癒倍率（取最高·不疊加）
         // 🛡️ 臂甲（副手）：每強化+1 → HP+10；門檻特效（達 +5/+7/+9 套用對應階、取最高階、非累加）
@@ -368,7 +376,7 @@ d.mr += (baseMr + bonusMr);
     if(setCheck['silver'] >= 4) { d.ac -= 3; }
     if(setCheck['oasis'] >= 4) { d.ac -= 3; }
     if(setCheck['gnome'] >= 3) { d.ac -= 1; p.mhp += 5; }
-    if(setCheck['mage'] >= 2) { p.mmp += 50; }
+    if(setCheck['mage'] >= 2) { p.mmp += 50; d.mpR += 1; }   // 🧙 法師套裝：MP+50、MP自然恢復+1
     if(setCheck['kurt'] >= 4) { d.ac -= 4; p._setPoly = Object.assign({}, SET_POLY_FORMS.kurt); }   // 🔧 克特套裝：變身升級為 真‧克特
     if(setCheck['steel'] >= 5) { d.ac -= 2; d.dr += 2; }
     if(setCheck['mr'] >= 3) { d.mr += 5; }
@@ -452,7 +460,7 @@ d.mr += (baseMr + bonusMr);
     { let _aw = p.eq.wpn ? getWeaponTags(p.eq.wpn.id) : []; let _ow = p.eq.offwpn ? getWeaponTags(p.eq.offwpn.id) : []; if(p.mastery === 'k_giantaxe' && (_aw.includes('雙手鈍器') || _ow.includes('雙手鈍器'))) spdMult *= (1/1.3); else if(p.mastery === 'k_dualaxe' && _aw.includes('單手鈍器') && p.eq.offwpn && _ow.includes('單手鈍器')) spdMult *= (1/1.3); }   // ⚔️ 巨斧精通(主手或副手任一持雙手鈍器·符合「持雙手鈍器+30%」描述·含混裝)／雙斧精通(主副手皆單手鈍器)：攻速+30%
     { let _rw = p.eq.wpn ? getWeaponTags(p.eq.wpn.id) : []; if(p.mastery === 'k_royal_sword' && (_rw.includes('單手劍') || _rw.includes('雙手劍'))) spdMult *= (1/1.5); }   // 👑 劍術精通：裝單手劍／雙手劍攻速+50%
     { let _iw = p.eq.wpn ? DB.items[p.eq.wpn.id] : null; if(p.cls === 'illusion' && _iw && !_iw.isBow && ((p.mastery === 'i_qigu' && _iw.qigu) || (p.mastery === 'i_magicsword' && !_iw.qigu && !isWandWeapon(_iw)))) spdMult *= (1/1.3); }   // 🔮 奇古獸精通(裝奇古獸)／魔劍精通(裝非奇古獸·排除魔杖)：攻速+30%
-    if(d.atkSpdPct > 0) spdMult *= (1 / (1 + d.atkSpdPct / 100));   // 🏺 遺物 綠色妖鬼的指甲：攻速 +atkSpdPct%（無條件·與其他加速相乘疊加）
+    if(d.atkSpdPct !== 0) spdMult *= (1 / (1 + d.atkSpdPct / 100));   // 🏺 遺物 綠色妖鬼的指甲 +20%／🏺 鎧甲守衛的笨重巨劍 -50%（負值＝攻速變慢·間隔加倍·v3.1.52 由 >0 改 !==0 使負值生效）
     { let _mhw = p.eq.wpn ? DB.items[p.eq.wpn.id] : null; if(d.meleeHaste > 0 && _mhw && !_mhw.isBow && !_mhw.ranged) spdMult *= (1 / (1 + d.meleeHaste / 100)); }   // 🏺 遺物 狂野的鬃毛外套：裝備近距離武器時攻速 +meleeHaste%
     if(p.buffs.blue > 0) d.mpR += getWisBlueBonus(d.wis);          // 藍色藥水：依精神提升MP恢復
     if(p.buffs.cautious > 0) { d.magicDmg += 2; d.mpR += 2; }      // 慎重藥水
@@ -891,6 +899,20 @@ const OSIRIS_BOX_HIGH = [
     ['new_item_151', 14], ['new_item_154', 14], ['new_item_160', 14], ['new_item_157', 14],
     ['new_item_152', 8], ['new_item_155', 8], ['new_item_158', 8], ['new_item_161', 8]
 ];
+// 🐍 提卡爾 庫庫爾坎寶箱：4 傳說裝(初級 0.25%/高級 0.75%)＋卷軸＋寶石（結構同歐西里斯寶箱）
+const KUKULKAN_BOX_BASIC = [
+    ['wpn_kukulkan_spear', 0.25], ['wpn_kukulkan_gauntlet', 0.25], ['shd_kukulkan', 0.25], ['hlm_kukulkan', 0.25],
+    ['scroll_weapon', 3], ['scroll_armor', 4],
+    ['new_item_151', 15], ['new_item_154', 15], ['new_item_160', 15], ['new_item_157', 15],
+    ['new_item_152', 8], ['new_item_155', 8], ['new_item_158', 8], ['new_item_161', 8]
+];
+const KUKULKAN_BOX_HIGH = [
+    ['wpn_kukulkan_spear', 0.75], ['wpn_kukulkan_gauntlet', 0.75], ['shd_kukulkan', 0.75], ['hlm_kukulkan', 0.75],
+    ['scroll_weapon', 4], ['scroll_armor', 5],
+    ['new_item_151', 14], ['new_item_154', 14], ['new_item_160', 14], ['new_item_157', 14],
+    ['new_item_152', 8], ['new_item_155', 8], ['new_item_158', 8], ['new_item_161', 8]
+];
+const BOX_LOOT_BY_ID = { item_osiris_box_basic: OSIRIS_BOX_BASIC, item_osiris_box_high: OSIRIS_BOX_HIGH, item_kukulkan_box_basic: KUKULKAN_BOX_BASIC, item_kukulkan_box_high: KUKULKAN_BOX_HIGH };
 function osirisBoxRoll(table) {
     let total = 0; for (let e of table) total += e[1];   // 總權重（一般情況=100）
     let r = lootRng('osiris') * total, acc = 0;   // 🎲 committed RNG（防 SL 重抽歐西里斯寶箱開到哪件）
@@ -928,7 +950,7 @@ function doOpenOsirisBox(uid, n) {
     let item = player.inv.find(i => i.uid === uid);
     if (!item) { closeOsirisBoxModal(); return; }
     let d = DB.items[item.id];
-    let table = (d.boxTier === 'high') ? OSIRIS_BOX_HIGH : OSIRIS_BOX_BASIC;
+    let table = BOX_LOOT_BY_ID[item.id] || ((d.boxTier === 'high') ? OSIRIS_BOX_HIGH : OSIRIS_BOX_BASIC);   // 🐍 依寶箱 id 選 loot 表（歐西里斯/庫庫爾坎），未列則回退 boxTier
     n = Math.max(1, Math.floor(n));
     let opened = 0, gained = {};
     let _svTrad = _tradLootCtx; _tradLootCtx = true;   // 🏛️ 傳統模式：寶箱開出的底比斯裝備比照掉落/製作，自帶隨機強化值（gainItem 內 traditionalActive() 閘·非傳統恆 +0；強化值走 committed lootRng 防 SL）

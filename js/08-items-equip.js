@@ -355,7 +355,7 @@ function useItem(u, silent = false) {
         }
         if (item.id.includes('potion_heal') || item.id === 'potion_strong' || item.id === 'potion_ult') {
             if (player.cds.pot > 0) return;
-            let h = Math.floor(d.val * (1 + (getConPotionPct(player.d.con) + dollFieldVal('potionBonus') + (player._miscPotionBonus || 0)) / 100));   // 🪆 魔法娃娃 potionBonus%（吸血鬼）；🧰 道具收集冊 材料/其他全收集：藥水恢復%
+            let h = Math.floor(potionHealBase(d) * (1 + (getConPotionPct(player.d.con) + dollFieldVal('potionBonus') + (player._miscPotionBonus || 0)) / 100));   // 🍶 藥水基準改隨機區間 valMin~valMax（紅10~20/橙30~50/白60~80）；🪆 魔法娃娃 potionBonus%（吸血鬼）；🧰 道具收集冊 材料/其他全收集：藥水恢復%
             if (hasMastery('k_survive')) h = Math.floor(h * 1.25);   // 🏅 生存精通：治癒藥水恢復 +25%
             if (hasMastery('k_tough') && player.hp < player.mhp * 0.4) h = Math.floor(h * 1.5);   // ⚔️ 堅韌精通：HP<40% 時藥水治癒量 +50%
             if (hasMastery('k_dragonblood')) h = Math.floor(h * 1.15);   // 🐉 龍血精通：治癒藥水恢復 +15%
@@ -593,7 +593,7 @@ const DRAGON_WHITELIST = new Set([
     '水晶手套','巴蘭卡手套','墮落手套','武官手套','腕甲','抗魔法頭盔','巴蘭卡頭盔','武官頭盔','精靈皮盔',
     '伊娃之盾','骷髏盾牌','武官之盾','銀釘皮盾','侏儒圓盾','拉斯塔巴德圓盾','大盾牌','反射之盾','梅杜莎盾牌','皮盾牌','木盾','小盾牌','阿克海盾牌','死亡之盾',
     '巨斧','狂戰士斧','戰斧','侏儒鐵斧','銀斧','戰錘','流星錘','木棒','弗萊爾','釘錘','亞連','斧',
-    '古老的劍','惡魔之劍','黑焰之劍','瑟魯基之劍','克特之劍','黑暗之劍','細劍','大馬士革刀','武士刀','拉斯塔巴德長劍','侵略者之劍','精靈短劍','彎刀','長劍','紅騎士之劍','銀長劍','小侏儒短劍','銀劍','奧里哈魯根的劍身','歐西斯短劍','鎖子甲破壞者','闊劍','長劍的劍身','短劍的劍身',
+    '古老的劍','惡魔之劍','黑燄之劍','瑟魯基之劍','克特之劍','黑暗之劍','細劍','大馬士革刀','武士刀','拉斯塔巴德長劍','侵略者之劍','精靈短劍','彎刀','長劍','紅騎士之劍','銀長劍','小侏儒短劍','銀劍','奧里哈魯根的劍身','歐西斯短劍','鎖子甲破壞者','闊劍','長劍的劍身','短劍的劍身',
     '屠龍劍','古老的巨劍','騎士范德之劍','復仇之劍','巨劍','武官雙手劍','雙手劍','血色巨劍'
 ]);
 function dragonEquipOk(d, id) {
