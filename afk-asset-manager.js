@@ -47,6 +47,7 @@
         typeof saveGame !== 'function' || typeof _lzGet !== 'function' || typeof _lzSet !== 'function' ||
         typeof _saveWrap !== 'function' || typeof _saveUnwrap !== 'function' ||
         typeof slotSummary !== 'function' || typeof whSig !== 'function' || typeof _whStackFind !== 'function' ||
+        typeof whCategory !== 'function' || typeof whItemSubCat !== 'function' ||
         typeof WH_NO_STORE === 'undefined' || typeof WH_MAX === 'undefined' ||
         typeof getItemFullName !== 'function' || typeof DB === 'undefined') {
       console.warn('[AFK-asset-manager] 缺少必要全域,角色資產管理功能停用。');
@@ -62,6 +63,48 @@
 
     window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
     AFK_SETTINGS.add({ label: '🏦 角色資產管理', onClick: openModal });
+
+    // 使用者實測回饋:這是「跨存檔位管理」功能,放在「選擇存檔位(載入進度)」畫面比首頁設定選單更直覺、更容易被發現。
+    // 兩個入口都留著(設定選單維持既有習慣;這裡多開一個更貼近使用情境的捷徑),monkey-patch openSlotSelect 加一顆按鈕。
+    if (typeof openSlotSelect === 'function') {
+      var _origOpenSlotSelect = openSlotSelect;
+      window.openSlotSelect = function (mode) {
+        var r = _origOpenSlotSelect.apply(this, arguments);
+        try { mountSlotLoadEntry(mode); } catch (e) { console.warn('[AFK-asset-manager] 掛載選存檔位入口失敗', e); }
+        return r;
+      };
+    }
+    function mountSlotLoadEntry(mode) {
+      var title = document.getElementById('slot-select-title');
+      if (!title) return;
+      var bar = document.getElementById('m-slotload-toolbar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'm-slotload-toolbar';
+        bar.style.display = 'flex';
+        bar.style.gap = '10px';
+        bar.style.flexWrap = 'wrap';
+        bar.style.justifyContent = 'center';
+        title.parentNode.insertBefore(bar, title.nextSibling);
+      }
+      bar.style.display = (mode === 'load') ? 'flex' : 'none';
+      if (mode === 'load' && !document.getElementById('m-asset-entry-btn')) {
+        var btn = document.createElement('button');
+        btn.id = 'm-asset-entry-btn';
+        btn.type = 'button';
+        btn.className = 'btn';
+        btn.style.padding = '8px 16px';
+        btn.style.fontSize = '14px';
+        btn.style.fontWeight = 'bold';
+        btn.style.minHeight = '40px';
+        btn.style.background = '#312e81';
+        btn.style.borderColor = '#4338ca';
+        btn.style.color = '#c7d2fe';
+        btn.textContent = '🏦 角色資產管理';
+        btn.addEventListener('click', openModal);
+        bar.appendChild(btn);
+      }
+    }
 
     // ── 讀取某存檔位的「摘要 + 明文資料」；currentSlot 走記憶體(即時)，其餘走 localStorage(讀檔當下快照) ──
     function readSlot(n) {
@@ -157,8 +200,61 @@
       return { ok: true, name: getItemFullName(it), cnt: it.cnt };
     }
 
+    var MAIN_CATS = [{ key: '', name: '全部' }, { key: 'weapon', name: '武器' }, { key: 'armor', name: '裝備' }, { key: 'item', name: '道具' }];
+    // 子分類選單:邏輯完全鏡射 js/12-npc-quests.js 的 whSubCatOptions,只是參數化 main(原函式讀全域 _whFilter,
+    //   這裡若直接呼叫會連動改到「真正倉庫視窗」目前顯示的分類,故照抄邏輯、不呼叫原函式)。
+    function subCatOptions(main) {
+      if (main === 'item') return [
+        { key: 'card', name: '卡片' }, { key: 'skill', name: '技能' }, { key: 'craft', name: '製作' },
+        { key: 'quest', name: '任務' }, { key: 'scroll', name: '卷軸' }, { key: 'other', name: '其他' }
+      ];
+      if (!main) return [];
+      var grp = (main === 'weapon') ? ['武器'] : ['防具', '飾品'];
+      var options = (typeof EQUIP_CATEGORIES !== 'undefined' ? EQUIP_CATEGORIES : []).filter(function (c) { return grp.indexOf(c.group) >= 0; }).map(function (c) { return { key: c.key, name: c.name }; });
+      if (main === 'armor' && !options.some(function (c) { return c.key === 'tshirt'; })) options.splice(2, 0, { key: 'tshirt', name: '內衣' });
+      return options;
+    }
+    // 單品是否符合「主分類+子分類」篩選:邏輯鏡射 whMatchFilter,同樣理由不直接呼叫原函式(它讀全域 _whFilter/_whSubFilter)。
+    function matchFilter(id, main, sub) {
+      if (main && whCategory(id) !== main) return false;
+      if (!sub) return true;
+      if (main === 'item') return whItemSubCat(id) === sub;
+      if (main === 'armor' && sub === 'tshirt') { var d = DB.items[id]; return !!(d && d.type === 'arm' && d.slot === 'tshirt'); }
+      return (typeof equipCatKey === 'function') ? (equipCatKey(id, DB.items[id]) === sub) : true;
+    }
+
+    // ── 把某存檔位背包裡「符合目前篩選、未鎖定、可存入」的物品一次全部移入共用倉庫 ──
+    function bulkDepositFiltered(n, main, sub) {
+      var slot = readSlot(n);
+      if (slot.empty || slot.corrupt) return { ok: false, moved: 0 };
+      var candidates = (slot.inv || []).filter(function (it) {
+        return !it.lock && WH_NO_STORE.indexOf(it.id) < 0 && matchFilter(it.id, main, sub);
+      });
+      if (!candidates.length) return { ok: false, moved: 0 };
+      var wKey = 'lineage_idle_warehouse' + (slot.sum && slot.sum.classic ? '_classic' : '');
+      var wl = whLoadByKey(wKey);
+      if (!wl.ok) return { ok: false, moved: 0, reason: '倉庫讀取失敗' };
+      var movedUids = {}, moved = 0, full = false;
+      for (var i = 0; i < candidates.length; i++) {
+        var it = candidates[i];
+        var stack = _whStackFind(wl.w.items, it);
+        if (!stack && wl.w.items.length >= WH_MAX) { full = true; break; }
+        if (stack) stack.cnt += it.cnt; else wl.w.items.push(it);
+        movedUids[it.uid] = 1; moved++;
+      }
+      if (!moved) return { ok: false, moved: 0 };
+      if (!whSaveByKey(wKey, wl.w, wl.ok, wl.uids)) return { ok: false, moved: 0, reason: '寫入倉庫失敗' };
+      if (slot.live) {
+        player.inv = player.inv.filter(function (x) { return !movedUids[x.uid]; });
+        saveGame();
+      } else {
+        writeSlotOffline(slot, function (p) { p.inv = (p.inv || []).filter(function (x) { return !movedUids[x.uid]; }); });
+      }
+      return { ok: true, moved: moved, full: full };
+    }
+
     // ── UI ──
-    var _layer = null, _expanded = {};   // _expanded[n] = true 表示該存檔位已展開背包列表
+    var _layer = null, _expanded = {}, _filter = {};   // _expanded[n]=展開背包;_filter[n]={main,sub} 該存檔位目前的分類篩選
 
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -182,11 +278,28 @@
         '</div>';
       var itemsHtml = '';
       if (_expanded[n]) {
-        var invList = (slot.inv || []).filter(function (it) { return !it.lock; });
+        var f = _filter[n] || { main: '', sub: '' };
+        var subOpts = subCatOptions(f.main);
+        if (!subOpts.some(function (o) { return o.key === f.sub; })) f.sub = '';   // 切主分類後子分類清單變了,舊選擇失效就重置
+        _filter[n] = f;
+
+        var filterHtml = '<div class="m-asset-filter">' +
+          '<select class="m-asset-select" data-role="main" data-n="' + n + '">' +
+          MAIN_CATS.map(function (c) { return '<option value="' + c.key + '"' + (c.key === f.main ? ' selected' : '') + '>' + c.name + '</option>'; }).join('') +
+          '</select>' +
+          (subOpts.length ? ('<select class="m-asset-select" data-role="sub" data-n="' + n + '">' +
+            '<option value="">全部</option>' +
+            subOpts.map(function (o) { return '<option value="' + o.key + '"' + (o.key === f.sub ? ' selected' : '') + '>' + o.name + '</option>'; }).join('') +
+            '</select>') : '') +
+          '<button type="button" class="m-asset-btn m-asset-btn-sm" data-act="bulk" data-n="' + n + '">🧺 一鍵存入（此篩選）</button>' +
+          '</div>';
+
+        var invList = (slot.inv || []).filter(function (it) { return !it.lock && matchFilter(it.id, f.main, f.sub); });
+        var listHtml;
         if (!invList.length) {
-          itemsHtml = '<div class="m-asset-empty-inv">背包沒有可搬運的物品(已鎖定物品不顯示)。</div>';
+          listHtml = '<div class="m-asset-empty-inv">此篩選下沒有可搬運的物品(已鎖定物品不顯示)。</div>';
         } else {
-          itemsHtml = '<div class="m-asset-items">' + invList.map(function (it) {
+          listHtml = '<div class="m-asset-items">' + invList.map(function (it) {
             var blocked = WH_NO_STORE.indexOf(it.id) >= 0;
             var cnt = it.cnt > 1 ? ' ×' + it.cnt : '';
             return '<div class="m-asset-item">' +
@@ -196,6 +309,7 @@
               '</div>';
           }).join('') + '</div>';
         }
+        itemsHtml = filterHtml + listHtml;
       }
       return '<div class="m-asset-card">' + head + actions + itemsHtml + '</div>';
     }
@@ -228,13 +342,32 @@
         var r2 = moveItemToWarehouse(n, uidv);
         _toastMsg = r2.ok ? ('存檔 ' + n + ' 的「' + stripTags(r2.name) + '」×' + r2.cnt + ' 已移入共用倉庫。') : ('移動失敗：' + (r2.reason || '未知錯誤') + '。');
         refresh();
+        return;
+      }
+      if (act === 'bulk') {
+        var f = _filter[n] || { main: '', sub: '' };
+        var r3 = bulkDepositFiltered(n, f.main, f.sub);
+        var label = (MAIN_CATS.find(function (c) { return c.key === f.main; }) || {}).name || '全部';
+        if (f.sub) { var so = subCatOptions(f.main).find(function (o) { return o.key === f.sub; }); if (so) label += '－' + so.name; }
+        _toastMsg = r3.ok ? ('存檔 ' + n + ' 的「' + label + '」共 ' + r3.moved + ' 件物品已移入共用倉庫' + (r3.full ? '(倉庫已滿,部分未存入)' : '') + '。')
+          : ('沒有符合「' + label + '」篩選、且未鎖定可搬運的物品' + (r3.reason ? '(' + r3.reason + ')' : '') + '。');
+        refresh();
       }
     }
     function stripTags(s) { return String(s || '').replace(/<[^>]*>/g, ''); }
+    function onBodyChange(e) {
+      var sel = e.target.closest('.m-asset-select');
+      if (!sel) return;
+      var n = parseInt(sel.getAttribute('data-n'), 10), role = sel.getAttribute('data-role');
+      var f = _filter[n] || { main: '', sub: '' };
+      if (role === 'main') { f.main = sel.value; f.sub = ''; } else { f.sub = sel.value; }
+      _filter[n] = f;
+      refresh();
+    }
 
     function openModal() {
       var m = document.getElementById('m-asset-modal'); if (!m) return;
-      _toastMsg = ''; _expanded = {};
+      _toastMsg = ''; _expanded = {}; _filter = {};
       refresh();
       m.classList.add('open');
       _layer = window.AFK_UI ? AFK_UI.openLayer(hideModal) : null;
@@ -260,6 +393,7 @@
       document.getElementById('m-asset-close').addEventListener('click', closeModal);
       modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
       document.getElementById('m-asset-body').addEventListener('click', onBodyClick);
+      document.getElementById('m-asset-body').addEventListener('change', onBodyChange);
     }
 
     function injectCss() {
@@ -288,7 +422,9 @@
         '.m-asset-btn{min-height:40px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit;border:1px solid #4338ca;background:#312e81;color:#c7d2fe;}',
         '.m-asset-btn:active{background:#3730a3;}',
         '.m-asset-btn:disabled{opacity:.4;cursor:not-allowed;}',
-        '.m-asset-btn-sm{min-height:32px;padding:4px 10px;font-size:12px;}',
+        '.m-asset-btn-sm{min-height:36px;padding:4px 10px;font-size:12px;}',
+        '.m-asset-filter{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;}',
+        '.m-asset-select{height:36px;box-sizing:border-box;padding:4px 8px;border-radius:8px;font-size:12.5px;font-family:inherit;border:1px solid #334155;background:#1e293b;color:#e2e8f0;}',
         '.m-asset-items{margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;}',
         '.m-asset-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#0b1424;border:1px solid #1e293b;border-radius:7px;padding:6px 8px;font-size:13px;}',
         '.m-asset-item-name{color:#e2e8f0;word-break:break-word;}',

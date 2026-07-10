@@ -161,7 +161,9 @@
       'font-family:system-ui,sans-serif', 'color:#e2e8f0'
     ].join(';'));
     var title = document.createElement('div');
-    title.textContent = '離線掛機結算中…';
+    // 🏦 批次結算多存檔位時,同一顆遮罩會依序為不同角色出現,標上是哪個存檔位/角色避免玩家看不出目前結算的是誰
+    var _ovSum = (typeof slotSummary === 'function' && typeof currentSlot !== 'undefined') ? slotSummary(currentSlot) : null;
+    title.textContent = '離線掛機結算中…' + (_ovSum ? '（存檔 ' + currentSlot + '：' + _ovSum.cls + ' Lv.' + _ovSum.lv + (_ovSum.name ? '　' + _ovSum.name : '') + '）' : '');
     title.setAttribute('style', 'font-size:20px;font-weight:bold;color:#fcd34d');
     var barWrap = document.createElement('div');
     barWrap.setAttribute('style', 'width:min(70vw,420px);height:14px;background:#1e293b;border-radius:8px;overflow:hidden;border:1px solid #334155');
@@ -324,6 +326,7 @@
     if (dExp < 0) dExp = 0;   // 保險:經驗只增不減,理論上不會 < 0
     var dLv   = (after.lv   || 0) - (before.lv   || 0);
     var items = [];
+    var itemCats = { weapon: 0, armor: 0, item: 0 };   // 🏦 種類數(不同id各算1件,同 items.length 的口徑)依武器/裝備/道具分類,供批次結算多存檔位時顯示概況用
     var ids = {};
     for (var k in before.inv) ids[k] = 1;
     for (var k2 in after.inv) ids[k2] = 1;
@@ -332,12 +335,14 @@
       if (delta > 0) {
         var nm = (typeof DB !== 'undefined' && DB.items && DB.items[id]) ? DB.items[id].n : id;
         items.push({ n: nm, d: delta });
+        var cat = (typeof whCategory === 'function') ? whCategory(id) : 'item';
+        itemCats[cat] = (itemCats[cat] || 0) + 1;
       }
     }
     items.sort(function (a, b) { return b.d - a.d; });
     var itemStr = items.map(function (it) { return it.n + '×' + it.d; }).join('、');
 
-    window.__afk.last = { mins: mins, gold: dGold, exp: dExp, lv: dLv, died: !!died, ticks: doneTicks, items: items.length };
+    window.__afk.last = { mins: mins, gold: dGold, exp: dExp, lv: dLv, died: !!died, ticks: doneTicks, items: items.length, itemCats: itemCats };
 
     var timeStr = mins < 60 ? (mins + ' 分鐘')
                 : (Math.floor(mins / 60) + ' 小時' + (mins % 60 ? ' ' + (mins % 60) + ' 分鐘' : ''));   // ≥60 分進位成「X 小時 Y 分鐘」

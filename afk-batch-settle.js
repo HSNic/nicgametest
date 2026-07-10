@@ -47,6 +47,13 @@
     var s = Math.round(ms / 1000);
     return s < 60 ? (s + '秒') : (Math.floor(s / 60) + '分' + (s % 60 ? (s % 60) + '秒' : ''));
   }
+  // 依 afk-offline.js summarize() 附帶的 itemCats({weapon,armor,item} 種類數)組成「(武器x/裝備y/道具z)」這種簡短附註
+  function itemCatsSuffix(cats) {
+    if (!cats) return '';
+    var order = [['weapon', '武器'], ['armor', '裝備'], ['item', '道具']];
+    var parts = order.filter(function (o) { return cats[o[0]] > 0; }).map(function (o) { return o[1] + cats[o[0]]; });
+    return parts.length ? '（' + parts.join('/') + '）' : '';
+  }
 
   function init() {
     if (typeof player === 'undefined' || typeof currentSlot === 'undefined' ||
@@ -64,6 +71,49 @@
 
     window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
     AFK_SETTINGS.add({ label: '⏱️ 批次結算所有存檔位', onClick: confirmStart });
+
+    // 使用者實測回饋:這是「跨存檔位管理」功能,放在「選擇存檔位(載入進度)」畫面比首頁設定選單更直覺、更容易被發現。
+    // 兩個入口都留著(設定選單維持既有習慣;這裡多開一個更貼近使用情境的捷徑),monkey-patch openSlotSelect 加一顆按鈕。
+    // 與 afk-asset-manager.js 共用同一個 #m-slotload-toolbar 容器(各自負責掛自己的按鈕,不互相依賴載入順序)。
+    if (typeof openSlotSelect === 'function') {
+      var _origOpenSlotSelect = openSlotSelect;
+      window.openSlotSelect = function (mode) {
+        var r = _origOpenSlotSelect.apply(this, arguments);
+        try { mountSlotLoadEntry(mode); } catch (e) { console.warn('[AFK-batch-settle] 掛載選存檔位入口失敗', e); }
+        return r;
+      };
+    }
+    function mountSlotLoadEntry(mode) {
+      var title = document.getElementById('slot-select-title');
+      if (!title) return;
+      var bar = document.getElementById('m-slotload-toolbar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'm-slotload-toolbar';
+        bar.style.display = 'flex';
+        bar.style.gap = '10px';
+        bar.style.flexWrap = 'wrap';
+        bar.style.justifyContent = 'center';
+        title.parentNode.insertBefore(bar, title.nextSibling);
+      }
+      bar.style.display = (mode === 'load') ? 'flex' : 'none';
+      if (mode === 'load' && !document.getElementById('m-batch-entry-btn')) {
+        var btn = document.createElement('button');
+        btn.id = 'm-batch-entry-btn';
+        btn.type = 'button';
+        btn.className = 'btn';
+        btn.style.padding = '8px 16px';
+        btn.style.fontSize = '14px';
+        btn.style.fontWeight = 'bold';
+        btn.style.minHeight = '40px';
+        btn.style.background = '#0e4429';
+        btn.style.borderColor = '#15803d';
+        btn.style.color = '#bbf7d0';
+        btn.textContent = '⏱️ 批次結算所有存檔位';
+        btn.addEventListener('click', confirmStart);
+        bar.appendChild(btn);
+      }
+    }
 
     function confirmStart() {
       var msg = '將依序把存檔 1~' + SLOT_COUNT + ' 的離線收益都結算一次，各自的收益歸各自角色（不是拿其中一個角色的戰力幫其他角色打怪）。\n\n' +
@@ -95,7 +145,7 @@
           if (last.gold) parts.push('金幣 +' + last.gold.toLocaleString());
           if (last.lv) parts.push('升 ' + last.lv + ' 級');
           if (last.exp) parts.push('經驗 +' + last.exp.toLocaleString());
-          if (last.items) parts.push(last.items + ' 種物品');
+          if (last.items) parts.push(last.items + ' 種物品' + itemCatsSuffix(last.itemCats));
           if (last.died) parts.push('<span class="m-bs-died">中途死亡</span>');
           body = '<span class="m-bs-done">' + (parts.length ? parts.join('、') : '完成(無明顯收益)') + '　(耗時 ' + fmtDur(state.elapsed || 0) + ')</span>';
           break;
