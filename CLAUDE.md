@@ -293,6 +293,7 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 
 ## 暫存檔 / 測試
 
+- **⚠️ 這台環境的「瀏覽器預覽工具」(Claude Browser MCP / `preview_*`)目前綁定的是另一個獨立資料夾,不是這個 CLI session 實際工作的目錄——先用 `preview_logs` 確認 serving 路徑,別假設驗證結果可信**(踩過 2026-07-10):瀏覽器工具實際讀取的 `launch.json` 在 `/Users/hsienchenglin/Desktop/Cowork/Lineage/.claude/launch.json`,serving 出來的是舊資料夾 `idle-lineage-class-20260708-2052-006`(內容停在 v3.1.45,沒有這個 repo 之後的任何改動),跟這個 CLI session 實際工作的 `/Users/hsienchenglin/codex/Lineage/加掛版/idle-lineage-class` 是**兩個完全獨立、不會互相同步的資料夾**(用 `stat` 確認過不是 symlink)。試過把這個 repo 內 `.claude/launch.json` 的 `runtimeArgs` 改絕對路徑,瀏覽器工具仍然去讀 `Desktop/Cowork` 那份設定,證實這是 **App 層級的專案資料夾綁定**,不是改 repo 內任何檔案能解決的。**判準/處理方式:每次要用 `preview_start`/瀏覽器工具驗證前,先跑一次 `preview_logs` 看 serving 路徑是不是 `/Users/hsienchenglin/codex/Lineage/...`——不是的話別再花時間嘗試從 repo 內部修(bash 改設定檔無效),改用 `node scripts/smoke-hooks.mjs`(獨立 Playwright 腳本、直接對正確檔案跑、不受這個問題影響)當驗證手段,並如實告知使用者「沒有做瀏覽器實機驗證,只有自動化腳本驗證過」。**這個問題本身要解決,需要使用者去 Cowork App 裡把專案資料夾改指到 `codex/Lineage`,不是我這邊工具能修的。
 - 一次性測試腳本、Playwright、截圖等一律放 `.scratch/`,且已被 `.gitignore` 擋掉,不進 git。
 - 驗證手段:用 Playwright(`playwright-core` 指向本機快取 Chromium)無頭跑 `index.html`,截圖或讀 DOM 驗證。
 - **Playwright 一律 headless(無頭),不可彈出可見瀏覽器視窗干擾使用者螢幕。** 不管用 `playwright-core` 腳本還是 MCP 瀏覽器工具都一樣:腳本用 `chromium.launch({ headless: true })`;MCP 瀏覽器若預設會開可見視窗,就改回腳本式無頭驗證,不要在使用者畫面上彈窗。截圖一律走無頭截圖。
