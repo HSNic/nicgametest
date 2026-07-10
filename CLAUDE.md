@@ -344,6 +344,7 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 ## Git / GitHub
 
 - commit / push 時**不要**帶上 Claude 作者資訊或 `Co-Authored-By` 標記(沿用全域規則)。
+- **🔒 任何功能性改動(新外掛、行為調整、bug 修復),都要先讓使用者親自實測過、確認沒問題,才可以 `git commit`(2026-07-11 使用者明訂)**:不能自己用 Playwright/瀏覽器工具測完就直接 commit——那只能驗證「程式碼跑起來沒有明顯錯誤」,不能取代使用者在真實存檔/真實使用情境下的體感驗收(這批多次踩過:資產管理/批次結算第一版看似測試都過,實際被使用者一玩就抓到位置放錯、篩選邏輯理解不同等落差)。**流程改成:寫完 → 本機驗證(smoke test+瀏覽器測試,排除明顯錯誤)→ 請使用者實測 → 使用者確認沒問題 → 才 commit + 走 `/prepush` → push。**沒被使用者明確說「測過沒問題/可以了」之類的話,即使功能看起來正常也不要自己先 commit。純文件/註解/紀錄檔調整(不影響遊戲行為)不受此限,可照舊直接處理。
 - **🔓 push 前置檢查(`/prepush`)全綠後,Claude 可以直接執行 `git push`,不需每次詢問**(2026-07-10 使用者明訂,推翻同日稍早「push 一律由使用者自己執行」的暫定規則——那條是環境當下沒有 push 權限時的權宜之計,使用者確認後已改成:remote 走 HTTPS 用 `gh auth setup-git` 的憑證、`/prepush` 檢查全綠就可以直接 push)。
   - **push 前一定要先跑完 `/prepush`(bump 改動外掛的 `?v=` → `stamp-sw-version.mjs` → smoke test → 衝突標記/重複 script 檢查),全綠才 push;任一步紅就停下回報,不要硬推。**
   - push 完仍照原本流程走:背景輪詢等 GitHub Pages 重建完成才回報「已上線」,之後主動接續打 tag/開 Release 那套(見下面對應章節)。
