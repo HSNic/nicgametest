@@ -356,6 +356,14 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 - **`index.html` 也衝突**(我 bump 了某外掛 `?v=`、自動同步也重產了 index.html → 撞在同一段 `<script>`):**stamp 不會碰 index.html**,所以這時盲目 `git add -A` 會把 `<<<<<<< / ======= / >>>>>>>` 標記原封不動 commit 進 index.html → 推上去**整頁壞掉**(踩過 2026-06-28:木人場 script 出現 a/b 兩個版本+衝突標記)。**正解:先 `git diff --name-only --diff-filter=U` 看有哪些衝突檔;index.html 要手動開來解**(保留「我這次 bump 的版本」那行、刪掉另一份與三個標記),再 stamp、`git add -A`、`rebase --continue`。
 - **收尾自我檢查(push 前)**:`grep -rnE "^<<<<<<< |^>>>>>>> |^=======$" index.html sw.js afk-*.js` 必須是空的(**sw.js 一定要一起 grep**,理由見上一條);`grep -c afk-<某外掛>.js index.html` 每支應為 1(沒有重複 script)。smoke 可能照過(瀏覽器把標記當文字、script 照載;sw.js 壞了也只是 SW 裝不起來、頁面照跑)→**不能只靠 smoke,一定要 grep 衝突標記**。(注意 `=======$` 要錨定行尾,否則會誤中 sw.js 註解裡的 `======` 裝飾線。)
 
+### ⚠️ `git fetch`/`git push` 報 `fatal: bad object refs/heads/main 2` 這種帶空格的錯誤 → 先查 `.git/refs/heads/` 有沒有雜散檔案,不是遠端或憑證問題
+
+**踩過(2026-07-10)**:準備 push 前 `git fetch` 直接失敗,錯誤訊息 `fatal: bad object refs/heads/main 2` + `did not send all necessary objects`——乍看像遠端/網路問題,但其實是本機 `.git/refs/heads/` 目錄底下多了一個檔名帶空格的雜散檔案(如 `main 2`),git 把它當成一個名字不合法的 ref、解析失敗連帶整個 fetch 失敗。這種「檔名 + 空格 + 數字」的樣式是常見的雲端同步(iCloud Drive/Dropbox 等)衝突副本命名慣例,推測是這個專案資料夾被雲端同步工具監控、`.git` 內部檔案發生同步衝突時產生的殘留。
+
+- **判準/處理方式**:看到 `bad object refs/heads/<分支名> <數字>` 這種訊息,先 `ls -la .git/refs/heads/` 檢查有沒有多出來的雜散檔案(檔名通常是「正常分支名 + 空格 + 數字」)。
+- **刪除前先確認安全**:`cat ".git/refs/heads/<雜散檔名>"` 看它指向哪個 commit,再用 `git merge-base --is-ancestor <該commit> HEAD && echo 是祖先` 確認那個 commit 已經包含在目前分支歷史裡(通常是——雜散檔案只是舊某個時間點 `main` 的重複快照)。確認是祖先、不是遺失的獨立工作後,直接刪掉該雜散檔案(`rm ".git/refs/heads/main 2"`)即可,不影響任何 commit 內容(commit 物件本身還在 `.git/objects` 裡,只是拿掉一個多餘的指標)。
+- 這類問題跟 remote/憑證設定無關,**不要**去改 `git remote`/`gh auth` 或懷疑網路,先看 `.git/refs/heads/` 目錄。
+
 ### push 後要等 GitHub Pages 重建完成才算交付,並主動通知使用者
 
 每次 push 到此 repo 後,**不要 push 完就回報「上線了」**——GitHub Pages 要重建(通常 push 後約 40 秒~1 分鐘)才會真的生效。流程:
