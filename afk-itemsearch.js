@@ -37,6 +37,25 @@
 
   function norm(s) { return (s || '').toLowerCase(); }
 
+  // 🈶 注音/拼音組字防護(2026-07-11):組字中若剛好撞上遊戲重繪(掛機掉寶等),整個搜尋框 <input>
+  // 會被原作 renderTabs/renderWarehouseNPC 整段 innerHTML 換掉 → 瀏覽器的組字緩衝區被強制中斷,
+  // 打到一半的注音就跳掉。無法從外部保留「正在被替換的那個 DOM 節點」,唯一辦法是組字期間乾脆
+  // 跳過這次重繪(反正這兩支原作函式都有各自的機制,略過一次不會丟資料:renderTabs 靠內容簽章比對、
+  // renderWarehouseNPC 是使用者操作觸發、非 tick 驅動),等 compositionend 才補做一次,讓輸入框
+  // DOM 節點在整段組字期間全程不被更動。
+  var _tabsPendingRebuild = false;
+  var _whPendingRebuild = false;
+  function anyComposing() {
+    var els = document.querySelectorAll('input[id^="afk-isearch-"]');
+    for (var i = 0; i < els.length; i++) { if (els[i].dataset.composing === '1') return true; }
+    return false;
+  }
+  function flushPendingRebuilds() {
+    if (anyComposing()) return;   // 保險:仍有其他框在組字中就先不補(理論上同時只有一個框在打字)
+    if (_tabsPendingRebuild) { _tabsPendingRebuild = false; if (typeof window.renderTabs === 'function') window.renderTabs(); }
+    if (_whPendingRebuild) { _whPendingRebuild = false; if (typeof window.renderWarehouseNPC === 'function') { var d = document.getElementById('interaction-content'); if (d) window.renderWarehouseNPC(d); } }
+  }
+
   // 過濾 container 的「直接子元素」:textContent 含關鍵字才顯示。skipEl=搜尋框自己(不過濾)。
   function filterChildren(container, kw, skipEl) {
     if (!container) return;
@@ -57,6 +76,8 @@
     inp.placeholder = '🔍 搜尋名稱…';
     inp.value = q[key];
     inp.addEventListener('input', function () { q[key] = inp.value; onChange(); });
+    inp.addEventListener('compositionstart', function () { inp.dataset.composing = '1'; });
+    inp.addEventListener('compositionend', function () { inp.dataset.composing = ''; flushPendingRebuilds(); });
     wrap.appendChild(inp);
     return wrap;
   }
@@ -89,6 +110,9 @@
   if (typeof window.renderTabs === 'function' && !window.renderTabs.__afkISearch) {
     var _origTabs = window.renderTabs;
     var wrapped = function () {
+      // 🈶 組字中整個跳過這次重繪(見 anyComposing/flushPendingRebuilds 註解),避免輸入框 DOM 被換掉打斷注音組字;
+      // renderTabs 本身有內容簽章比對,略過的這次不會遺漏——compositionend 觸發 flushPendingRebuilds 補做一次即可跟上。
+      if (anyComposing()) { _tabsPendingRebuild = true; return; }
       // 重繪會換掉輸入框:先記住「正在打字的是我們的框嗎」,重注入後還原焦點(游標移到最後)
       var ae = document.activeElement;
       var refocus = (ae && ae.id && ae.id.indexOf('afk-isearch-') === 0) ? ae.id : null;
@@ -122,6 +146,10 @@
   if (typeof window.renderWarehouseNPC === 'function' && !window.renderWarehouseNPC.__afkISearch) {
     var _origWh = window.renderWarehouseNPC;
     var wrappedWh = function () {
+      // 🈶 同上,組字中跳過這次重繪;renderWarehouseNPC 一律由使用者操作觸發(非 tick 驅動),
+      // 略過的這次在 compositionend 由 flushPendingRebuilds 補做即可,不會遺漏使用者的存/取操作
+      // ——因為存/取本身的資料寫入(whDeposit/whWithdraw 等)不受這裡影響,只有畫面重繪被延後。
+      if (anyComposing()) { _whPendingRebuild = true; return; }
       var r = _origWh.apply(this, arguments);
       try { ensureWhSearch(); } catch (e) {}
       return r;

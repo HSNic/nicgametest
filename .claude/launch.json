@@ -5,7 +5,8 @@
       "name": "devserver",
       "runtimeExecutable": "node",
       "runtimeArgs": [".scratch/devserver.mjs"],
-      "port": 8000
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

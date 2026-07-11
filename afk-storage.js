@@ -129,16 +129,16 @@
     var s = document.createElement('style');
     s.id = 'm-stg-style';
     s.textContent = [
-      /* 首頁的小設定鈕 + 展開選單 */
+      /* 首頁的小設定鈕 + 展開選單(2026-07-11 首頁 V17 改版:黑金配色,呼應其他首頁按鈕) */
       '#afk-stg-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:-6px;}',
-      '#afk-stg-gear{background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:8px;font-size:13px;font-weight:bold;padding:5px 14px;cursor:pointer;font-family:inherit;line-height:1.2;}',
-      '#afk-stg-gear:hover{background:#273449;color:#e2e8f0;}',
-      '#afk-stg-gear.on{background:#273449;color:#fcd34d;border-color:#475569;}',
+      '#afk-stg-gear{background:linear-gradient(180deg,#3a2d1c,#17110a);border:1px solid rgba(190,145,75,.72);color:#ead09a;border-radius:8px;font-size:13px;font-weight:bold;padding:5px 14px;cursor:pointer;font-family:inherit;line-height:1.2;}',
+      '#afk-stg-gear:hover{filter:brightness(1.15);}',
+      '#afk-stg-gear.on{background:linear-gradient(180deg,#4a3a24,#221809);color:#f4d68a;border-color:#d8a94b;}',
       /* 選單往「上方」浮出(absolute,不佔版面流、不把下方內容撐開);bottom:100% 貼齊設定鈕上緣 */
-      '#afk-stg-menu{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:8px;z-index:1001;flex-direction:column;gap:4px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;box-shadow:0 -8px 30px rgba(0,0,0,.55);min-width:200px;}',
+      '#afk-stg-menu{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:8px;z-index:1001;flex-direction:column;gap:4px;background:rgba(6,5,4,.96);border:1px solid rgba(190,145,75,.72);border-radius:10px;padding:6px;box-shadow:0 -8px 30px rgba(0,0,0,.55);min-width:200px;}',
       '#afk-stg-menu.open{display:flex;}',
-      '#afk-stg-menu button{background:transparent;border:1px solid transparent;color:#e2e8f0;border-radius:7px;padding:8px 12px;font-size:14px;text-align:left;cursor:pointer;font-family:inherit;}',
-      '#afk-stg-menu button:hover{background:#1e293b;border-color:#334155;}',
+      '#afk-stg-menu button{background:transparent;border:1px solid transparent;color:#ead09a;border-radius:7px;padding:8px 12px;font-size:14px;text-align:left;cursor:pointer;font-family:inherit;}',
+      '#afk-stg-menu button:hover{background:rgba(190,145,75,.16);border-color:rgba(190,145,75,.5);}',
       /* modal */
       '#m-stg-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(2,6,23,0.82);align-items:flex-start;justify-content:center;padding:24px 12px;font-family:system-ui,"Segoe UI",sans-serif;}',
       '#m-stg-modal.open{display:flex;}',
@@ -189,10 +189,14 @@
 
     // 開選單時才重建項目:合併外掛註冊的(AFK_SETTINGS,如「安裝成免網路遊玩」)＋本檔內建項;
     //   外掛項在前、內建項在後;帶 visible() 的條件項(安裝裝好後即隱藏)於此時求值。
+    // 🎨 2026-07-11 首頁 V17 改版:「☁️ 配對碼雲端同步」「⏱️ 批次結算」這兩項移到外掛工具方格區
+    // 當獨立方格顯示(見 afk-skin.js ensureFrame),下拉選單裡不再重複顯示。
+    var PROMOTED_TO_TILE = { '☁️ 配對碼雲端同步': 1, '⏱️ 批次結算': 1 };
     function renderMenu() {
       var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
       list.innerHTML = '';
       ext.concat(MENU_ITEMS).forEach(function (it) {
+        if (PROMOTED_TO_TILE[it.label]) return;
         if (it.visible && !it.visible()) return;
         var b = document.createElement('button');
         b.type = 'button';

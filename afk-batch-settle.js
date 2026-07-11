@@ -100,7 +100,9 @@
     buildModal();
 
     window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
-    AFK_SETTINGS.add({ label: '⏱️ 批次結算所有存檔位', onClick: confirmStart });
+    // 🎨 2026-07-11 首頁 V17 改版:功能名稱從「批次結算所有存檔位」縮短成「批次結算」,
+    // 且從「⚙其他功能」下拉選單移出來,改在外掛工具方格區當獨立方格顯示(見 afk-skin.js ensureFrame)。
+    AFK_SETTINGS.add({ label: '⏱️ 批次結算', onClick: confirmStart });
 
     // 使用者實測回饋:批次結算時的結果只有這個彈窗看得到,那個角色若不是「目前正在玩的」,
     //   之後真正登入時完全看不到這筆結算——因為 logSys 訊息是即時 DOM,不會存進存檔。

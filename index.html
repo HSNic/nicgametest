@@ -46,24 +46,33 @@
       <div id="login-art-stage">
         <img id="login-bg-image" src="public/assets/login/310.png" alt="登入畫面背景">
         <img id="login-anim-image" src="public/assets/login/273.png" alt="登入畫面動畫">
+        <!-- 🎨 2026-07-11 首頁登入畫面依使用者提供的 V17(game_ui_v17_create_buttons_3d_preview.html)參考稿改版:
+             左側資訊卡(#login-copy-panel)收納標題/副標/版號/免責聲明;右側按鈕面板(#main-menu)收納開始遊戲/開關/外掛入口。
+             #login-title-layer/#login-meta-layer/#login-version/#login-disclaimer 這些 id 全部保留(外掛 afk-skin.js
+             的品牌徽章、afk-mobile.js 的手機版覆寫都靠這些 id 錨定),只是外面多包一層 #login-copy-panel 卡片容器。 -->
+        <div id="login-copy-panel">
         <div id="login-title-layer" class="text-center">
             <h1 class="text-4xl font-bold text-yellow-400 mb-2">放置天堂 - 蛇神降世</h1>
             <p class="text-base text-slate-400">創造您的角色並開始冒險</p>
         </div>
-
-        <div id="main-menu" class="flex flex-col gap-5 items-center my-12">
-            <button onclick="openSlotSelect('new')" class="btn text-xl w-72 py-4 bg-blue-700 hover:bg-blue-600 border-blue-500">新遊戲 (創建角色)</button>
-            <button onclick="openSlotSelect('load')" id="btn-load" class="btn text-xl w-72 py-4 bg-emerald-700 hover:bg-emerald-600 border-emerald-500">載入遊戲進度</button>
-            <button onclick="toggleVfxPref()" id="btn-vfx-toggle" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">✨ 戰鬥特效：開啟</button>
-            <button onclick="toggleVfxNumPref()" id="btn-vfxnum-toggle" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">🔢 傷害數字：開啟</button>
-            <p class="text-xs text-slate-500 -mt-2 w-72 text-center">效果較弱/卡頓的裝置可關閉戰鬥特效；「傷害數字」可獨立關閉、其餘特效保留（開始前設定，遊戲中不再提供）</p>
-        </div>
-
         <div id="login-meta-layer">
             <!-- 🏷️ 版本號（由 js/14 window.onload 依 GAME_VERSION 填入；此處 v2.4.0 僅為 JS 失效時的後備文字） -->
             <div id="login-version" class="text-center text-sm text-slate-300 font-medium tracking-wide select-none">v2.4.0</div>
             <div id="login-disclaimer" class="text-center text-xs text-slate-400 leading-relaxed mx-auto">本遊戲為非官方免費同人作品，絕無營利意圖；遊戲內圖片與音樂版權歸原權利方 NCSOFT 所有，其餘程式為獨立開發，嚴禁商業販售。</div>
         </div>
+        </div>
+
+        <div id="main-menu" class="flex flex-col gap-5 items-center my-12">
+            <!-- 🎨 2026-07-11 三畫面改版：採用原作者新版 2026071001 設計，主選單只留單一「開始遊戲」鈕，
+                 統一走視覺化角色選擇畫面(#load-select-panel)，該畫面內有「創新角色」鈕再進創角流程。 -->
+            <button onclick="openLoadSelect()" id="btn-start-menu" class="btn text-xl w-72 py-4 bg-blue-700 hover:bg-blue-600 border-blue-500">開始遊戲</button>
+            <!-- 🎨 2026-07-11 首頁 V17 改版：說明文字改用 data-desc + CSS ::after 顯示在按鈕內(粗體標題+小字說明兩行)。
+                 ⚠️ 不能用真的子元素(如 <small>)放說明文字——原作 js/09-vfx-render.js 的 _applyVfxPref() 每次
+                 都用 b.textContent 整個重寫這顆按鈕，任何 DOM 子節點都會被洗掉；CSS 生成內容(::after)不受影響。 -->
+            <button onclick="toggleVfxPref()" id="btn-vfx-toggle" data-desc="效果較弱或卡頓時，可關閉以提升流暢度" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">✨ 戰鬥特效：開啟</button>
+            <button onclick="toggleVfxNumPref()" id="btn-vfxnum-toggle" data-desc="可顯示或關閉，屬於實驗性功能" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">🔢 傷害數字：開啟</button>
+        </div>
+
       </div>
 
         <div id="slot-select-panel" class="hidden flex flex-col gap-4 items-center my-8 w-full">
@@ -72,65 +81,87 @@
             <button onclick="slotBackToMenu()" class="btn px-6 py-2 bg-slate-700 hover:bg-slate-600 text-base font-bold">返回</button>
         </div>
 
-        <div id="creation-panel" class="hidden flex flex-row gap-6 items-start">
+        <!-- 🎨 2026-07-11 三畫面改版：視覺化角色選擇畫面(取代純文字存檔清單)，移植自原作者新版 2026071001，
+             逐幀走路動畫的存檔角色卡片、可翻頁(1-4/5-8)、選中顯示右側角色詳細資訊面板。 -->
+        <div id="load-select-panel" class="hidden" aria-label="角色選擇">
+          <div id="load-art-stage">
+            <img id="load-select-bg" src="public/assets/login/load.png" alt="角色選擇背景" draggable="false">
+            <div id="load-slot-grid" aria-label="存檔角色"></div>
+            <img id="load-select-overlay" src="public/assets/login/load1.png" alt="" aria-hidden="true" draggable="false">
+            <div id="load-page-tabs" aria-label="存檔頁切換">
+                <button onclick="loadSetPage(1)" id="load-page-1" type="button" aria-label="存檔 1 到 4"></button>
+                <button onclick="loadSetPage(2)" id="load-page-2" type="button" aria-label="存檔 5 到 8"></button>
+            </div>
+            <section id="load-info-panel" aria-live="polite">
+                <div class="load-info-row name"><span>Character Name</span><strong id="load-info-name"></strong></div>
+                <div class="load-info-row pledge"><span>Blood Pledge</span><strong id="load-info-pledge"></strong></div>
+                <div class="load-info-row class"><span>Class</span><strong id="load-info-class"></strong></div>
+                <div class="load-info-row alignment"><span>Alignment</span><strong id="load-info-alignment"></strong></div>
+                <div class="load-info-row hp"><span>Hit Point</span><strong id="load-info-hp"></strong></div>
+                <div class="load-info-row mp"><span>Mana Point</span><strong id="load-info-mp"></strong></div>
+                <div class="load-info-row ac"><span>Armor Class</span><strong id="load-info-ac"></strong></div>
+                <div class="load-info-row lv"><span>Level</span><strong id="load-info-lv"></strong></div>
+                <div class="load-info-row str"><span>Strength</span><strong id="load-info-str"></strong></div>
+                <div class="load-info-row dex"><span>Dexterity</span><strong id="load-info-dex"></strong></div>
+                <div class="load-info-row con"><span>Constitution</span><strong id="load-info-con"></strong></div>
+                <div class="load-info-row wis"><span>Wisdom</span><strong id="load-info-wis"></strong></div>
+                <div class="load-info-row cha"><span>Charisma</span><strong id="load-info-cha"></strong></div>
+                <div class="load-info-row int"><span>Intelligence</span><strong id="load-info-int"></strong></div>
+            </section>
+            <div id="load-action-panel">
+                <button onclick="loadEnterSelected()" id="load-btn-enter" type="button">進入遊戲</button>
+                <button onclick="loadCreateSelected()" id="load-btn-create" type="button">創新角色</button>
+                <button onclick="loadImportSelected()" id="load-btn-import" type="button">匯入進度</button>
+                <button onclick="loadRestoreSelected()" id="load-btn-restore" type="button" class="hidden">還原備份</button>
+                <button onclick="loadBackToMenu()" id="load-btn-back" type="button">返回</button>
+            </div>
+          </div>
+        </div>
 
-            <div id="creation-img-wrap" class="w-[340px] h-[600px] border-4 border-amber-800 p-2 bg-slate-950/40 rounded-lg shadow-[0_0_30px_rgba(0,0,0,0.9)] outline outline-1 outline-offset-4 outline-amber-700/40 flex items-center justify-center shrink-0 overflow-hidden">
-                <img id="class-preview-img" src="assets/start/prince.png" alt="職業預覽" class="w-full h-full object-cover object-top rounded pointer-events-none drop-shadow-[0_10px_15px_rgba(0,0,0,0.8)]">
+        <!-- 🎨 2026-07-11 三畫面改版：創角人物立繪置中＋左右各4顆職業圖示鈕的版面，移植自原作者新版 2026071001，
+             人物立繪改逐幀走路動畫(assets/start/<key>/<frame>.png，見 js/13-shop-save.js setCreationClassAnimation)。 -->
+        <div id="creation-panel" class="hidden" aria-label="創建角色">
+            <img id="creation-bg-image" src="public/assets/login/824.png" alt="創角背景" draggable="false">
+
+            <section id="creation-class-desc-frame" aria-live="polite">
+                <h2 id="creation-class-title">王族</h2>
+                <div id="class-desc"></div>
+            </section>
+
+            <div id="creation-avatar-stage" aria-hidden="true">
+                <img id="class-preview-img" src="assets/start/prince/714.png" alt="職業預覽" draggable="false">
+            </div>
+            <nav id="creation-class-list" aria-label="職業選擇">
+                <button onclick="selectClassBase('royal')" id="btn-class-base-royal" class="creation-class-btn class-left class-pos-1 active" type="button" title="王族"><img src="assets/logo/王族logo.png" alt="王族"></button>
+                <button onclick="selectClassBase('knight')" id="btn-class-base-knight" class="creation-class-btn class-left class-pos-2" type="button" title="騎士"><img src="assets/logo/騎士logo.png" alt="騎士"></button>
+                <button onclick="selectClassBase('mage')" id="btn-class-base-mage" class="creation-class-btn class-left class-pos-3" type="button" title="法師"><img src="assets/logo/法師logo.png" alt="法師"></button>
+                <button onclick="selectClassBase('elf')" id="btn-class-base-elf" class="creation-class-btn class-left class-pos-4" type="button" title="妖精"><img src="assets/logo/妖精logo.png" alt="妖精"></button>
+                <button onclick="selectClassBase('dark')" id="btn-class-base-dark" class="creation-class-btn class-right class-pos-1" type="button" title="黑暗妖精"><img src="assets/logo/黑暗妖精logo.png" alt="黑暗妖精"></button>
+                <button onclick="selectClassBase('illusionist')" id="btn-class-base-illusionist" class="creation-class-btn class-right class-pos-2" type="button" title="幻術士"><img src="assets/logo/幻術士logo.png" alt="幻術士"></button>
+                <button onclick="selectClassBase('Dknight')" id="btn-class-base-Dknight" class="creation-class-btn class-right class-pos-3" type="button" title="龍騎士"><img src="assets/logo/龍騎士logo.png" alt="龍騎士"></button>
+                <button onclick="selectClassBase('warrior')" id="btn-class-base-warrior" class="creation-class-btn class-right class-pos-4" type="button" title="戰士"><img src="assets/logo/戰士logo.png" alt="戰士"></button>
+            </nav>
+
+            <div id="creation-gender-panel" aria-label="性別選擇">
+                <button onclick="selectGender('m')" id="btn-gender-m" class="creation-gender-btn active" type="button" title="男性">♂</button>
+                <button onclick="selectGender('f')" id="btn-gender-f" class="creation-gender-btn" type="button" title="女性">♀</button>
+            </div>
+            <div id="stat-allocation" aria-label="能力配點">
+                <div id="creation-pts">0</div>
+                <div class="creation-stat-control stat-str"><span id="c-str" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('str', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('str', 1)">+</button></div>
+                <div class="creation-stat-control stat-dex"><span id="c-dex" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('dex', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('dex', 1)">+</button></div>
+                <div class="creation-stat-control stat-con"><span id="c-con" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('con', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('con', 1)">+</button></div>
+                <div class="creation-stat-control stat-wis"><span id="c-wis" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('wis', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('wis', 1)">+</button></div>
+                <div class="creation-stat-control stat-cha"><span id="c-cha" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('cha', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('cha', 1)">+</button></div>
+                <div class="creation-stat-control stat-int"><span id="c-int" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('int', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('int', 1)">+</button></div>
             </div>
 
-            <div id="creation-controls" class="flex-1 h-[600px] flex flex-col justify-between min-w-0">
-                <div id="creation-row" class="flex gap-4 flex-1 min-h-0">
-                    <div id="creation-class-box" class="w-[290px] h-full bg-slate-800/50 p-5 rounded-xl border border-slate-700 flex flex-col shrink-0">
-                        <h2 class="text-lg text-yellow-400 mb-3 font-bold shrink-0">1. 選擇職業</h2>
-                        <!-- 職業按鈕區：8 個職業（16 鈕）一次完整顯示、不捲動；👑 王族放第一位 -->
-                        <div class="grid grid-cols-2 gap-1.5 shrink-0 content-start">
-                            <button onclick="selectClass('m_royal')" id="btn-class-m_royal" class="btn py-1 text-sm font-bold">王子</button>
-                            <button onclick="selectClass('f_royal')" id="btn-class-f_royal" class="btn py-1 text-sm font-bold">公主</button>
-                            <button onclick="selectClass('m_knight')" id="btn-class-m_knight" class="btn py-1 text-sm font-bold">男騎士</button>
-                            <button onclick="selectClass('f_knight')" id="btn-class-f_knight" class="btn py-1 text-sm font-bold">女騎士</button>
-                            <button onclick="selectClass('m_mage')" id="btn-class-m_mage" class="btn py-1 text-sm font-bold">男法師</button>
-                            <button onclick="selectClass('f_mage')" id="btn-class-f_mage" class="btn py-1 text-sm font-bold">女法師</button>
-                            <button onclick="selectClass('m_elf')" id="btn-class-m_elf" class="btn py-1 text-sm font-bold">男妖精</button>
-                            <button onclick="selectClass('f_elf')" id="btn-class-f_elf" class="btn py-1 text-sm font-bold">女妖精</button>
-                            <button onclick="selectClass('m_dark')" id="btn-class-m_dark" class="btn py-1 text-sm font-bold">男黑暗妖精</button>
-                            <button onclick="selectClass('f_dark')" id="btn-class-f_dark" class="btn py-1 text-sm font-bold">女黑暗妖精</button>
-                            <button onclick="selectClass('m_illusionist')" id="btn-class-m_illusionist" class="btn py-1 text-sm font-bold">男幻術士</button>
-                            <button onclick="selectClass('f_illusionist')" id="btn-class-f_illusionist" class="btn py-1 text-sm font-bold">女幻術士</button>
-                            <button onclick="selectClass('m_Dknight')" id="btn-class-m_Dknight" class="btn py-1 text-sm font-bold">男龍騎士</button>
-                            <button onclick="selectClass('f_Dknight')" id="btn-class-f_Dknight" class="btn py-1 text-sm font-bold">女龍騎士</button>
-                            <button onclick="selectClass('m_warrior')" id="btn-class-m_warrior" class="btn py-1 text-sm font-bold">男戰士</button>
-                            <button onclick="selectClass('f_warrior')" id="btn-class-f_warrior" class="btn py-1 text-sm font-bold">女戰士</button>
-                        </div>
-                        <div id="class-desc" class="mt-3 text-slate-300 text-sm leading-relaxed flex-1 min-h-0 overflow-y-auto pr-1"></div>
-                    </div>
-                    
-                    <div class="flex-1 h-full bg-slate-800/50 p-5 rounded-xl border border-slate-700 flex flex-col" id="stat-allocation">
-                        <h2 class="text-lg text-yellow-400 mb-4 font-bold flex justify-between items-center shrink-0">
-                            <span>2. 分配能力</span>
-                            <span class="text-emerald-400 text-sm">剩餘: <span id="creation-pts" class="text-xl">0</span></span>
-                        </h2>
-                        <div class="space-y-4 text-base flex-1 flex flex-col justify-center">
-                            <div class="flex justify-between items-center"><span class="w-12 text-red-300">力量</span> <button class="btn px-3 py-0.5" onclick="adjStat('str', -1)">-</button> <span id="c-str" class="w-8 text-center font-bold text-red-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('str', 1)">+</button></div>
-                            <div class="flex justify-between items-center"><span class="w-12 text-green-300">敏捷</span> <button class="btn px-3 py-0.5" onclick="adjStat('dex', -1)">-</button> <span id="c-dex" class="w-8 text-center font-bold text-green-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('dex', 1)">+</button></div>
-                            <div class="flex justify-between items-center"><span class="w-12 text-orange-300">體質</span> <button class="btn px-3 py-0.5" onclick="adjStat('con', -1)">-</button> <span id="c-con" class="w-8 text-center font-bold text-orange-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('con', 1)">+</button></div>
-                            <div class="flex justify-between items-center"><span class="w-12 text-blue-300">智力</span> <button class="btn px-3 py-0.5" onclick="adjStat('int', -1)">-</button> <span id="c-int" class="w-8 text-center font-bold text-blue-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('int', 1)">+</button></div>
-                            <div class="flex justify-between items-center"><span class="w-12 text-purple-300">精神</span> <button class="btn px-3 py-0.5" onclick="adjStat('wis', -1)">-</button> <span id="c-wis" class="w-8 text-center font-bold text-purple-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('wis', 1)">+</button></div>
-                            <div class="flex justify-between items-center"><span class="w-12 text-pink-300">魅力</span> <button class="btn px-3 py-0.5" onclick="adjStat('cha', -1)">-</button> <span id="c-cha" class="w-8 text-center font-bold text-pink-200"></span> <button class="btn px-3 py-0.5" onclick="adjStat('cha', 1)">+</button></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <label class="flex items-center gap-2 mt-2 px-1 cursor-pointer select-none" title="開啟後此角色永久套用經典（硬核）規則，無法事後關閉">
-                    <input type="checkbox" id="create-classic-toggle" onchange="onToggleClassic(this)" class="w-5 h-5 accent-amber-600 shrink-0">
-                    <span class="text-amber-300 font-bold shrink-0">經典模式</span>
-                    <span class="text-slate-400 text-xs">死亡噴經驗、無祝福/精通/席琳（永久；掉落率、經驗與金幣獲得與一般模式相同）</span>
-                </label>
-                <div class="flex gap-4 shrink-0 mt-3">
-                    <button onclick="backToMenu()" class="btn w-1/4 py-2.5 text-base">返回</button>
-                    <button onclick="startGame()" id="btn-start" class="btn w-3/4 py-2.5 font-bold text-lg text-white shadow-lg" disabled>開始冒險</button>
-                </div>
-            </div>
-
+            <label id="classic-mode-control" title="開啟後此角色永久套用經典規則，無法事後關閉">
+                <input type="checkbox" id="create-classic-toggle" onchange="onToggleClassic(this)">
+                <span>經典模式</span>
+            </label>
+            <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
+            <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始冒險</button>
         </div>
 
     </div>

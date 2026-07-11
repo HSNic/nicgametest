@@ -31,7 +31,9 @@
       || navigator.standalone === true;
   }
 
-  var SUBS = ['slot-select-panel', 'creation-panel'];
+  // 🎨 2026-07-11 三畫面改版新增 load-select-panel(視覺化角色選擇畫面，取代舊版純文字 slot-select-panel
+  // 成為主要入口)；slot-select-panel/openSlotSelect 相關路徑保留當備援，仍列在 SUBS 內防呆。
+  var SUBS = ['slot-select-panel', 'creation-panel', 'load-select-panel'];
   function vis(id) { var e = document.getElementById(id); return !!(e && !e.classList.contains('hidden')); }
   function subVisible() { for (var i = 0; i < SUBS.length; i++) if (vis(SUBS[i])) return true; return false; }
 
@@ -49,9 +51,12 @@
   }
 
   function routeHome() {
-    // 依目前所在子畫面呼叫作者原生返回(兩者都會回到 #main-menu)
+    // 🎨 2026-07-11 起 creation-panel 的 backToMenu() 不再直接回 #main-menu，而是回上一層的
+    // load-select-panel(視覺化角色選擇畫面)；硬體返回鍵維持原本「一鍵回首頁」的體感，所以這裡
+    // 兩層依序呼叫(先讓創角回選角畫面，緊接著讓選角畫面再回首頁)，一次按鍵直接到底。
     if (vis('creation-panel') && typeof window.backToMenu === 'function') window.backToMenu();
-    else if (vis('slot-select-panel') && typeof window.slotBackToMenu === 'function') window.slotBackToMenu();
+    if (vis('load-select-panel') && typeof window.loadBackToMenu === 'function') { window.loadBackToMenu(); return; }
+    if (vis('slot-select-panel') && typeof window.slotBackToMenu === 'function') window.slotBackToMenu();
   }
 
   window.addEventListener('popstate', function () {
@@ -95,11 +100,14 @@
   }
 
   function install() {
-    if (typeof window.openSlotSelect !== 'function') return false;
-    wrapEnter('openSlotSelect');   // 首頁 → 選擇存檔位
-    wrapEnter('showCreation');     // 選存檔位 → 創角
-    wrapLeave('slotBackToMenu');   // 選存檔位「返回」鈕 → 首頁
-    wrapLeave('backToMenu');       // 創角「返回」鈕 → 首頁
+    if (typeof window.openLoadSelect !== 'function' && typeof window.openSlotSelect !== 'function') return false;
+    wrapEnter('openLoadSelect');   // 🎨 首頁 → 視覺化角色選擇畫面(新版主要入口)
+    wrapEnter('openSlotSelect');   // 首頁 → 選擇存檔位(舊版備援路徑)
+    wrapEnter('showCreation');     // 選角畫面 → 創角(idempotent：進來時通常已經 trapped，pushTrap 會安靜跳過)
+    wrapLeave('loadBackToMenu');   // 🎨 視覺化角色選擇畫面「返回」鈕 → 首頁
+    wrapLeave('slotBackToMenu');   // 選存檔位「返回」鈕 → 首頁(舊版備援路徑)
+    // ⚠️ backToMenu() 2026-07-11 起不再直接回首頁，而是回上一層的選角畫面，故不再當「離開子流程」處理
+    // (仍會被 routeHome() 硬體返回鍵路徑呼叫，但按鈕本身點擊不消耗攔截狀態，交給 loadBackToMenu 收尾)。
     wrapLeave('startGame');        // 創角 → 進遊戲
     wrapLeave('loadGame');         // 選存檔位(載入)→ 進遊戲
     return true;

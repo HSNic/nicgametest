@@ -23,7 +23,18 @@
   // 外掛入口的「顯示順序」(都是 #main-menu 的子孫;依此序排入外框)。
   //   2026-07-08 起 afk-syncinfo.js 不再輸出 DOM(A1 面板文字精簡),原本置頂的
   //   #afk-syncinfo / 排在後段的 #afk-syncinfo-links 已從順序移除,只剩查詢/小百科/設定。
-  var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row', '#afk-stg-wrap'];
+  //   🎨 2026-07-11 首頁 V17 改版:#afk-stg-wrap(⚙其他功能 齒輪+下拉選單)移出這個框,
+  //   改成獨立放在框的下方(見 ensureFrame 尾端)。
+  //   🎨 2026-07-11 使用者回饋再調整:「外掛」框只留掉落查詢/小百科兩個大方格(呼應 V17
+  //   原設計的 3 格大工具列);備份管理/批次結算改移到獨立的「其他功能」小方格區
+  //   (見 ensureOtherFrame),用較小的按鈕呈現、但顏色仍與外掛方格一致(同一組藍色漸層)。
+  var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row'];
+  // 從 AFK_SETTINGS._items 找這兩個項目、升格成獨立方格(不再顯示於 ⚙其他功能 下拉選單,
+  // 已在 afk-storage.js 的 PROMOTED_TO_TILE 排除)。label 要跟各自的 AFK_SETTINGS.add() 完全一致。
+  var PROMOTED_TILES = [
+    { key: 'cloud-sync', srcLabel: '☁️ 配對碼雲端同步', icon: '☁️', label: '備份管理' },
+    { key: 'batch-settle', srcLabel: '⏱️ 批次結算', icon: '⏱️', label: '批次結算' }
+  ];
 
   // ---- CSS ----------------------------------------------------------------
   var CSS = [
@@ -38,32 +49,77 @@
     /* 手機(body.m-mobile;此版用 viewport=1180 縮放,純寬度 media query 失效,故靠 m-mobile class)：字略縮一點 */
     'body.m-mobile #afk-brand-badge .afk-brand-line{font-size:12px;letter-spacing:1px;}',
 
-    /* 外掛區外框(半透明、像遊戲內面板)——桌機/手機共用同一套,不分裝置 */
-    '#afk-plugin-frame{position:relative;width:100%;max-width:20rem;margin:8px auto 0;padding:20px 14px 16px;',
-      'border:1px solid rgba(148,163,184,.30);border-radius:16px;background:rgba(15,23,42,.22);',
-      'box-shadow:inset 0 0 24px rgba(148,163,184,.05),0 4px 18px rgba(0,0,0,.20);',
-      'display:flex;flex-direction:column;gap:14px;align-items:center;}',
+    /* 外掛區外框:2026-07-11 依使用者提供的 V17 參考稿改成「金色 fieldset + 2x2 方格」風格,
+       呼應首頁登入畫面的黑金改版——桌機/手機共用同一套,不分裝置 */
+    '#afk-plugin-frame{position:relative;width:100%;max-width:22rem;margin:8px auto 0;padding:20px 14px 16px;',
+      'border:1px solid rgba(190,145,75,.72);border-radius:16px;background:rgba(6,5,4,.48);',
+      'box-shadow:inset 0 0 18px rgba(0,0,0,.5),0 4px 18px rgba(0,0,0,.20);',
+      'display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}',
     /* 框上的「外掛」標籤,坐在上緣(像 fieldset 標題) */
     '#afk-plugin-frame .afk-frame-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);',
-      'padding:2px 14px;font-size:12.5px;font-weight:700;letter-spacing:2px;color:#cbd5e1;',
-      'background:linear-gradient(180deg,rgba(40,52,72,.96),rgba(28,38,56,.96));',
-      'border:1px solid rgba(148,163,184,.4);border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap;}',
+      'padding:2px 14px;font-size:12.5px;font-weight:700;letter-spacing:2px;color:#ead09a;',
+      'background:linear-gradient(180deg,#1d1710,#090704);',
+      'border:1px solid rgba(190,145,75,.78);border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap;}',
+    /* 方格容器(m-dex-entry-row/m-wiki-entry-row):本身就是一個 grid 儲存格。
+       2026-07-12 使用者要求:↗新分頁鈕改放方格「下方」(不再浮在角落),故容器改直向排列
+       (主方格在上、↗鈕在下),兩者寬度一致。 */
+    '#afk-plugin-frame .m-dex-entry-row,#afk-plugin-frame .m-wiki-entry-row{position:relative;display:flex;flex-direction:column;gap:6px;}',
 
-    /* 外掛入口按鈕套原版皮:作者新登入頁的按鈕樣式只吃 #main-menu 的「直接子」button
-       (css/style.css 的 #main-menu > button),我們的按鈕包在 row/外框裡吃不到 → 在這裡抄同一組
-       宣告套上(深藍漸層+金邊)。⚠ 作者若改 css/style.css 該段風格,這裡要跟著換。 */
-    '#main-menu .m-dex-entry-row > button,#main-menu .m-wiki-entry-row > button,#main-menu #afk-stg-gear{',
-      'border-color:#b68a39;background:linear-gradient(180deg,rgba(35,55,83,.94),rgba(10,22,42,.96));',
-      'color:#f8e7bb;text-shadow:0 1px 2px #000;box-shadow:inset 0 0 9px rgba(116,165,219,.35),0 2px 5px #000;}',
-    '#main-menu .m-dex-entry-row > button:hover,#main-menu .m-wiki-entry-row > button:hover,#main-menu #afk-stg-gear:hover{filter:brightness(1.18);}',
-    /* 主入口鈕的字級/內距也對齊原版(↗ 鈕與 ⚙ 鈕維持各自尺寸,只換皮) */
-    '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main{',
-      'padding:clamp(5px,.72vw,11px) 4px;font-size:clamp(9px,1.03vw,16px);line-height:1.1;}',
-    /* 手機:afk-mobile 把原版按鈕釘在 16px/14px 12px(vw 字級在縮放 viewport 下失準),主入口鈕跟進 */
-    'body.m-mobile #main-menu .m-dex-entry-main,body.m-mobile #main-menu .m-wiki-entry-main{',
-      'font-size:16px;padding:14px 12px;}',
-    /* ↗ 鈕去掉自身上下內距(原 py-4 會把整列撐得比原版按鈕高);列高由主鈕決定,↗ 靠 stretch 等高 */
-    '#main-menu .m-dex-entry-newtab,#main-menu .m-wiki-entry-newtab{padding-top:0;padding-bottom:0;}',
+    /* 🎨 2026-07-11 第二次調整:「其他功能」小方格區(備份管理/批次結算),樣式比照外掛框但較窄矮,
+       放在外掛框正下方。顏色與外掛方格同一組藍色漸層(使用者明確要求維持一致,不要另外分色)。 */
+    '#afk-other-frame{position:relative;width:100%;max-width:22rem;margin:14px auto 0;padding:16px 14px 12px;',
+      'border:1px solid rgba(190,145,75,.6);border-radius:14px;background:rgba(6,5,4,.4);',
+      'box-shadow:inset 0 0 14px rgba(0,0,0,.4),0 3px 14px rgba(0,0,0,.18);',
+      'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}',
+    '#afk-other-frame .afk-frame-label{position:absolute;top:-11px;left:50%;transform:translateX(-50%);',
+      'padding:2px 12px;font-size:11.5px;font-weight:700;letter-spacing:1.5px;color:#ead09a;',
+      'background:linear-gradient(180deg,#1d1710,#090704);',
+      'border:1px solid rgba(190,145,75,.7);border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.35);white-space:nowrap;}',
+
+    /* 工具方格按鈕(掉落查詢/小百科)+ 其他功能小按鈕(備份管理/批次結算):圖示在上、文字在下,
+       呼應 V17 的 3x1 工具格。⚠ 2026-07-11 使用者依實際 V17 渲染截圖糾正:工具方格是「藍色」
+       (跟戰鬥特效/傷害數字開關同一組藍色,非黑金棕色)——套 V17 的 --blue1/--blue2 漸層,不是黑金漸層
+       (黑金只用在主要功能鈕本身)。2026-07-11 再次確認:「其他功能」小按鈕(.afk-tile-btn-sm)
+       也要維持同一組藍色漸層,不要另外分色。 */
+    '#main-menu .m-dex-entry-row > button,#main-menu .m-wiki-entry-row > button,#main-menu .afk-tile-btn,#main-menu .afk-tile-btn-sm{',
+      'border-color:#80623d;background:linear-gradient(180deg,#16385f,#08192e);',
+      'color:#efe2c8;text-shadow:0 1px 2px #000;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -3px 0 rgba(0,0,0,.32),0 5px 12px rgba(0,0,0,.55);}',
+    '#main-menu .m-dex-entry-row > button:hover,#main-menu .m-wiki-entry-row > button:hover,#main-menu .afk-tile-btn:hover,#main-menu .afk-tile-btn-sm:hover{filter:brightness(1.12);transform:translateY(-1px);}',
+    /* 「其他功能」小按鈕:橫向排列(圖示+文字同一行),比主要工具方格矮(呼應 V17「other」按鈕的 40px 高度) */
+    '#main-menu .afk-tile-btn-sm{width:100%;min-height:40px;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;',
+      'padding:8px 6px;font-size:clamp(9px,0.95vw,12px);line-height:1.15;}',
+    'body.m-mobile #main-menu .afk-tile-btn-sm{font-size:11.5px;min-height:42px;}',
+    /* ⚙其他功能齒輪鈕維持黑金(它不是 V17 的工具方格,是我們自己的下拉選單開關,獨立於方格外) */
+    '#main-menu #afk-stg-gear{',
+      'border-color:#b68a39;background:linear-gradient(180deg,rgba(139,103,55,.94) 0%,rgba(60,38,20,.95) 47%,rgba(20,13,7,.96) 100%);',
+      'color:#f8e7bb;text-shadow:0 1px 2px #000;box-shadow:inset 0 1px 0 rgba(255,240,203,.28),inset 0 -2px 4px rgba(0,0,0,.5),0 3px 8px rgba(0,0,0,.45);}',
+    '#main-menu #afk-stg-gear:hover{filter:brightness(1.15);transform:translateY(-1px);}',
+    /* 主入口鈕(含升格方格)改直向堆疊:圖示一行、文字一行,對齊 V17「icon<br>label」的方格外觀 */
+    '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main,#main-menu .afk-tile-btn{',
+      'width:100%;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;',
+      'padding:10px 6px;font-size:clamp(9px,1.03vw,13px);line-height:1.15;}',
+    '#main-menu .m-dex-entry-icon{font-size:1.6em;line-height:1;}',
+    '#main-menu .m-dex-entry-label{white-space:normal;}',
+    /* 手機:afk-mobile 把原版按鈕釘死字級(vw 字級在縮放 viewport 下失準),方格鈕跟進 */
+    'body.m-mobile #main-menu .m-dex-entry-main,body.m-mobile #main-menu .m-wiki-entry-main,body.m-mobile #main-menu .afk-tile-btn{',
+      'font-size:13px;min-height:76px;}',
+    /* ↗「在新分頁開啟」小鈕:2026-07-11 使用者回饋原本疊在方格內角落「很醜」——改成浮在方格
+       右上角「外側」的小圓形徽章。2026-07-12 使用者再次要求:改放方格「下方」,寬度跟主方格一致
+       (不再是小圓鈕),樣式與主方格同一組藍色漸層,只是矮一點(次要動作)。
+       ⚠ afk-dex.js/afk-wiki.js 各自的 `.m-dex-entry-row > button{width:auto !important}` 規則
+       選擇器比這裡更具體(多一層 > button 的 tag 選擇器)且帶 !important,會蓋掉這裡的 width:100%,
+       故這裡的 width 也要加 !important 才蓋得過去。 */
+    '#main-menu .m-dex-entry-newtab,#main-menu .m-wiki-entry-newtab{position:static;width:100% !important;',
+      'min-height:26px;padding:4px 6px;display:flex;align-items:center;justify-content:center;gap:4px;',
+      'font-size:11px;line-height:1;border-radius:5px;',
+      'border-color:#80623d;background:linear-gradient(180deg,#16385f,#08192e);color:#efe2c8;',
+      'box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -2px 0 rgba(0,0,0,.3),0 3px 8px rgba(0,0,0,.45);}',
+    '#main-menu .m-dex-entry-newtab:hover,#main-menu .m-wiki-entry-newtab:hover{filter:brightness(1.15);transform:translateY(-1px);}',
+
+    /* 🔘 2026-07-12 使用者要求:選角畫面右側「進入遊戲/創新角色/匯入進度/返回」四顆按鈕跑圓角
+       (原作 css/style.css 沒設 border-radius,預設直角)。桌機/手機都套用,手機版另有自己的
+       尺寸/排列覆寫(見 afk-mobile.js),圓角這條兩邊共用不重複定義。 */
+    '#load-action-panel button{border-radius:8px;}',
 
     /* 📢 公告跑馬燈:放在 #main-menu 第一個子層(首頁按鈕上方);紅底捲動,游標移上去暫停。
        (v3.0.40 作者登入頁改成藝術舞台後,標題不再是 #creation-screen 直接子層,改錨定 #main-menu。) */
@@ -118,7 +174,12 @@
     // 錨定在「標題區(h1+副標 的容器)」下方(桌機/手機一致)。
     var h1 = cs.querySelector('h1');
     var header = h1 ? h1.parentElement : cs;
-    header.style.position = 'relative';   // 讓 badge 以這塊為定位基準(桌機/手機一致)
+    // 🔧 2026-07-11 踩過:無條件設 position:relative 會蓋掉 #login-title-layer 自己在 css/style.css
+    // 定義的 position:absolute(inline style 優先度高於外部樣式表,不受 !important 以外的規則影響)——
+    // 一旦被改成 relative,原本用來定位標題的 top/left 百分比全部改成相對「直接父層」高度計算,結果整段跑位。
+    // 這塊本身如果已經是 absolute/fixed/sticky,就已經是合法的定位基準,不需要再強制改成 relative。
+    var curPos = getComputedStyle(header).position;
+    if (curPos === 'static') header.style.position = 'relative';   // 只有真的還沒定位時才補上,不要覆蓋既有定位模式
     var b = document.createElement('div'); b.id = 'afk-brand-badge';
     b.innerHTML = '<div class="afk-brand-line">(加掛版)</div><div class="afk-brand-line afk-brand-ver"></div>';
     header.appendChild(b);
@@ -167,6 +228,25 @@
   function findEl(menu, sel) {
     return document.querySelector('#afk-plugin-frame > ' + sel) || menu.querySelector(':scope > ' + sel);
   }
+  // 找/建「升格方格」按鈕(備份管理/批次結算):來源功能是 AFK_SETTINGS._items 裡的項目,
+  // 每次呼叫都重新查 visible()(例如雲端同步要「已設定配對碼」才顯示,狀態會變動)。
+  // 🎨 2026-07-11:改放進獨立的「其他功能」小方格區(見 ensureOtherFrame),不再進外掛框,
+  // 樣式改用 .afk-tile-btn-sm(橫向排列、較矮),故 innerHTML/className 跟著改。
+  function ensurePromotedTile(def) {
+    var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
+    var src = null;
+    for (var i = 0; i < ext.length; i++) { if (ext[i].label === def.srcLabel) { src = ext[i]; break; } }
+    var existing = document.getElementById('afk-tile-' + def.key);
+    if (!src || (src.visible && !src.visible())) { if (existing) existing.remove(); return null; }
+    if (existing) return existing;
+    var b = document.createElement('button');
+    b.id = 'afk-tile-' + def.key;
+    b.type = 'button';
+    b.className = 'btn bg-amber-700 hover:bg-amber-600 border-amber-500 afk-tile-btn-sm';
+    b.textContent = def.icon + ' ' + def.label;
+    b.addEventListener('click', src.onClick);
+    return b;
+  }
   function ensureFrame() {
     var menu = document.getElementById('main-menu'); if (!menu) return;
     var els = [];
@@ -184,6 +264,33 @@
     }
     // 依 FRAME_ORDER 重新 append → 框內順序固定(把散在 #main-menu 的也一起收進來;idempotent)
     els.forEach(function (el) { frame.appendChild(el); });
+
+    // 🎨 2026-07-11:「其他功能」小方格區(備份管理/批次結算),放在外掛框正下方、
+    // ⚙其他功能齒輪鈕之上。沒有任何升格方格可顯示時整個區塊移除,不留空框。
+    var otherFrame = document.getElementById('afk-other-frame');
+    var tiles = [];
+    PROMOTED_TILES.forEach(function (def) {
+      var tile = ensurePromotedTile(def);
+      if (tile) tiles.push(tile);
+    });
+    if (tiles.length) {
+      if (!otherFrame) {
+        otherFrame = document.createElement('div'); otherFrame.id = 'afk-other-frame';
+        var oLabel = document.createElement('div'); oLabel.className = 'afk-frame-label'; oLabel.textContent = '其他功能';
+        otherFrame.appendChild(oLabel);
+        menu.insertBefore(otherFrame, frame.nextSibling);
+      } else if (otherFrame.previousElementSibling !== frame) {
+        menu.insertBefore(otherFrame, frame.nextSibling);
+      }
+      tiles.forEach(function (t) { otherFrame.appendChild(t); });
+    } else if (otherFrame) {
+      otherFrame.remove();
+    }
+
+    // ⚙ 其他功能(齒輪+下拉選單)固定在「外掛框/其他功能小方格區」的正下方
+    var stgWrap = menu.querySelector(':scope > #afk-stg-wrap');
+    var afterEl = otherFrame || frame;
+    if (stgWrap && stgWrap.previousElementSibling !== afterEl) menu.insertBefore(stgWrap, afterEl.nextSibling);
   }
 
   function apply() {

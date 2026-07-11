@@ -707,7 +707,8 @@
     b.id = 'm-dex-open';
     b.type = 'button';
     b.className = 'btn text-xl py-4 bg-amber-700 hover:bg-amber-600 border-amber-500 m-dex-entry-main';
-    b.textContent = '📖 怪物 / 掉落查詢';
+    // 🎨 2026-07-11 首頁 V17 改版:圖示/文字兩行(icon 換行 label),搭配外掛工具方格「圖示在上、文字在下」版面
+    b.innerHTML = '<span class="m-dex-entry-icon">📖</span><span class="m-dex-entry-label">怪物 / 掉落查詢</span>';
     b.addEventListener('click', openModal);
     var nt = document.createElement('button');
     nt.id = 'm-dex-newtab';

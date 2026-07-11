@@ -270,7 +270,12 @@ function _summaryFromRaw(s){
     s = _saveUnwrap(s).payload;   // 🛡️ 先解存檔簽章（摘要顯示不驗章、僅取 payload；舊明文檔原樣回傳）
     try { let d = JSON.parse(s); let p = d.p;
         let clsName = { knight:'騎士', mage:'法師', elf:'妖精', dark:'黑暗妖精', illusion:'幻術士', dragon:'龍騎士', warrior:'戰士', royal:'王族' }[p.cls] || p.cls;
-        return { name: p.name || '', cls: clsName, lv: p.lv || 1, gold: p.gold || 0, classic: !!p.classicMode, avatar: p.avatar || null };   // 🎮 經典模式旗標：供存檔位顯示與傭兵同模式招募限制（🏛️v3.0.83 傳統已取消·未載入過的舊傳統存檔以 classicMode 歸類）；avatar＝職業性別頭像名（assets/character/<avatar>.png）；name 未命名時留空字串（顯示端自行省略）
+        return {
+            name: p.name || '', cls: clsName, rawCls: p.cls || '', lv: p.lv || 1, gold: p.gold || 0, classic: !!p.classicMode, avatar: p.avatar || null,
+            // 🎨 2026-07-11 三畫面改版:補這幾個欄位給新版角色選擇畫面的 #load-info-panel 顯示用(移植自原作者新版 2026071001)
+            pledge: p.bloodPledge || '', hp: p.hp || 0, mhp: p.mhp || p.maxHp || 0, mp: p.mp || 0, mmp: p.mmp || p.maxMp || 0,
+            ac: p.d && typeof p.d.ac === 'number' ? p.d.ac : '', base: p.base || {}
+        };   // 🎮 經典模式旗標：供存檔位顯示與傭兵同模式招募限制（🏛️v3.0.83 傳統已取消·未載入過的舊傳統存檔以 classicMode 歸類）；avatar＝職業性別頭像名（assets/character/<avatar>.png）；name 未命名時留空字串（顯示端自行省略）
     } catch(e){ return null; }
 }
 function slotSummary(n){ return _summaryFromRaw(_lzGet('lineage_idle_save_' + n)); }
@@ -310,13 +315,16 @@ function chooseSlot(n){
     let sum = slotSummary(n);
     if(sum && !confirm(`存檔 ${n} 已有角色（${sum.cls} Lv.${sum.lv}${sum.name ? ' ' + sum.name : ''}），確定覆蓋並重新創角？`)) return;
     currentSlot = n;
+    _loadSelectedSlot = n;
+    _loadPage = Math.floor((n - 1) / 4);
     document.getElementById('slot-select-panel').classList.add('hidden');
     showCreation();
 }
 function slotBackToMenu(){
     document.getElementById('slot-select-panel').classList.add('hidden');
     document.getElementById('main-menu').classList.remove('hidden');
-    if(anySaveExists()) document.getElementById('btn-load').classList.remove('hidden');
+    // ⚠️ 2026-07-11 三畫面改版後主選單只剩單一「開始遊戲」鈕,已無 btn-load 這個元素,做 null 防呆(此函式現在只剩資產管理/批次結算的捷徑會呼叫到)
+    let btnLoad = document.getElementById('btn-load'); if(btnLoad && anySaveExists()) btnLoad.classList.remove('hidden');
 }
 
 // ===== 存檔 匯出 / 匯入 =====
@@ -407,7 +415,7 @@ function importSave(n){
                     whMsg = '\n（倉庫維持原狀，未還原）';
                 }
             }
-            openSlotSelect(_slotMode);   // 重新整理存檔位清單（更新名稱/等級與可載入狀態）
+            if(_slotMode === 'load-grid') renderLoadSelect(); else openSlotSelect(_slotMode);   // 重新整理存檔位清單（更新名稱/等級與可載入狀態）
             let ns = slotSummary(n);
             alert(`已匯入到存檔 ${n}：${ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成'}。${cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : ''}${whMsg}`);
         };
@@ -422,28 +430,304 @@ function restoreBackup(n){
     let b = slotBackupSummary(n);
     if(!confirm(`確定要將存檔 ${n} 復原為匯入前的備份${b ? `（${b.cls} Lv.${b.lv}　${b.name}）` : ''}嗎？\n目前存檔 ${n} 的內容將被取代。`)) return;
     _lsSet('lineage_idle_save_' + n, bak);
-    openSlotSelect(_slotMode);   // 刷新清單
+    if(_slotMode === 'load-grid') renderLoadSelect(); else openSlotSelect(_slotMode);   // 刷新清單
     alert(`存檔 ${n} 已復原為匯入前的備份。`);
 }
+// 🎨 2026-07-11 三畫面全面改版：採用原作者新版 2026071001 的「角色選擇畫面」(#load-select-panel，逐幀走路動畫的
+// 存檔角色卡片，可翻頁)＋創角人物立繪逐幀動畫，取代舊版純文字存檔清單／單張靜態職業預覽圖。
+// 移植範圍：只搬「新版UI專屬」的常數/函式，不動我們既有的 startGame()/adjStat() 等核心遊戲邏輯（版本已比 2026071001 快照新）。
+const CREATION_CLASS_ANIM_FRAMES = {
+    prince: [714, 798], princess: [629, 710],
+    m_knight: [378, 448], f_knight: [315, 374],
+    m_mage: [531, 625], f_mage: [452, 527],
+    m_elf: [245, 311], f_elf: [166, 241],
+    m_dark: [90, 162], f_dark: [25, 86],
+    m_illusionist: [968, 1036], f_illusionist: [1039, 1125],
+    m_Dknight: [841, 905], f_Dknight: [908, 965],
+    m_warrior: [1992, 2076], f_warrior: [1908, 1991]
+};
+const LOAD_NONE_ANIM_FRAMES = [1, 24];
+const LOAD_AVATAR_TO_START_KEY = {
+    '王子': 'prince', '公主': 'princess',
+    '男騎士': 'm_knight', '女騎士': 'f_knight',
+    '男法師': 'm_mage', '女法師': 'f_mage',
+    '男妖精': 'm_elf', '女妖精': 'f_elf',
+    '男黑暗妖精': 'm_dark', '女黑暗妖精': 'f_dark',
+    '男幻術士': 'm_illusionist', '女幻術士': 'f_illusionist',
+    '男龍騎士': 'm_Dknight', '女龍騎士': 'f_Dknight',
+    '男戰士': 'm_warrior', '女戰士': 'f_warrior'
+};
+const LOAD_CLASS_TO_START_KEY = {
+    royal: 'prince', knight: 'm_knight', mage: 'm_mage', elf: 'm_elf',
+    dark: 'm_dark', illusion: 'm_illusionist', dragon: 'm_Dknight', warrior: 'm_warrior'
+};
+let _loadSelectedSlot = 1;
+let _loadPage = 0;
+let _loadAnimState = { key: null, frame: 0, noneFrame: LOAD_NONE_ANIM_FRAMES[0], lastAt: 0, stepMs: 92 };
+function loadEsc(v){
+    return String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function loadStartKeyFromSummary(sum){
+    if(!sum) return 'none';
+    if(sum.avatar && LOAD_AVATAR_TO_START_KEY[sum.avatar]) return LOAD_AVATAR_TO_START_KEY[sum.avatar];
+    return LOAD_CLASS_TO_START_KEY[sum.rawCls] || LOAD_CLASS_TO_START_KEY[sum.cls] || 'prince';
+}
+function loadFrameSrc(key, frame){
+    if(key === 'none') return `assets/start/none/${frame}.png`;
+    return `assets/start/${key}/${frame}.png`;
+}
+function loadFirstFrame(key){
+    if(key === 'none') return LOAD_NONE_ANIM_FRAMES[0];
+    const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
+    return range[0];
+}
+function openLoadSelect(){
+    _slotMode = 'load-grid';
+    const main = document.getElementById('main-menu');
+    const create = document.getElementById('creation-panel');
+    const oldSlots = document.getElementById('slot-select-panel');
+    const load = document.getElementById('load-select-panel');
+    if(main) main.classList.add('hidden');
+    if(create) create.classList.add('hidden');
+    if(oldSlots) oldSlots.classList.add('hidden');
+    if(load) load.classList.remove('hidden');
+    _loadPage = 0;
+    _loadSelectedSlot = [1,2,3,4].find(n => !!slotSummary(n)) || 1;
+    renderLoadSelect();
+}
+function loadSetPage(page){
+    _loadPage = page === 2 ? 1 : 0;
+    const start = _loadPage * 4 + 1;
+    const slots = [start, start + 1, start + 2, start + 3];
+    _loadSelectedSlot = slots.find(n => !!slotSummary(n)) || start;
+    renderLoadSelect();
+}
+function loadBackToMenu(){
+    const load = document.getElementById('load-select-panel');
+    const main = document.getElementById('main-menu');
+    if(load) load.classList.add('hidden');
+    if(main) main.classList.remove('hidden');
+}
+function renderLoadSelect(){
+    const grid = document.getElementById('load-slot-grid');
+    if(!grid) return;
+    let html = '';
+    const start = _loadPage * 4 + 1;
+    for(let n = start; n <= start + 3; n++){
+        const sum = slotSummary(n);
+        const key = loadStartKeyFromSummary(sum);
+        const selected = n === _loadSelectedSlot;
+        const empty = !sum;
+        const frame = loadFirstFrame(key);
+        const title = sum ? `角色 ${n} ${sum.cls} Lv.${sum.lv}` : `角色 ${n} 空`;
+        html += `<button type="button" onclick="loadSelectSlot(${n})" data-slot="${n}" data-key="${key}" class="load-slot-card ${selected ? 'selected' : ''} ${empty ? 'empty' : 'filled'}" title="${loadEsc(title)}">`
+            + `<img src="${loadFrameSrc(key, frame)}" alt="${loadEsc(title)}" draggable="false">`
+            + `</button>`;
+    }
+    grid.innerHTML = html;
+    const selectedSum = slotSummary(_loadSelectedSlot);
+    const selectedKey = loadStartKeyFromSummary(selectedSum);
+    _loadAnimState.key = selectedKey;
+    _loadAnimState.frame = loadFirstFrame(selectedKey);
+    _loadAnimState.lastAt = 0;
+    const page1 = document.getElementById('load-page-1');
+    const page2 = document.getElementById('load-page-2');
+    if(page1) page1.classList.toggle('active', _loadPage === 0);
+    if(page2) page2.classList.toggle('active', _loadPage === 1);
+    updateLoadInfo();
+}
+function updateLoadInfo(){
+    const sum = slotSummary(_loadSelectedSlot);
+    const set = (id, text) => { const el = document.getElementById(id); if(el) el.innerText = text; };
+    const base = (sum && sum.base) || {};
+    const empty = !sum;
+    set('load-info-name', empty ? '' : (sum.name || '未命名'));
+    set('load-info-pledge', empty ? '' : ({ tros:'特羅斯', esti:'依詩蒂' }[sum.pledge] || sum.pledge || '-'));
+    set('load-info-class', empty ? '' : sum.cls);
+    set('load-info-alignment', empty ? '' : (sum.classic ? '經典' : '一般'));
+    set('load-info-hp', empty ? '' : `${Math.floor(sum.hp || 0)} / ${Math.floor(sum.mhp || 0)}`);
+    set('load-info-mp', empty ? '' : `${Math.floor(sum.mp || 0)} / ${Math.floor(sum.mmp || 0)}`);
+    set('load-info-ac', empty ? '' : (sum.ac === '' ? '-' : sum.ac));
+    set('load-info-lv', empty ? '' : sum.lv);
+    set('load-info-str', empty ? '' : (base.str || ''));
+    set('load-info-dex', empty ? '' : (base.dex || ''));
+    set('load-info-con', empty ? '' : (base.con || ''));
+    set('load-info-wis', empty ? '' : (base.wis || ''));
+    set('load-info-cha', empty ? '' : (base.cha || ''));
+    set('load-info-int', empty ? '' : (base.int || ''));
+    const enter = document.getElementById('load-btn-enter');
+    const restore = document.getElementById('load-btn-restore');
+    if(enter) enter.disabled = empty;
+    if(restore) restore.classList.toggle('hidden', !slotBackupSummary(_loadSelectedSlot));
+}
+function loadSelectSlot(n){
+    const sum = slotSummary(n);
+    if(!sum){
+        currentSlot = n;
+        _loadSelectedSlot = n;
+        _loadPage = Math.floor((n - 1) / 4);
+        const load = document.getElementById('load-select-panel');
+        if(load) load.classList.add('hidden');
+        showCreation();
+        return;
+    }
+    _loadSelectedSlot = n;
+    renderLoadSelect();
+}
+function loadCreateSelected(){
+    const sum = slotSummary(_loadSelectedSlot);
+    if(sum && !confirm(`存檔 ${_loadSelectedSlot} 已有 ${sum.cls} Lv.${sum.lv}${sum.name ? ' ' + sum.name : ''}，要建立新角色並覆蓋嗎？`)) return;
+    currentSlot = _loadSelectedSlot;
+    const load = document.getElementById('load-select-panel');
+    if(load) load.classList.add('hidden');
+    showCreation();
+}
+function loadEnterSelected(){
+    const sum = slotSummary(_loadSelectedSlot);
+    if(!sum){ loadSelectSlot(_loadSelectedSlot); return; }
+    currentSlot = _loadSelectedSlot;
+    loadGame();
+}
+function loadImportSelected(){ importSave(_loadSelectedSlot); }
+function loadRestoreSelected(){ restoreBackup(_loadSelectedSlot); }
+(function animateLoadSelectPreview(){
+    function tick(now){
+        const panel = document.getElementById('load-select-panel');
+        if(panel && !panel.classList.contains('hidden') && now - _loadAnimState.lastAt >= _loadAnimState.stepMs){
+            _loadAnimState.noneFrame = _loadAnimState.noneFrame >= LOAD_NONE_ANIM_FRAMES[1] ? LOAD_NONE_ANIM_FRAMES[0] : _loadAnimState.noneFrame + 1;
+            document.querySelectorAll('.load-slot-card.empty img').forEach(img => { img.src = loadFrameSrc('none', _loadAnimState.noneFrame); });
+            const selected = document.querySelector('.load-slot-card.selected.filled');
+            if(selected){
+                const key = selected.dataset.key || 'prince';
+                const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
+                if(_loadAnimState.key !== key){
+                    _loadAnimState.key = key;
+                    _loadAnimState.frame = range[0];
+                } else {
+                    _loadAnimState.frame = _loadAnimState.frame >= range[1] ? range[0] : _loadAnimState.frame + 1;
+                }
+                const img = selected.querySelector('img');
+                if(img) img.src = loadFrameSrc(key, _loadAnimState.frame);
+            }
+            _loadAnimState.lastAt = now;
+        }
+        requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+})();
+
+// 🎨 職業＋性別兩步驟選擇（2026-07-11 創角按鈕黑金化交接）：8 職業圖示鈕 + 2 性別鈕換算成實際 16 選項之一，
+// 移植自原作者新版 2026071001 的 js/13-shop-save.js（已核對不含人物逐幀動畫相關程式碼，可乾淨獨立搬移）。
+let creationSelectedClassBase = null;
+let creationSelectedGender = 'm';
+const CREATION_CLASS_BASE_TO_RAW = {
+    royal: { m: 'm_royal', f: 'f_royal' }, knight: { m: 'm_knight', f: 'f_knight' },
+    mage: { m: 'm_mage', f: 'f_mage' }, elf: { m: 'm_elf', f: 'f_elf' },
+    dark: { m: 'm_dark', f: 'f_dark' }, illusionist: { m: 'm_illusionist', f: 'f_illusionist' },
+    Dknight: { m: 'm_Dknight', f: 'f_Dknight' }, warrior: { m: 'm_warrior', f: 'f_warrior' }
+};
+function creationClassBaseFromRaw(raw){
+    if(!raw) return null;
+    if(raw.includes('royal')) return 'royal';
+    if(raw.includes('Dknight')) return 'Dknight';
+    if(raw.includes('illusionist')) return 'illusionist';
+    if(raw.includes('dark')) return 'dark';
+    if(raw.includes('knight')) return 'knight';
+    if(raw.includes('mage')) return 'mage';
+    if(raw.includes('elf')) return 'elf';
+    if(raw.includes('warrior')) return 'warrior';
+    return null;
+}
+function rawClassFromBaseAndGender(base, gender){
+    const pair = CREATION_CLASS_BASE_TO_RAW[base] || CREATION_CLASS_BASE_TO_RAW.royal;
+    return pair[gender] || pair.m;
+}
+function selectClassBase(base){
+    creationSelectedClassBase = base;
+    selectClass(rawClassFromBaseAndGender(creationSelectedClassBase, creationSelectedGender));
+}
+function selectGender(gender){
+    creationSelectedGender = gender === 'f' ? 'f' : 'm';
+    document.querySelectorAll('.creation-gender-btn').forEach(btn => btn.classList.remove('active'));
+    const genderBtn = document.getElementById('btn-gender-' + creationSelectedGender);
+    if(genderBtn) genderBtn.classList.add('active');
+    if(creationSelectedClassBase) selectClass(rawClassFromBaseAndGender(creationSelectedClassBase, creationSelectedGender));
+}
+function updateCreationChoiceButtons(raw){
+    creationSelectedClassBase = creationClassBaseFromRaw(raw);
+    creationSelectedGender = raw.startsWith('f_') ? 'f' : 'm';
+    document.querySelectorAll('.creation-class-btn,.creation-gender-btn').forEach(btn => btn.classList.remove('active'));
+    const classBtn = document.getElementById('btn-class-base-' + creationSelectedClassBase);
+    const genderBtn = document.getElementById('btn-gender-' + creationSelectedGender);
+    if(classBtn) classBtn.classList.add('active');
+    if(genderBtn) genderBtn.classList.add('active');
+}
+
+// 創角人物立繪逐幀走路動畫(移植自 2026071001)：取代單張靜態圖，用 assets/start/<key>/<frame>.png 循環播放
+let creationClassAnim = { key: 'prince', frame: 714, first: 714, last: 798, lastAt: 0, stepMs: 82, static: false };
+function creationAnimKey(c){ if(!c || c === 'none') return 'none'; return c === 'm_royal' ? 'prince' : (c === 'f_royal' ? 'princess' : c); }
+function setCreationClassAnimation(c){
+    const key = creationAnimKey(c);
+    if(key === 'none'){
+        creationClassAnim = { key: 'none', frame: 0, first: 0, last: 0, lastAt: 0, stepMs: 82, static: true };
+        const img = document.getElementById('class-preview-img');
+        if(img){ img.src = 'assets/start/0.png'; img.style.display = 'block'; }
+        return;
+    }
+    const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
+    creationClassAnim = { key, frame: range[0], first: range[0], last: range[1], lastAt: 0, stepMs: 82, static: false };
+    const img = document.getElementById('class-preview-img');
+    if(img){ img.src = `assets/start/${key}/${range[0]}.png`; img.style.display = 'block'; }
+    for(let n = range[0]; n <= Math.min(range[1], range[0] + 10); n++){ const pre = new Image(); pre.src = `assets/start/${key}/${n}.png`; }
+}
+(function animateCreationClassPreview(){
+    function tick(now){
+        const panel = document.getElementById('creation-panel');
+        const img = document.getElementById('class-preview-img');
+        if(panel && img && !panel.classList.contains('hidden') && !creationClassAnim.static && now - creationClassAnim.lastAt >= creationClassAnim.stepMs){
+            creationClassAnim.frame = creationClassAnim.frame >= creationClassAnim.last ? creationClassAnim.first : creationClassAnim.frame + 1;
+            img.src = `assets/start/${creationClassAnim.key}/${creationClassAnim.frame}.png`;
+            creationClassAnim.lastAt = now;
+        }
+        requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+})();
+
 function showCreation() {
-    document.getElementById('main-menu').classList.add('hidden');
-    document.getElementById('creation-panel').classList.remove('hidden');
-    document.getElementById('btn-load').classList.add('hidden');
-    
+    const main = document.getElementById('main-menu');
+    const creation = document.getElementById('creation-panel');
+    const load = document.getElementById('load-select-panel');
+    if(main) main.classList.add('hidden');
+    if(load) load.classList.add('hidden');
+    if(creation) creation.classList.remove('hidden');
+
     // 初始化選單：預設點擊並亮起王子（創角第一位）
+    creationSelectedClassBase = 'royal'; creationSelectedGender = 'm';
     selectClass('m_royal');
 }
 
 function backToMenu() {
-    document.getElementById('main-menu').classList.remove('hidden');
-    document.getElementById('creation-panel').classList.add('hidden');
-    if(anySaveExists()) document.getElementById('btn-load').classList.remove('hidden');
+    const main = document.getElementById('main-menu');
+    const creation = document.getElementById('creation-panel');
+    const load = document.getElementById('load-select-panel');
+    if(creation) creation.classList.add('hidden');
+    if(load){
+        // 從創角進來的路徑是「角色選擇畫面→創新角色」，返回也回角色選擇畫面而不是主選單
+        if(main) main.classList.add('hidden');
+        load.classList.remove('hidden');
+        renderLoadSelect();
+    } else {
+        if(main) main.classList.remove('hidden');
+    }
 }
 
 function selectClass(c) {
     curCreate.rawCls = c; // 記住玩家選的具體選項 (例如 f_knight)
-    
+
     // 1. 更新按鈕外觀 (先移除所有按鈕的 active，再幫目前點擊的加上 active)
+    // ⚠️ 2026-07-11 起 HTML 已改成 8 職業圖示鈕 + 2 性別鈕，這組舊版 16 顆按鈕 id 已無對應元素，
+    // if(btn) 會自動跳過、不報錯，留著當死碼不特地刪除（減少改動面積）；新按鈕的選中態改由下面 updateCreationChoiceButtons(c) 負責。
     const btnIds = ['m_royal', 'f_royal', 'm_knight', 'f_knight', 'm_mage', 'f_mage', 'm_elf', 'f_elf', 'm_dark', 'f_dark', 'm_illusionist', 'f_illusionist', 'm_Dknight', 'f_Dknight', 'm_warrior', 'f_warrior'];
     btnIds.forEach(id => {
         let btn = document.getElementById('btn-class-' + id);
@@ -452,14 +736,10 @@ function selectClass(c) {
     if(document.getElementById('btn-class-' + c)) {
         document.getElementById('btn-class-' + c).classList.add('active');
     }
+    updateCreationChoiceButtons(c);
 
-    // 🎯 解除隱形死結：即時切換圖片路徑，並強制指定 display = 'block'
-    let previewImg = document.getElementById('class-preview-img');
-    if (previewImg) {
-        const _previewName = c === 'm_royal' ? 'prince' : (c === 'f_royal' ? 'princess' : c); // 👑 王族美術檔名為 prince/princess（非 m_royal/f_royal）
-        previewImg.src = `assets/start/${_previewName}.${c.includes('illusionist') ? 'jpg' : 'png'}`; // 🔮 幻術士起始圖為 jpg，其餘職業為 png
-        previewImg.style.display = 'block'; 
-    }
+    // 🎨 2026-07-11 三畫面改版：人物立繪改成逐幀走路動畫(取代單張靜態圖)
+    setCreationClassAnimation(c);
 
     // 2. 判斷底層職業（⚠️ Dknight 含 'knight' 子字串，須先判斷；royal 無子字串衝突）
     if(c.includes('royal')) curCreate.cls = 'royal';   // 👑 王族
@@ -471,25 +751,24 @@ function selectClass(c) {
     else if(c.includes('elf')) curCreate.cls = 'elf';
     else if(c.includes('warrior')) curCreate.cls = 'warrior';   // ⚔️ 戰士
 
-    // 3. 更新說明文字
-    if (curCreate.cls === 'knight') {
-        document.getElementById('class-desc').innerText = "騎士：力量最高的戰鬥專精職業，能使用各式武器與防具。";
-    } else if (curCreate.cls === 'mage') {
-        document.getElementById('class-desc').innerText = "法師：身體較弱但能施展強大魔法的魔法專精職業。";
-    } else if (curCreate.cls === 'elf') {
-        document.getElementById('class-desc').innerText = "妖精：能力均衡、操控各種武器的多才多藝職業。";
-    } else if (curCreate.cls === 'dark') {
-        document.getElementById('class-desc').innerText = "黑暗妖精：敏捷最高、體質脆弱，精通匕首/雙刀/鋼爪/十字弓與劇毒，擅長迴避與雙擊的高機動獵手。";
-    } else if (curCreate.cls === 'illusion') {
-        document.getElementById('class-desc').innerText = "幻術士：魔防較高，以「奇古獸」武器將攻擊化為必中魔法傷害，並施展混亂等幻術。出生於希培利亞。";
-    } else if (curCreate.cls === 'dragon') {
-        document.getElementById('class-desc').innerText = "龍騎士：體質與力量兼備的近戰戰士，龍魔法多以 HP 為代價，能大幅提升攻速並以鎖鏈劍累積「弱點曝光」。出生於貝希摩斯。";
-    } else if (curCreate.cls === 'warrior') {
-        document.getElementById('class-desc').innerText = "戰士：力量與體質兼備的純近戰職業，專精斧頭與鈍器、可雙持單手鈍器，魔防偏低。出生於海音。";
-    } else if (curCreate.cls === 'royal') {
-        document.getElementById('class-desc').innerText = "王族：天生的領袖，傭兵上限與其他職業相同（最多 3 名）；但攜帶的傭兵與項圈夥伴可獲得王族魅力加成——造成傷害、HP、MP 皆 ×(1＋魅力/100)。習得王族專屬魔法。天生加入血盟、不可退出。出生於說話之島。";
+    // 3. 更新標題與說明文字(2026-07-11 起改用原作者新版的完整職業介紹文案)
+    const _titleEl = document.getElementById('creation-class-title');
+    if (_titleEl) {
+        const _titleMap = { royal:'王族', knight:'騎士', mage:'法師', elf:'妖精', dark:'黑暗妖精', illusion:'幻術士', dragon:'龍騎士', warrior:'戰士' };
+        _titleEl.innerText = _titleMap[curCreate.cls] || '角色介紹';
     }
-    
+    const _classDescMap = {
+        royal: "召集成員克服險惡的苦難與逆境\n只為了建立自己國家的遠大夢想\n就能夠犧牲所有的一切，那麼你就\n具備了王族最重要的「心」。\n\n『王族』是個非常特別的職業\n在天堂世界中只有\n『王族』才能創造血盟。\n雖然王族在戰鬥的時候\n沒有任何一個職業的優點\n但是如果想在天堂世界裡\n實現自己遠大的夢想，\n那麼唯有王族才能滿足你的夢想。\n王族必須聚集擁有相同夢想的成員\n並建立屬於自己的城堡。",
+        knight: "沒有什麼特別突出的才能\n只有默默地不間斷地修練，\n奮勇地擋在前端面對危險，\n就像主角一樣。\n\n騎士剛開始是以「自由騎士」\n的身份出發，並自由地到各地旅遊\n與冒險。但是騎士是個最重視\n自己要服從的王族與組織血盟\n並為他們奉獻、\n團體生活時騎士能夠表現出\n他的強大，並擁有堅忍的毅力。\n騎士是戰鬥最基本的職業，\n能夠使用多種武器與與盔甲等\n騎士強大的攻擊力及優越的防禦\n是其他職業無法比擬的\n尤其在近距離戰鬥時\n所表現出的強大戰鬥力。\n但是他們對於魔法的耐性不是很好，\n受到魔法的傷害比其他職業還高。",
+        elf: "妖精擁有比人類更長的壽命\n與美麗的外貌，他們順應自然\n追求融合安定的生活\n並對所有的事情表現較為保守\n因此妖精不喜歡與人類接觸\n在『森林之母』的保護之下\n建立獨自的文化生活。\n\n妖精能夠使用的武器比騎士少\n但是他可以使用大部分的武器\n尤其可以使用遠距離攻擊的弓箭\n比其他武器擁有更多的優勢\n而且能夠使用法師的多種魔法\n可謂是個最均衡的職業。\n\n你想要以妖精的身份存活\n就必須取得妖森守護者\n『那魯帕』的協助，妖精所使用的\n物品都是透過她製造出來的。",
+        mage: "將此世界的神秘現象體制地處理\n並在現實中完成這些事的人\n被人們尊稱為「賢者」\n他們利用「瑪那」的力量\n釋放出神般的偉大力量\n他們的力量甚至能夠導致世界\n的滅亡，在幻想的世界中最為突出\n成為他人最具威脅\n又最受尊崇的對象。\n\n法師優先於精神上的發展與學習\n並能使用多種魔法\n因此法師比其他職業在剛開始時\n看似非常地軟弱\n但是透過冒險逐漸成長後\n最後一定能受到所有人的肯定。\n法師在戰鬥時總是在後方\n給予成員多種的魔法協助。",
+        dark: "黑暗妖精承襲妖精的敏銳與長壽\n卻選擇在陰影中磨練自己的道路。\n他們不以守護森林為使命，\n而是追求更快速、更致命的力量，\n在寂靜之中完成一次決定勝負的攻擊。\n\n黑暗妖精能夠使用匕首、雙刀、鋼爪\n與十字弓等武器，\n並以毒與閃避牽制敵人的行動。\n他們的防禦並不穩固，\n但是敏捷的身手與爆發性的殺傷力\n足以在短時間內扭轉戰局。\n\n你若想以黑暗妖精的身份生存，\n就必須習慣孤獨與危險，\n並相信藏在黑暗中的刀鋒。",
+        illusion: "幻術士研究精神與幻象的力量，\n並將不可見的意志化為現實。\n他們不以強壯的肉體戰鬥，\n而是藉由奇古獸與神秘魔法\n動搖敵人的判斷，支援同伴的行動。\n\n幻術士能夠使用獨特的幻術，\n讓敵人在混亂中失去方向，\n也能以魔法強化自己與隊伍。\n在冒險剛開始時他們並不顯眼，\n但當知識與經驗累積之後，\n幻術士便能在戰場上展現\n任何人都難以忽視的影響力。\n\n若你選擇幻術士的道路，\n就必須學會看穿表象，\n並操縱他人看不見的真實。",
+        dragon: "龍騎士繼承龍的血脈與戰鬥本能，\n他們相信真正的力量\n來自承受痛苦後仍向前踏出的意志。\n在戰場上，龍騎士總是以強韌的身體\n突破敵人的防線，\n並用龍之力量壓制對手。\n\n龍騎士能夠使用鎖鏈劍與龍魔法，\n以生命力換取強大的攻擊能力。\n他們的戰鬥方式比騎士更加猛烈，\n也比一般戰士更具危險性。\n只要掌握敵人的弱點，\n龍騎士便能在瞬間爆發出\n令人畏懼的破壞力。\n\n若你想成為龍騎士，\n就必須接受血脈的代價，\n並將痛楚化為勝利的力量。",
+        warrior: "戰士是在無數戰場中成長的鬥士，\n他們沒有華麗的魔法，\n也不依靠血統或神秘力量，\n只憑強健的身體、沉重的武器\n以及永不退縮的意志生存。\n\n戰士能夠使用斧頭與鈍器，\n並以連續而沉重的攻擊壓迫敵人。\n他們在近距離戰鬥中擁有\n非常可靠的耐久力與破壞力，\n即使被包圍也能站在最前方\n為同伴開出前進的道路。\n\n想以戰士的身份冒險，\n就必須相信自己的雙手，\n並在每一次揮擊中證明力量。"
+    };
+    document.getElementById('class-desc').innerText = _classDescMap[curCreate.cls] || "";
+
     document.getElementById('stat-allocation').style = "";
     curCreate.str = 0; curCreate.dex = 0; curCreate.con = 0; curCreate.int = 0; curCreate.wis = 0; curCreate.cha = 0;
     updateCreateUI();

@@ -673,3 +673,914 @@ button.classic-skill-cell { cursor:pointer; }
 /* 📵 v3.0.74 移植參考版 UI 時移除其手機 media query（@media pointer:coarse）：本專案為「桌機專用」設計（見記憶 desktop-only-layout·手機改 viewport-meta 等比縮小），不再引入手機響應式版面。 */
 #slot-select-panel:not(.hidden) { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(760px,92vw); max-height:92vh; overflow:auto; margin:0 !important; padding:22px; border:2px solid #b89243; border-radius:14px; background:rgba(15,23,42,.96); box-shadow:0 20px 70px #000; }
 #creation-panel:not(.hidden) { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(1000px,96vw); max-height:96vh; overflow:auto; padding:20px; border:2px solid #b89243; border-radius:14px; background:rgba(15,23,42,.96); box-shadow:0 20px 70px #000; }
+
+/* ============================================================
+   🎨 創角畫面按鈕黑金視覺 + 職業/性別兩步驟選擇（2026-07-11）
+   範圍限定 #creation-panel 內，不影響遊戲其他畫面沿用 .btn 的按鈕（分頁鈕/道具鈕等）。
+   ============================================================ */
+#creation-panel button.create-btn,
+#creation-panel button.create-btn-primary,
+#creation-panel button.create-btn-secondary,
+#creation-panel button.stat-btn,
+#creation-panel button.class-btn,
+#creation-panel button.gender-btn {
+    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease, border-color .16s ease, background .16s ease;
+    border: 1px solid rgba(214,168,91,.72);
+    background-image: linear-gradient(180deg, rgba(255,232,181,.16) 0%, rgba(122,82,31,.16) 36%, rgba(12,9,6,.88) 100%);
+    background-color: #241a10;
+    color: #f3e6c8;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -2px 3px rgba(0,0,0,.55), 0 2px 4px rgba(0,0,0,.5);
+}
+@media (hover:hover) {
+    #creation-panel button.create-btn:hover:not(:disabled),
+    #creation-panel button.create-btn-primary:hover:not(:disabled),
+    #creation-panel button.create-btn-secondary:hover:not(:disabled),
+    #creation-panel button.stat-btn:hover:not(:disabled),
+    #creation-panel button.class-btn:hover:not(:disabled),
+    #creation-panel button.gender-btn:hover:not(:disabled) {
+        transform: translateY(-2px) scale(1.025);
+        filter: brightness(1.14);
+        border-color: rgba(255,214,130,.95);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 3px rgba(0,0,0,.5), 0 4px 10px rgba(0,0,0,.55), 0 0 12px rgba(214,168,91,.35);
+    }
+}
+#creation-panel button.create-btn:active:not(:disabled),
+#creation-panel button.create-btn-primary:active:not(:disabled),
+#creation-panel button.create-btn-secondary:active:not(:disabled),
+#creation-panel button.stat-btn:active:not(:disabled),
+#creation-panel button.class-btn:active:not(:disabled),
+#creation-panel button.gender-btn:active:not(:disabled) {
+    transform: translateY(2px) scale(.985);
+    filter: brightness(.94);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.6), inset 0 -1px 0 rgba(255,255,255,.06);
+}
+
+/* 職業選單容器：4欄×2列排列8顆圖示鈕。⚠️ 不能靠 Tailwind 的 grid-cols-4 utility class——
+   本專案 css/tailwind-built.css 是預編譯(purge)過的，只含原版原本用到的 class，
+   原版從沒用過 grid-cols-4，套上去不會生效（8顆鈕會擠成單欄），故這裡自己補一條規則。 */
+#creation-panel .creation-class-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+/* 職業圖示鈕（8顆，改成 V17 參考稿的「盾牌形」：上方圓角、下方直角，圖示＋下方文字，取代舊版16顆文字鈕與早期方形圖示版） */
+#creation-panel button.class-btn {
+    border-radius: 50px 50px 10px 10px;
+    width: 100%;
+    min-height: 64px;
+    padding: 8px 4px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+#creation-panel button.class-btn img { width: 30px; height: 30px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); pointer-events: none; }
+#creation-panel button.class-btn small { font-size: 11px; line-height: 1; color: #d8c297; }
+#creation-panel button.class-btn.active {
+    border-color: #ffd873;
+    color: #ffd873;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 3px rgba(0,0,0,.5), 0 0 14px rgba(255,214,115,.55), 0 0 3px rgba(255,214,115,.9);
+}
+#creation-panel button.class-btn.active small { color: #ffe6a8; }
+
+/* 性別鈕（2顆，改成 V17 參考稿的長方形：左右並排、符號＋文字） */
+#creation-panel button.gender-btn {
+    border-radius: 14px;
+    width: 100%;
+    min-height: 44px;
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 1.05rem;
+}
+#creation-panel button.gender-btn small { font-size: 13px; color: #d8c297; }
+#creation-panel button.gender-btn.active {
+    border-color: #ffd873;
+    color: #ffd873;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 3px rgba(0,0,0,.5), 0 0 10px rgba(255,214,115,.55);
+}
+#creation-panel button.gender-btn.active small { color: #ffe6a8; }
+
+/* 能力值加減鈕（12顆，正方形，比原本 px-3 py-0.5 縮小約 18%） */
+#creation-panel button.stat-btn {
+    border-radius: 8px;
+    background-image: linear-gradient(180deg,#79572e 0%,#4a2e16 52%,#24150a 100%);
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .95rem;
+    flex-shrink: 0;
+}
+
+/* 底部主要按鈕（返回／開始冒險），垂直內距比原本 py-2.5(10px) 縮小約 18% */
+#creation-panel button.create-btn-secondary,
+#creation-panel button.create-btn-primary {
+    border-radius: 13px;
+    padding-top: 0.52rem;
+    padding-bottom: 0.52rem;
+    background-image: linear-gradient(180deg,#8b6737 0%,#5c3b1d 47%,#2c190c 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 3px rgba(0,0,0,.55), 0 5px 0 #171008, 0 7px 10px rgba(0,0,0,.5);
+}
+#creation-panel button.create-btn-secondary:active:not(:disabled),
+#creation-panel button.create-btn-primary:active:not(:disabled) {
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.6), 0 2px 0 #171008, 0 3px 6px rgba(0,0,0,.4);
+}
+#creation-panel button.create-btn-primary:disabled { box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -2px 3px rgba(0,0,0,.4); }
+
+/* ============================================================
+   🎨 2026-07-11 三畫面全面改版：採用原作者新版 2026071001 的視覺化角色選擇畫面
+   (#load-select-panel) 與人物立繪置中創角版面，逐幀走路動畫；移植自
+   Lineage/加掛版/原作者新版/2026071001/css/style.css（原檔第693~1370行，逐段疊代覆寫
+   保留原本的 cascade 順序，不手動計算「最終數值」以免抄錯）。
+   ============================================================ */
+/* ===== 824.png 創角畫面：底圖框架、序列幀角色、原圖配點熱區 ===== */
+#creation-panel:not(.hidden) {
+    position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:block !important; width:min(100vw,calc(100vh * 4 / 3)); aspect-ratio:4 / 3;
+    max-height:none; overflow:hidden; padding:0; border:0; border-radius:0; background:#050505; box-shadow:0 0 45px #000;
+}
+#creation-bg-image { position:absolute; inset:0; z-index:1; width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none; }
+/* 🖋️ v3.2.5 創角職業介紹排版重整（用戶要求）：①上下左右內距加大 ②行高 1.1 → 1.5、字距 +0.03em ③中文字體改正黑體系
+   （原 Georgia serif → CJK fallback 細明體難讀）。
+   ⚠️幾何陷阱：本框 position:absolute → padding/margin 的 % 相對「#creation-panel 寬 1440」而非框自身寬（492）——原 4.6% 就已是 66px。
+   佈局改 flex column：#class-desc 高度＝框內容高減標題（原 height:calc(100%-.25em) 會溢出框底 padding 蓋到美術）。
+   字級自動適配：js/13 selectClassBase 設完文案後若 scrollHeight 超框則逐步縮小（騎士 20 行最長）→ 任何視窗都不會無聲裁切。 */
+#creation-class-desc-frame {
+    position:absolute; z-index:4; left:7.4%; top:12.5%; width:34.2%; height:54.3%;
+    padding:5.6% 5.2% 4.1%; color:#efe1bd; text-shadow:0 1px 2px #000,0 0 5px #000;
+    font-family:Georgia,'Times New Roman',serif; overflow:hidden;
+    display:flex; flex-direction:column;
+}
+#creation-class-title { flex:0 0 auto; margin:0 0 4%; color:#f4d583; font-size:clamp(18px,1.9vw,26px); line-height:1.05; text-align:center; font-weight:700; letter-spacing:.1em; }
+#class-desc {
+    flex:1 1 auto;
+    min-height:0;
+    max-height:none;
+    overflow:hidden;
+    color:#f0e3c4;
+    font-family:'Microsoft JhengHei','微軟正黑體','PingFang TC','Noto Sans TC',sans-serif;
+    font-size:clamp(12px,1.05vw,15px);
+    line-height:1.5;
+    letter-spacing:.03em;
+    white-space:pre-line;
+}
+#creation-avatar-stage {
+    position:absolute; z-index:3; left:43.7%; top:18.2%; width:32%; height:44.5%;
+    display:flex; align-items:flex-end; justify-content:center; pointer-events:none; overflow:visible;
+}
+#class-preview-img { display:block; width:auto !important; height:100% !important; max-width:100%; object-fit:contain !important; object-position:center bottom; border:0 !important; border-radius:0 !important; filter:drop-shadow(0 12px 12px rgba(0,0,0,.85)) contrast(1.05) saturate(1.08); }
+#creation-class-list {
+    position:absolute; z-index:5; left:44.5%; top:5.6%; width:43%;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:clamp(2px,.35vw,5px);
+}
+.creation-class-btn {
+    min-width:0; height:clamp(15px,2.35vw,25px); padding:0 2px; border:1px solid rgba(174,132,56,.8); border-radius:2px;
+    background:linear-gradient(180deg,rgba(41,34,25,.88),rgba(11,12,16,.92)); color:#d9c796;
+    font-size:clamp(7px,.83vw,12px); font-weight:700; line-height:1; text-shadow:0 1px 2px #000; box-shadow:inset 0 0 5px rgba(238,198,95,.15),0 1px 2px #000;
+}
+.creation-class-btn:hover,.creation-class-btn.active { color:#fff0b8; border-color:#e1b45b; background:linear-gradient(180deg,rgba(91,63,25,.95),rgba(37,23,10,.95)); box-shadow:0 0 7px rgba(221,170,70,.55), inset 0 0 6px rgba(255,220,128,.2); }
+#stat-allocation { position:absolute; inset:0; z-index:6; width:100%; height:100%; padding:0; border:0; border-radius:0; background:transparent; pointer-events:none; }
+#creation-pts {
+    position:absolute; left:72.35%; top:68.72%; width:3.85%; height:5.05%; display:flex; align-items:center; justify-content:center;
+    color:#f3f6ff; font-size:clamp(9px,1.05vw,15px); font-weight:700; text-shadow:0 1px 2px #000; pointer-events:none;
+}
+.creation-stat-control { position:absolute; display:grid; grid-template-columns:1.45em 1.05em 1.05em; align-items:center; gap:.18em; height:3%; pointer-events:auto; }
+.creation-stat-value { color:#f3f6ff; font-size:clamp(8px,.92vw,13px); font-weight:700; line-height:1; text-align:right; text-shadow:0 1px 2px #000,0 0 3px #000; }
+.creation-stat-btn {
+    width:100%; aspect-ratio:1 / 1; min-width:0; padding:0; border:1px solid rgba(117,139,176,.85); border-radius:1px;
+    display:flex; align-items:center; justify-content:center; background:rgba(9,22,43,.74); color:#dfeeff;
+    font-size:clamp(7px,.75vw,11px); font-weight:700; line-height:1; box-shadow:inset 0 0 4px rgba(148,189,255,.35),0 1px 2px #000;
+}
+.creation-stat-btn:hover { color:#fff; border-color:#d5e5ff; background:rgba(25,55,96,.9); }
+.creation-stat-control.stat-str { left:62.6%; top:66.18%; }
+.creation-stat-control.stat-dex { left:62.6%; top:69.32%; }
+.creation-stat-control.stat-con { left:62.6%; top:72.35%; }
+.creation-stat-control.stat-wis { left:75.9%; top:66.18%; }
+.creation-stat-control.stat-cha { left:75.9%; top:69.32%; }
+.creation-stat-control.stat-int { left:75.9%; top:72.35%; }
+#classic-mode-control {
+    position:absolute; z-index:7; left:52.5%; top:78.9%; display:flex; align-items:center; gap:.35em;
+    color:#d8c08a; font-size:clamp(8px,.86vw,12px); font-weight:700; text-shadow:0 1px 2px #000; cursor:pointer; user-select:none;
+}
+#classic-mode-control input { width:clamp(9px,1vw,14px); height:clamp(9px,1vw,14px); accent-color:#8b5e22; }
+#creation-back-button {
+    position:absolute; z-index:7; left:52.5%; top:84.0%; width:11%; height:4.1%; padding:0; border:1px solid #7e6330; border-radius:2px;
+    background:linear-gradient(180deg,rgba(39,31,20,.92),rgba(11,10,9,.96)); color:#d7c293; font-size:clamp(8px,.9vw,13px); font-weight:700; text-shadow:0 1px 2px #000;
+}
+#creation-back-button:hover { color:#ffe7a6; border-color:#d3a64d; }
+#btn-start.creation-start-button {
+    position:absolute; z-index:7; left:68.25%; top:78.7%; width:16.65%; height:4.45%; padding:0; border:1px solid #9f7b36; border-radius:2px;
+    background:linear-gradient(180deg,rgba(60,42,17,.72),rgba(13,10,6,.75)); color:#f5e7bd;
+    font-size:clamp(9px,1.02vw,15px); font-weight:700; line-height:1; text-shadow:0 1px 2px #000,0 0 4px #000; box-shadow:inset 0 0 8px rgba(234,184,83,.18);
+}
+#btn-start.creation-start-button:hover:not(:disabled) { color:#fff3c7; border-color:#d7ae57; background:linear-gradient(180deg,rgba(96,65,24,.82),rgba(31,20,8,.82)); }
+#btn-start.creation-start-button:disabled { opacity:.52; cursor:not-allowed; filter:grayscale(.45); }
+/* ===== 創角配置調整：職業 logo 環繞動圖、性別獨立於第 2 區 ===== */
+#creation-avatar-stage { left:52.4%; top:17.8%; width:25.8%; height:43.4%; }
+#creation-class-list {
+    position:absolute; z-index:6; left:43.3%; top:11.5%; width:46.2%; height:49.8%;
+    display:block; pointer-events:none;
+}
+.creation-class-btn {
+    position:absolute; width:15.2%; height:18%; min-width:0; padding:0; border:0; border-radius:50%;
+    background:radial-gradient(circle,rgba(255,232,160,.25) 0%,rgba(69,45,13,.22) 42%,rgba(0,0,0,0) 72%);
+    box-shadow:none; pointer-events:auto; display:flex; align-items:center; justify-content:center;
+    transition:filter .15s ease, transform .15s ease;
+}
+.creation-class-btn img { width:100%; height:100%; object-fit:contain; pointer-events:none; filter:drop-shadow(0 0 7px rgba(255,221,135,.42)) drop-shadow(0 2px 4px #000); }
+.creation-class-btn:hover,.creation-class-btn.active { transform:scale(1.08); background:radial-gradient(circle,rgba(255,241,190,.42) 0%,rgba(110,74,20,.34) 44%,rgba(0,0,0,0) 76%); }
+.creation-class-btn.active img { filter:drop-shadow(0 0 12px rgba(255,232,151,.9)) drop-shadow(0 2px 5px #000) brightness(1.18); }
+.creation-class-btn.class-left { left:2.2%; }
+.creation-class-btn.class-right { right:2.2%; }
+.creation-class-btn.class-pos-1 { top:1%; }
+.creation-class-btn.class-pos-2 { top:26%; }
+.creation-class-btn.class-pos-3 { top:51%; }
+.creation-class-btn.class-pos-4 { top:76%; }
+#creation-gender-panel {
+    position:absolute; z-index:7; left:50.5%; top:60.9%; width:35.7%; height:6.6%;
+    display:flex; align-items:center; justify-content:space-between; padding:0 7.4%; pointer-events:none;
+}
+.creation-gender-btn {
+    width:clamp(30px,4.6vw,54px); height:clamp(30px,4.6vw,54px); padding:0; border:1px solid rgba(224,183,88,.58); border-radius:50%;
+    display:flex; align-items:center; justify-content:center; pointer-events:auto;
+    background:radial-gradient(circle,rgba(250,236,178,.26),rgba(32,25,13,.82) 66%,rgba(0,0,0,.3)); color:#f8edcb;
+    font-family:Georgia,'Times New Roman',serif; font-size:clamp(22px,3.2vw,42px); line-height:1; text-shadow:0 0 8px rgba(255,231,168,.72),0 2px 3px #000;
+    box-shadow:0 0 9px rgba(218,167,61,.25), inset 0 0 8px rgba(255,226,151,.14);
+}
+.creation-gender-btn:hover,.creation-gender-btn.active { color:#fff8d7; border-color:#f2c766; box-shadow:0 0 14px rgba(243,196,88,.72), inset 0 0 9px rgba(255,230,164,.24); transform:scale(1.04); }
+#classic-mode-control { left:52.2%; top:83.5%; }
+#creation-back-button { left:52.5%; top:87.0%; }
+#btn-start.creation-start-button { left:68.25%; top:78.7%; }
+
+/* ===== 創角右側介面微調：整組往右上、補能力名稱、拉開配點控制 ===== */
+#creation-avatar-stage { left:56.1%; top:13.6%; width:25.8%; height:43.4%; }
+#creation-class-list { left:47.0%; top:7.3%; width:46.2%; height:49.8%; }
+#creation-gender-panel { left:54.2%; top:56.7%; width:35.7%; }
+#creation-pts { left:75.95%; top:64.85%; }
+.creation-stat-control {
+    grid-template-columns:1.9em 1.24em 1.24em;
+    gap:.46em;
+    overflow:visible;
+}
+.creation-stat-control::before {
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    color:#f0df9f;
+    font-family:Georgia,'Times New Roman',serif;
+    font-size:clamp(12px,1.58vw,22px);
+    font-weight:700;
+    line-height:1;
+    letter-spacing:0;
+    white-space:nowrap;
+    pointer-events:none;
+    text-shadow:
+        0 0 3px #000,
+        0 0 5px rgba(255,239,177,.9),
+        0 0 12px rgba(228,177,76,.55),
+        1px 2px 2px #000;
+}
+.creation-stat-control.stat-str::before { content:"Strength"; }
+.creation-stat-control.stat-dex::before { content:"Dexterity"; }
+.creation-stat-control.stat-con::before { content:"Constitution"; }
+.creation-stat-control.stat-wis::before { content:"Wisdom"; }
+.creation-stat-control.stat-cha::before { content:"Charisma"; }
+.creation-stat-control.stat-int::before { content:"Intelligence"; }
+.creation-stat-control.stat-str,
+.creation-stat-control.stat-dex,
+.creation-stat-control.stat-con { left:65.65%; }
+.creation-stat-control.stat-wis,
+.creation-stat-control.stat-cha,
+.creation-stat-control.stat-int { left:76.75%; }
+.creation-stat-control.stat-str { top:62.35%; }
+.creation-stat-control.stat-dex { top:65.45%; }
+.creation-stat-control.stat-con { top:68.55%; }
+.creation-stat-control.stat-wis { top:62.35%; }
+.creation-stat-control.stat-cha { top:65.45%; }
+.creation-stat-control.stat-int { top:68.55%; }
+.creation-stat-control.stat-str::before,
+.creation-stat-control.stat-dex::before,
+.creation-stat-control.stat-con::before { right:calc(100% + .6em); text-align:right; }
+.creation-stat-control.stat-wis::before,
+.creation-stat-control.stat-cha::before,
+.creation-stat-control.stat-int::before { left:calc(100% + .55em); text-align:left; }
+.creation-stat-value {
+    min-width:1.9em;
+    text-align:center;
+}
+.creation-stat-btn {
+    width:1.24em;
+    height:1.24em;
+}
+#classic-mode-control { left:55.9%; top:79.25%; }
+#creation-back-button { left:56.2%; top:82.85%; }
+#btn-start.creation-start-button { left:71.9%; top:74.55%; }
+
+/* ===== 創角右側控制區二次微調：人物去黑底、按鈕縮小、底部控制重排 ===== */
+#class-preview-img {
+    mix-blend-mode:screen;
+    filter:drop-shadow(0 12px 12px rgba(0,0,0,.72)) contrast(1.08) saturate(1.08);
+}
+.creation-class-btn {
+    width:12.6%;
+    height:14.9%;
+}
+.creation-class-btn.class-left { left:5.3%; }
+.creation-class-btn.class-right { right:5.3%; }
+.creation-class-btn.class-pos-1 { top:3.2%; }
+.creation-class-btn.class-pos-2 { top:28.2%; }
+.creation-class-btn.class-pos-3 { top:53.2%; }
+.creation-class-btn.class-pos-4 { top:78.2%; }
+#creation-gender-panel {
+    left:56.0%;
+    top:57.0%;
+    width:31.8%;
+    padding:0 8.2%;
+}
+.creation-gender-btn {
+    width:clamp(25px,3.8vw,46px);
+    height:clamp(25px,3.8vw,46px);
+    font-size:clamp(19px,2.65vw,35px);
+}
+#creation-pts {
+    left:72.95%;
+    top:65.25%;
+}
+#classic-mode-control {
+    left:62.7%;
+    top:75.55%;
+    width:8.5%;
+    justify-content:flex-end;
+    font-size:clamp(7px,.78vw,11px);
+}
+#btn-start.creation-start-button {
+    left:71.9%;
+    top:74.55%;
+    width:16.65%;
+}
+#creation-back-button {
+    left:71.9%;
+    top:80.15%;
+    width:16.65%;
+}
+
+/* ===== 創角最終排版：右側資訊區依參考圖對齊 ===== */
+#creation-avatar-stage {
+    left:63.2%;
+    top:15.2%;
+    width:22.8%;
+    height:39.6%;
+}
+#creation-class-list {
+    left:53.1%;
+    top:8.5%;
+    width:43.7%;
+    height:47.4%;
+}
+.creation-class-btn {
+    width:11.2%;
+    height:13.4%;
+}
+.creation-class-btn.class-left { left:2.6%; }
+.creation-class-btn.class-right { right:3.5%; }
+.creation-class-btn.class-pos-1 { top:2.5%; }
+.creation-class-btn.class-pos-2 { top:28.0%; }
+.creation-class-btn.class-pos-3 { top:53.5%; }
+.creation-class-btn.class-pos-4 { top:79.0%; }
+#creation-gender-panel {
+    left:64.0%;
+    top:56.9%;
+    width:24.1%;
+    padding:0 6.5%;
+}
+.creation-gender-btn {
+    width:clamp(22px,3.4vw,42px);
+    height:clamp(22px,3.4vw,42px);
+    font-size:clamp(17px,2.35vw,31px);
+}
+#creation-pts {
+    left:73.05%;
+    top:66.75%;
+    width:3.2%;
+    height:3.8%;
+    font-size:clamp(10px,1.15vw,16px);
+}
+.creation-stat-control {
+    grid-template-columns:1.75em 1.12em 1.12em;
+    gap:.5em;
+}
+.creation-stat-control::before {
+    font-size:clamp(11px,1.43vw,20px);
+}
+.creation-stat-control.stat-str,
+.creation-stat-control.stat-dex,
+.creation-stat-control.stat-con { left:66.35%; }
+.creation-stat-control.stat-wis,
+.creation-stat-control.stat-cha,
+.creation-stat-control.stat-int { left:77.7%; }
+.creation-stat-control.stat-str,
+.creation-stat-control.stat-wis { top:63.72%; }
+.creation-stat-control.stat-dex,
+.creation-stat-control.stat-cha { top:67.02%; }
+.creation-stat-control.stat-con,
+.creation-stat-control.stat-int { top:70.32%; }
+.creation-stat-control.stat-str::before,
+.creation-stat-control.stat-dex::before,
+.creation-stat-control.stat-con::before { right:calc(100% + .85em); }
+.creation-stat-control.stat-wis::before,
+.creation-stat-control.stat-cha::before,
+.creation-stat-control.stat-int::before { left:calc(100% + .85em); }
+.creation-stat-btn {
+    width:1.12em;
+    height:1.12em;
+}
+.creation-stat-value {
+    min-width:1.75em;
+}
+#classic-mode-control {
+    left:65.85%;
+    top:77.35%;
+    width:7.0%;
+    height:3.1%;
+    justify-content:flex-start;
+    font-size:clamp(7px,.72vw,10px);
+}
+#classic-mode-control input {
+    width:clamp(8px,.82vw,12px);
+    height:clamp(8px,.82vw,12px);
+}
+#btn-start.creation-start-button {
+    left:72.55%;
+    top:76.95%;
+    width:20.2%;
+    height:4.65%;
+}
+#creation-back-button {
+    left:72.55%;
+    top:82.65%;
+    width:20.2%;
+    height:4.35%;
+}
+
+/* ===== 創角底部按鈕與性別對稱微調 ===== */
+#creation-gender-panel {
+    left:68.7%;
+    top:56.45%;
+    width:20.0%;
+    height:5.7%;
+    padding:0 2.9%;
+}
+.creation-gender-btn {
+    width:clamp(20px,3.0vw,38px);
+    height:clamp(20px,3.0vw,38px);
+    font-size:clamp(16px,2.1vw,28px);
+}
+#classic-mode-control {
+    left:68.05%;
+    top:77.95%;
+    width:6.2%;
+    height:3.0%;
+}
+#btn-start.creation-start-button {
+    left:74.5%;
+    top:77.55%;
+    width:16.1%;
+    height:4.25%;
+}
+#creation-back-button {
+    left:74.5%;
+    top:83.3%;
+    width:16.1%;
+    height:4.05%;
+}
+
+/* ===== 創角性別與底部按鈕整組左移 ===== */
+#creation-gender-panel {
+    left:65.25%;
+}
+#classic-mode-control {
+    left:64.6%;
+}
+#btn-start.creation-start-button {
+    left:70.95%;
+}
+#creation-back-button {
+    left:70.95%;
+}
+
+/* ===== 創角底部控制再左移對齊配點 ===== */
+#classic-mode-control {
+    left:61.6%;
+}
+#btn-start.creation-start-button {
+    left:67.95%;
+}
+#creation-back-button {
+    left:67.95%;
+}
+
+/* ===== 開始遊戲角色選擇畫面 ===== */
+#load-select-panel:not(.hidden) {
+    position:fixed;
+    z-index:24;
+    inset:0;
+    transform:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100vw;
+    height:100vh;
+    max-width:none;
+    aspect-ratio:auto;
+    overflow:hidden;
+    background:#030303;
+    box-shadow:0 0 48px rgba(0,0,0,.95);
+}
+#load-art-stage {
+    position:relative;
+    flex:0 0 auto;
+    width:min(100vw, calc(100vh * 4 / 3));
+    aspect-ratio:4 / 3;
+    overflow:hidden;
+    background:#030303;
+    box-shadow:0 0 45px #000;
+}
+#load-select-bg {
+    position:absolute;
+    inset:0;
+    z-index:1;
+    width:100%;
+    height:100%;
+    object-fit:fill;
+    pointer-events:none;
+    user-select:none;
+}
+#load-select-overlay {
+    position:absolute;
+    inset:0;
+    z-index:3;
+    width:100%;
+    height:100%;
+    object-fit:fill;
+    pointer-events:none;
+    user-select:none;
+}
+#load-slot-grid {
+    position:absolute;
+    z-index:3;
+    left:1.7%;
+    top:5.2%;
+    width:96.6%;
+    height:48.2%;
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:1.15%;
+}
+#load-page-tabs {
+    position:absolute;
+    z-index:7;
+    left:46.6%;
+    top:56.9%;
+    width:7.2%;
+    height:6.1%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    pointer-events:auto;
+}
+#load-page-tabs button {
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:42%;
+    aspect-ratio:1;
+    border:0;
+    border-radius:50%;
+    background:transparent;
+    color:transparent;
+    cursor:pointer;
+}
+#load-page-1 { left:0%; }
+#load-page-2 { right:-8%; }
+#load-page-tabs button.active {
+    background:radial-gradient(circle, rgba(255,241,178,.24) 0%, rgba(232,185,75,.14) 42%, rgba(255,220,105,.045) 68%, transparent 82%);
+    box-shadow:
+        inset 0 0 10px rgba(255,245,190,.32),
+        0 0 9px rgba(255,237,162,.46),
+        0 0 20px rgba(230,177,70,.34),
+        0 0 36px rgba(190,124,32,.18);
+    filter:brightness(1.12) saturate(1.06);
+}
+#load-page-tabs button:hover {
+    box-shadow:
+        inset 0 0 12px rgba(255,236,177,.32),
+        0 0 16px rgba(235,196,93,.55);
+}
+.load-slot-card {
+    position:relative;
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    border:0;
+    padding:0;
+    background:transparent;
+    overflow:hidden;
+    cursor:pointer;
+}
+.load-slot-card img {
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    object-position:center bottom;
+    transform:scale(1.04);
+    transform-origin:center bottom;
+    filter:drop-shadow(0 14px 12px rgba(0,0,0,.84)) contrast(1.08) saturate(1.05);
+}
+.load-slot-card.filled:not(.selected) img {
+    filter:grayscale(1) brightness(.48) contrast(1.08) drop-shadow(0 12px 10px rgba(0,0,0,.9));
+    opacity:.78;
+}
+.load-slot-card.empty img {
+    opacity:.72;
+    filter:drop-shadow(0 0 14px rgba(235,207,130,.28)) brightness(.86);
+}
+.load-slot-card.selected::after {
+    display:none;
+}
+#load-info-panel {
+    position:absolute;
+    z-index:4;
+    left:4.2%;
+    top:58.4%;
+    width:60.2%;
+    height:35.7%;
+    color:#f2e6c1;
+    font-family:Georgia, "Times New Roman", "Microsoft JhengHei", serif;
+    font-weight:700;
+    text-shadow:0 0 4px #000, 0 0 9px rgba(232,198,112,.55);
+}
+.load-info-row {
+    position:absolute;
+    height:5.7%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:3%;
+    font-size:clamp(8px,1.2vw,16px);
+    line-height:1;
+    white-space:nowrap;
+}
+.load-info-row strong {
+    display:block;
+    min-width:39%;
+    height:100%;
+    padding:0 .42em;
+    color:#f8f3e4;
+    font-family:Arial, "Microsoft JhengHei", sans-serif;
+    font-size:clamp(8px,1.0vw,14px);
+    font-weight:700;
+    text-align:left;
+    text-shadow:0 0 3px #000;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+.load-info-row.name { left:4.2%; top:4.2%; width:39.2%; }
+.load-info-row.pledge { left:4.2%; top:15.9%; width:39.2%; }
+.load-info-row.class { left:4.2%; top:27.8%; width:39.2%; }
+.load-info-row.alignment { left:4.2%; top:42.6%; width:39.2%; }
+.load-info-row.hp { left:4.2%; top:61.1%; width:39.2%; }
+.load-info-row.mp { left:4.2%; top:73.1%; width:39.2%; }
+.load-info-row.ac { left:4.2%; top:85.1%; width:39.2%; }
+.load-info-row.lv { left:54.1%; top:4.2%; width:38.6%; }
+.load-info-row.str { left:54.1%; top:20.0%; width:38.6%; }
+.load-info-row.dex { left:54.1%; top:31.9%; width:38.6%; }
+.load-info-row.con { left:54.1%; top:43.8%; width:38.6%; }
+.load-info-row.wis { left:54.1%; top:55.7%; width:38.6%; }
+.load-info-row.cha { left:54.1%; top:67.6%; width:38.6%; }
+.load-info-row.int { left:54.1%; top:79.5%; width:38.6%; }
+#load-action-panel {
+    position:absolute;
+    z-index:5;
+    left:70.0%;
+    top:59.4%;
+    width:23.2%;
+    display:flex;
+    flex-direction:column;
+    gap:clamp(5px,1.0vw,11px);
+}
+#load-action-panel button {
+    height:clamp(24px,4.1vw,46px);
+    border:1px solid rgba(198,156,74,.68);
+    background:linear-gradient(180deg, rgba(28,23,15,.9), rgba(7,5,3,.95));
+    color:#d8bf79;
+    font-family:Georgia, "Times New Roman", "Microsoft JhengHei", serif;
+    font-size:clamp(10px,1.35vw,18px);
+    font-weight:700;
+    text-shadow:0 1px 2px #000, 0 0 8px rgba(228,187,87,.38);
+    box-shadow:inset 0 1px 0 rgba(255,232,167,.16), 0 0 12px rgba(0,0,0,.55);
+    cursor:pointer;
+}
+#load-action-panel button:hover:not(:disabled) {
+    color:#fff1ba;
+    border-color:rgba(244,205,107,.9);
+    box-shadow:inset 0 1px 0 rgba(255,232,167,.25), 0 0 16px rgba(216,179,80,.35);
+}
+#load-action-panel button:disabled {
+    opacity:.42;
+    cursor:not-allowed;
+}
+#load-btn-restore.hidden {
+    display:none !important;
+}
+
+/* ===== 載入畫面資訊與右側按鈕校準 ===== */
+#load-info-panel {
+    left:0;
+    top:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+}
+.load-info-row {
+    height:3.8%;
+    justify-content:center;
+    gap:0;
+}
+.load-info-row span {
+    display:none;
+}
+.load-info-row strong {
+    min-width:0;
+    width:100%;
+    padding:0 .36em 0 .72em;
+    box-sizing:border-box;
+    display:flex;
+    align-items:center;
+    color:#f4edda;
+    font-size:clamp(8px,1.0vw,14px);
+    line-height:1.05;
+    text-align:left;
+}
+.load-info-row.name { left:28.75%; top:65.00%; width:14.55%; }
+.load-info-row.pledge { left:28.75%; top:69.38%; width:14.55%; }
+.load-info-row.class { left:28.75%; top:73.75%; width:14.55%; }
+.load-info-row.alignment { left:28.75%; top:78.14%; width:14.55%; }
+.load-info-row.hp { left:28.75%; top:83.54%; width:14.55%; }
+.load-info-row.mp { left:28.75%; top:87.92%; width:14.55%; }
+.load-info-row.ac { left:28.75%; top:92.29%; width:14.55%; }
+.load-info-row.lv { left:64.06%; top:65.00%; width:14.55%; }
+.load-info-row.str { left:64.06%; top:69.38%; width:14.55%; }
+.load-info-row.dex { left:64.06%; top:73.75%; width:14.55%; }
+.load-info-row.con { left:64.06%; top:78.13%; width:14.55%; }
+.load-info-row.wis { left:64.06%; top:82.50%; width:14.55%; }
+.load-info-row.cha { left:64.06%; top:86.88%; width:14.55%; }
+.load-info-row.int { left:64.06%; top:91.25%; width:14.55%; }
+#load-action-panel {
+    left:81.0%;
+    top:59.8%;
+    width:15.4%;
+    gap:clamp(7px,1.14vw,14px);
+}
+#load-action-panel button {
+    height:clamp(14px,2.25vw,26px);
+    font-size:clamp(8px,.84vw,11px);
+}
+
+/* ===== 載入畫面欄位與右側按鈕位置微調 ===== */
+.load-info-row.name { top:64.15%; }
+.load-info-row.pledge { top:68.18%; }
+.load-info-row.class { top:73.42%; }
+.load-info-row.alignment { top:77.72%; }
+.load-info-row.hp { top:83.02%; }
+.load-info-row.mp { top:87.07%; }
+.load-info-row.ac { top:91.10%; }
+.load-info-row.lv { top:65.00%; }
+.load-info-row.str { top:70.18%; }
+.load-info-row.dex { top:74.48%; }
+.load-info-row.con { top:78.74%; }
+.load-info-row.wis { top:82.92%; }
+.load-info-row.cha { top:87.25%; }
+.load-info-row.int { top:91.25%; }
+#load-action-panel {
+    left:80.95%;
+    top:64.25%;
+    width:7.45%;
+    gap:clamp(8px,1.05vw,14px);
+}
+#load-action-panel button {
+    height:clamp(18px,2.55vw,32px);
+    font-size:clamp(8px,.9vw,12px);
+}
+
+/* ============================================================
+   🎨 2026-07-11 三畫面黑金立體加工(第二層)：主選單/角色選擇/創角底部按鈕統一疊上
+   「立體浮雕」質感(內高光+內陰影模擬凸起、hover浮起發光、按下凹陷)，呼應創角職業/性別鈕
+   已有的黑金風格。上面搬進來的原作按鈕(load-action-panel/creation-back-button 等)本身已是
+   黑金配色，這裡只加共通的過場/hover/active，不重覆定義背景色；#main-menu 原本是深藍配色，
+   這裡改成黑金漸層以統一三畫面視覺。
+   ============================================================ */
+#main-menu > button,
+#load-action-panel button,
+#btn-start.creation-start-button,
+#creation-back-button,
+.creation-class-btn,
+.creation-gender-btn,
+.creation-stat-btn,
+#load-page-tabs button {
+    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease, border-color .16s ease, background .16s ease;
+}
+#main-menu > button {
+    background: linear-gradient(180deg, rgba(139,103,55,.94) 0%, rgba(60,38,20,.95) 47%, rgba(20,13,7,.96) 100%) !important;
+    box-shadow: inset 0 1px 0 rgba(255,240,203,.28), inset 0 -2px 4px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.45) !important;
+}
+@media (hover:hover) {
+    #main-menu > button:hover,
+    #load-action-panel button:hover:not(:disabled),
+    #btn-start.creation-start-button:hover:not(:disabled),
+    #creation-back-button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.15);
+    }
+}
+#main-menu > button:active,
+#load-action-panel button:active:not(:disabled),
+#btn-start.creation-start-button:active:not(:disabled),
+#creation-back-button:active {
+    transform: translateY(1px) scale(.985);
+    filter: brightness(.92);
+}
+
+/* ============================================================
+   🎨 2026-07-11 首頁登入畫面改版——依使用者提供的 V17 參考稿
+   (game_ui_v17_create_buttons_3d_preview.html)的「左資訊卡＋右按鈕面板」版面。
+   真實登入頁保留原本 4:3 藝術舞台背景動畫(#login-bg-image/#login-anim-image)，
+   只換上面疊的資訊卡/按鈕面板版面與樣式，不是整頁換成 V17 的素材。
+   ============================================================ */
+/* ⚠️ 2026-07-11 使用者明訂:左側標題/版號資訊區維持原作者樣式,不套 V17 的卡片外框——
+   #login-copy-panel 只是個「不影響版面的透明包裝殼」,#login-title-layer/#login-meta-layer
+   直接沿用上面(約592~602行)原作者原本就有的 position:absolute 定位,這裡不再覆寫。 */
+#login-copy-panel { position: static; }
+/* 🔧 2026-07-11 使用者回饋:標題文字貼在畫框最頂端、超出資訊卡的裝飾畫框範圍——原作者原本
+   top:14% 這個數值在我們的版面比例下太靠上,往下移一些讓它完整落在畫框裡面。 */
+#login-title-layer { top: 20%; }
+
+#main-menu {
+    left: 49%; top: 26%; width: 31%; height: 67%;
+    display: grid; grid-auto-rows: min-content; gap: clamp(6px,.9vw,12px); align-content: start;
+}
+#main-menu > p { width: 100% !important; margin: 0 !important; }
+
+/* 開始遊戲：V17 的 .start-btn/.gold 金色主按鈕(暖金棕色,依使用者提供的 V17 實際渲染截圖調亮) */
+#btn-start-menu {
+    background: linear-gradient(180deg, #9c7a44 0%, #6b4826 55%, #3a2410 100%) !important;
+    border-color: #c9a15a !important;
+    font-weight: 800 !important; letter-spacing: .08em;
+}
+
+/* 戰鬥特效／傷害數字開關：V17 的 .toggle/.blue，兩行式(粗體標題+小字說明)＋右側 ON/OFF 圓角徽章。
+   說明文字用 data-desc + ::after content(見 index.html 按鈕上的 data-desc)顯示在標題下方；
+   ON/OFF 徽章改用 ::before(絕對定位、不影響文件流,兩個 pseudo-element 才不會互相覆蓋)。
+   ⚠ 依原生 bg-emerald-800(開)/bg-rose-900(關) 這兩個 class 當開關判斷鉤子——不能自己加 is-off 之類的
+   class,因為原生 _applyVfxPref() 每次都會整個重寫 button.className,我們自己加的 class 會被洗掉。 */
+#btn-vfx-toggle, #btn-vfxnum-toggle {
+    position: relative; text-align: left; padding: 10px 20% 10px 14px !important;
+    min-height: 3.4em; display: block; white-space: normal;
+    background: linear-gradient(180deg, #16385f, #08192e) !important;
+    font-weight: 800 !important;
+    /* 🔧 2026-07-11 使用者依實際渲染截圖糾正:V17 原始檔案裡開啟狀態的邊框其實是「綠色發光」
+       (.toggle:not(.is-off){border-color:#5ca879;box-shadow:...0 0 14px rgba(66,180,110,.28)...}),
+       不是先前誤用的暗棕金色框線。 */
+    border-color: #5ca879 !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -3px 0 rgba(0,0,0,.32),
+        0 0 14px rgba(66,180,110,.28), 0 5px 12px rgba(0,0,0,.55) !important;
+}
+#btn-vfx-toggle::after, #btn-vfxnum-toggle::after {
+    content: attr(data-desc); display: block;
+    margin-top: .3em; font-size: .68em; font-weight: 400; color: #bcae94;
+}
+#btn-vfx-toggle::before, #btn-vfxnum-toggle::before {
+    content: 'ON'; position: absolute; right: 6%; top: 50%; transform: translateY(-50%);
+    min-width: 2.6em; padding: .2em .5em; border-radius: 999px; text-align: center;
+    font-size: .7em; font-weight: 800; line-height: 1.6;
+    background: linear-gradient(#2d8a57,#13512f); color: #eaffef;
+    box-shadow: 0 0 8px rgba(74,220,132,.45), inset 0 1px rgba(255,255,255,.3);
+}
+/* 關閉狀態:V17 是整顆按鈕背景轉暗紅灰(不是只換右側徽章),依 bg-rose-900 這個原生 class 當鉤子 */
+#btn-vfx-toggle.bg-rose-900, #btn-vfxnum-toggle.bg-rose-900 {
+    background: linear-gradient(180deg, #3d3031, #171012) !important;
+    border-color: #79504a !important;
+    filter: saturate(.62) brightness(.86);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -3px 0 rgba(0,0,0,.32), 0 5px 12px rgba(0,0,0,.55) !important;
+}
+#btn-vfx-toggle.bg-rose-900::before, #btn-vfxnum-toggle.bg-rose-900::before {
+    content: 'OFF';
+    background: linear-gradient(#8a403b,#4d1f1d); color: #ffe2df;
+    box-shadow: 0 0 8px rgba(216,70,60,.32), inset 0 1px rgba(255,255,255,.2);
+}

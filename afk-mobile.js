@@ -80,7 +80,6 @@
     colRight.classList.add('m-col-right');
 
     trackAppHeight();      // 量真實可視高度寫進 --app-h,蓋掉不可靠的 100vh
-    tagCreationPanel();    // 標記創角面板子層,給 CSS 改成手機直向堆疊
     injectCSS();
     var strip = buildStatusStrip();
     gs.insertBefore(strip, gs.firstChild);
@@ -284,8 +283,55 @@
       var noCombat = !combatLog || combatLog.classList.contains('hidden');
       document.body.classList.toggle('mlog-nocombat', noCombat);
       if (noCombat && document.body.classList.contains('mlog-combat')) setLog('sys');
+      ensureLoadSelectSlotPicker();   // 選角畫面(手機)8 顆存檔位按鈕:面板一出現就補插+每次刷新 active/名稱,idempotent
     }
     setInterval(mirror, 300);
+
+    // ---- 選角畫面(手機):素質表下方 8 顆存檔位按鈕(4個一排×兩排)---------------
+    //   2026-07-12 使用者第三輪回饋:拿掉左右‹›逐格切換箭頭,改成一次列出全部 8 個存檔位、
+    //   按鈕顯示角色名稱(空存檔顯示「空」),點哪顆就直接預覽哪一格。
+    //   ⚠ 不能呼叫原作 loadSelectSlot(n)——它對「空存檔位」的行為是直接跳進創角流程
+    //   (`if(!sum){...showCreation();return;}`,桌機上點空拱門格=開始創角,設計上如此)。
+    //   這裡只是想「預覽」,不是要創角,所以改直接照抄 loadSetPage/loadSelectSlot 兩者
+    //   「設定 _loadPage/_loadSelectedSlot 再呼叫 renderLoadSelect()」這段共同邏輯,
+    //   跳過會觸發 showCreation() 的分支。真的要創角/進入該格,仍是按「創新角色/進入遊戲」鈕
+    //   (呼叫 loadCreateSelected()/loadEnterSelected(),行為不受此影響)。
+    function ensureLoadSelectSlotPicker() {
+      var infoPanel = document.getElementById('load-info-panel');
+      var actionPanel = document.getElementById('load-action-panel');
+      var stage = document.getElementById('load-art-stage');
+      if (!infoPanel || !actionPanel || !stage) return;
+      var TOTAL = 8;
+      var picker = document.getElementById('m-load-slotpicker');
+      if (!picker) {
+        picker = document.createElement('div');
+        picker.id = 'm-load-slotpicker';
+        for (var i = 1; i <= TOTAL; i++) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.dataset.slot = i;
+          b.addEventListener('click', function () { gotoLoadSlot(+this.dataset.slot); });
+          picker.appendChild(b);
+        }
+        stage.insertBefore(picker, actionPanel);   // 固定夾在「素質表」跟「進入遊戲/創新角色…」之間
+      }
+      // 每次都刷新 8 顆按鈕的名稱/active 狀態(存檔資料、目前選中格都可能變動;8 顆很便宜,不特別做 diff)
+      // 存檔位總數(8)沿用原作 loadSetPage 的固定假設;作者若改存檔格數,這裡要跟著調
+      if (typeof slotSummary !== 'function' || typeof _loadSelectedSlot === 'undefined') return;
+      var kids = picker.children;
+      for (var j = 0; j < kids.length; j++) {
+        var btn = kids[j], n = +btn.dataset.slot;
+        var sum = slotSummary(n);
+        btn.textContent = sum ? (sum.name || '未命名') : '空';
+        btn.classList.toggle('active', n === _loadSelectedSlot);
+      }
+    }
+    function gotoLoadSlot(n) {
+      if (typeof _loadSelectedSlot === 'undefined' || typeof _loadPage === 'undefined' || typeof renderLoadSelect !== 'function') return;
+      var PER_PAGE = 4;
+      _loadPage = n <= PER_PAGE ? 0 : 1;
+      _loadSelectedSlot = n;
+      renderLoadSelect();
+    }
 
     var mql = window.matchMedia(MQ);
 
@@ -656,21 +702,11 @@
     useItem(f.uid, false);   // 安特的水果:恢復 44~107 HP,同樣吃 1 秒共用冷卻
   }
 
-  // --- 創角面板手機化:原作是 flex-row + 一堆固定寬高,手機會爆寬。標記關鍵子層讓 CSS 改直向堆疊 ---
-  function tagCreationPanel() {
-    var cp = document.getElementById('creation-panel');
-    if (!cp) return;
-    if (cp.children[0]) cp.children[0].classList.add('m-cre-avatar');     // 立繪框
-    var right = cp.children[1];
-    if (right) {
-      right.classList.add('m-cre-right');                                // 右側(職業/能力 + 按鈕)
-      var row = right.children[0];
-      if (row) {
-        row.classList.add('m-cre-row');                                  // 職業欄 + 能力欄(原並排)
-        if (row.children[0]) row.children[0].classList.add('m-cre-classbox');
-      }
-    }
-  }
+  // ⚠️ 2026-07-11 三畫面改版後 tagCreationPanel() 已移除:原作新版 #creation-panel 改成
+  // position:absolute + 全部子層用 % / clamp() 定位(4:3 藝術舞台，跟 #load-select-panel 同一套設計),
+  // 不再是 flex-row 巢狀結構,不需要也不能再靠「標記第 N 個子層」手動改版面——% 定位本身天生就會
+  // 隨容器縮放,舊版那套 m-cre-avatar/m-cre-row/m-cre-classbox 標記 class 與對應 CSS 已一併移除
+  // (見下方 CSS 陣列)。若之後作者又把創角面板改回 flex 版面,才需要重新評估要不要恢復這類手動標記。
 
   // --- 把「實際可視高度」(已扣掉手機瀏覽器上下工具列)寫進 --app-h --------------
   //   100vh 在手機是「工具列收起時」的高度,比當下可視區高 → 底部 nav 被頂到工具列底下看不到。
@@ -1050,6 +1086,9 @@
       'body.m-mobile #login-art-stage{position:relative !important;width:100vw !important;max-width:100vw !important;aspect-ratio:auto !important;min-height:var(--app-h,100dvh) !important;display:flex !important;flex-direction:column !important;justify-content:center !important;overflow:visible !important;padding:32px 22px 40px !important;box-shadow:none !important;}',
       'body.m-mobile #login-bg-image{position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;object-fit:cover !important;opacity:.35 !important;}',
       'body.m-mobile #login-anim-image{display:none !important;}',
+      /* 🎨 2026-07-11 首頁 V17 改版新增 #login-copy-panel(左資訊卡包住 title-layer/meta-layer),
+         手機版解除桌機的絕對定位卡片框,改回一般直向堆疊(卡片背景/邊框保留,只是不再絕對定位)。 */
+      'body.m-mobile #login-copy-panel{position:relative !important;left:auto !important;top:auto !important;width:100% !important;max-width:330px !important;height:auto !important;margin:0 auto !important;}',
       'body.m-mobile #login-title-layer{position:relative !important;left:auto !important;top:auto !important;width:100% !important;text-align:center !important;margin:0 0 6vh !important;z-index:3 !important;}',
       'body.m-mobile #login-title-layer h1{font-size:26px !important;margin:0 0 8px !important;}',
       'body.m-mobile #login-title-layer p{font-size:14px !important;}',
@@ -1059,13 +1098,54 @@
       'body.m-mobile #login-meta-layer{position:relative !important;left:auto !important;top:auto !important;width:100% !important;max-width:330px !important;margin:6vh auto 0 !important;text-align:center !important;z-index:3 !important;}',
       'body.m-mobile #login-version{font-size:15px !important;}',
       'body.m-mobile #login-disclaimer{font-size:11px !important;}',
-      'body.m-mobile #creation-panel{flex-direction:column !important;gap:12px !important;align-items:stretch !important;}',
-      'body.m-mobile .m-cre-avatar{width:100% !important;height:220px !important;}',
-      'body.m-mobile .m-cre-right{width:100% !important;height:auto !important;}',
-      'body.m-mobile .m-cre-row{flex-direction:column !important;height:auto !important;gap:12px !important;}',
-      'body.m-mobile .m-cre-classbox{width:100% !important;height:auto !important;}',
-      'body.m-mobile #stat-allocation{width:100% !important;height:auto !important;}',
-      'body.m-mobile #class-desc{max-height:110px !important;flex:0 0 auto !important;}',
+      /* ⚠️ 2026-07-11 三畫面改版:#creation-panel/#stat-allocation/#class-desc 舊版手機覆寫已移除——
+         原作新版這幾個容器全部改用 position:absolute + %/clamp() 定位(4:3 藝術舞台，與 #load-select-panel
+         同一套設計),舊版那套「flex-direction:column + width:100%!important」的覆寫拿掉 flex 版面的假設,
+         套在新結構上會讓 #stat-allocation 內的 .creation-stat-control(用 % 相對父層定位)computed 出錯誤座標，
+         畫面上看起來是配點 -/+ 鈕疊到人物介紹框裡(踩過，見交接紀錄)。新結構本身用相對單位設計、
+         已經會隨容器(4:3 舞台寬度=min(100vw,100vh*4/3))自動縮放,不需要额外的手機版覆寫。
+         （#creation-panel 手機版本輪暫不處理,先做 #load-select-panel,見下） */
+
+      /* 🎨 2026-07-12 選角畫面(#load-select-panel)手機版:原作 4:3 桌機版面在窄螢幕上只是整塊等比
+         縮到畫面中間一小塊(實測 375 寬螢幕只佔 281px 高、上下留大量黑邊),四個存檔拱門格擠在一起、
+         文字小到看不清楚——不是排版跑掉,是桌機設計直接塞進小螢幕沒有另外適配。改成「單一角色置中卡片」
+         (呼應使用者提供的 V17 參考稿手機版排版):同時間只顯示一格存檔(靠原作既有的 .load-slot-card.selected
+         class 切換,不改寫渲染邏輯本身)、外加自建左右箭頭呼叫原作全域 loadSetPage()/loadSelectSlot()
+         逐一切換存檔位;屬性資訊/操作按鈕改成一般文件流的卡片,不再是絕對定位疊在 4:3 底圖上。
+         ⚠ 拱門背景圖 public/assets/login/load.png 整張是「桌機版 4 格拱門 + 下方文字資訊框」合成圖,
+         不能整張當手機背景(下方文字框會露出來、跟自建的資訊卡重疊)——改把它當 #load-slot-grid 的
+         CSS background-image,用 background-size/position 只裁到中間「一格拱門(含左右兩側柱子)」的範圍。
+         🎨 2026-07-12 使用者第二輪回饋調整:①整個面板改 flex 直向排列,角色/拱門區給 flex:1(能拿多少
+         空間就拿多少),屬性資訊+四顆按鈕收在最下面(flex:0 0 auto,不再是 margin-top 堆疊)。
+         ②裁切改用「百分比」而非 vw 算位移——vw 是相對『瀏覽器視窗』寬度,不是相對這個容器本身寬度,
+         兩者在手機版通常一樣(容器=100%寬=100vw),但拿掉容器實際跟視窗寬度不同的環境(如本機預覽用的
+         獨立測試頁面)算出來的位移會整個跑掉;改用 background-position 的百分比語法(相對容器與圖片
+         尺寸差算,而非相對視窗),兩種情境下都準。③裁切框改到「中間」的拱門(不是最左那格)——最左格
+         左側只有畫面外框、不是真正的柱子,置中拱門才能左右兩側都看到完整柱子(使用者明確要求)。
+         裁切座標:直接在圖上量測 4 根柱子中心約在原生 x=10/170/330/490(640 寬原圖),取中間那組
+         [170,330](寬160px)當裁切窗:background-size 410%(=640/160*100%,讓這 160px 撐滿容器寬)、
+         background-position-x 用「(container-image)*(pct/100)=目標位移」反推 pct≈33%(見同名歷史對話
+         推導,数字非憑空handle)。 */
+      'body.m-mobile #load-select-panel:not(.hidden){display:flex !important;flex-direction:column !important;height:100dvh !important;min-height:100dvh !important;overflow:hidden !important;padding:0 !important;}',
+      'body.m-mobile #load-art-stage{display:flex !important;flex-direction:column !important;flex:1 1 auto !important;min-height:0 !important;position:relative !important;width:100% !important;max-width:none !important;aspect-ratio:auto !important;height:auto !important;box-shadow:none !important;overflow:hidden !important;}',
+      'body.m-mobile #load-select-bg,body.m-mobile #load-select-overlay,body.m-mobile #load-page-tabs{display:none !important;}',   /* 底圖整張含4格+下方文字框、疊加外框線、桌機「1/2」頁籤——手機都不適用,改走下面自建的裁切背景與 ‹› 箭頭 */
+      'body.m-mobile #load-slot-grid{flex:1 1 auto !important;min-height:0 !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;height:auto !important;display:block !important;background-image:url(public/assets/login/load.png);background-repeat:no-repeat;background-size:410% auto;background-position:33% 0%;overflow:hidden;}',
+      'body.m-mobile .load-slot-card{display:none !important;position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;align-items:center !important;justify-content:center !important;}',
+      'body.m-mobile .load-slot-card.selected{display:flex !important;}',
+      'body.m-mobile .load-slot-card img{max-width:68% !important;max-height:82% !important;}',
+      /* 🎨 2026-07-12 使用者第三輪回饋:拿掉左右‹›切換箭頭,改成素質表下方「8 顆存檔位按鈕」
+         (4個一排、兩排),按鈕顯示角色名稱(空存檔顯示「空」),點哪顆就預覽哪一格——比「一格一格翻」
+         更快能跳到想看的存檔位。見 ensureLoadSelectSlotPicker()。 */
+      'body.m-mobile #m-load-slotpicker{flex:0 0 auto !important;display:grid !important;grid-template-columns:repeat(4,1fr) !important;gap:6px !important;padding:8px 12px 0 !important;}',
+      'body.m-mobile #m-load-slotpicker button{height:34px;border-radius:8px;border:1px solid rgba(198,156,74,.55);background:rgba(20,16,10,.85);color:#d8bf79;font-size:12px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+      'body.m-mobile #m-load-slotpicker button.active{border:2px solid #e8c97a;background:linear-gradient(180deg,rgba(139,103,55,.94),rgba(60,38,20,.95));color:#fff1ba;box-shadow:0 0 8px rgba(232,201,122,.5);}',
+      'body.m-mobile #load-info-panel{flex:0 0 auto !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;height:auto !important;margin:0;padding:10px 12px;border:1px solid rgba(198,156,74,.55);border-radius:12px;background:rgba(10,8,5,.85);pointer-events:auto !important;display:grid !important;grid-template-rows:repeat(7,auto) !important;grid-auto-flow:column !important;grid-auto-columns:1fr !important;column-gap:12px !important;}',   /* 桌機是「左欄7項(名稱/血盟/職業...)、右欄7項(等級/力量...)」各自 absolute 定位,DOM 順序天生也是先左欄7個再右欄7個——grid-auto-flow:column 讓手機版沿用同一組左右分欄,不必重排 DOM */
+      'body.m-mobile .load-info-row{position:relative !important;left:auto !important;top:auto !important;width:auto !important;height:auto !important;display:flex !important;justify-content:space-between !important;gap:6px;padding:2px 0;font-size:12px !important;border-bottom:1px solid rgba(150,115,70,.25);}',
+      'body.m-mobile .load-info-row span{display:inline !important;color:#c8b489;}',   /* 桌機那條規則把 span(欄位名稱)隱藏、只留數值——手機要看得到欄位名稱才知道對應哪個屬性,加回來 */
+      'body.m-mobile .load-info-row strong{min-width:0 !important;width:auto !important;padding:0 !important;text-align:right !important;font-size:12px !important;}',
+      'body.m-mobile #load-action-panel{flex:0 0 auto !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;margin:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:grid !important;grid-template-columns:repeat(3,1fr) !important;gap:8px !important;}',
+      'body.m-mobile #load-action-panel button{height:40px !important;border-radius:10px !important;font-size:13px !important;}',
+      'body.m-mobile #load-btn-enter{grid-column:1/-1 !important;height:46px !important;font-size:16px !important;}',
 
       /* 載入進度畫面(#slot-list):原作每列是 [載入存檔 flex-1][動作區固定 w-56=224px → 匯入進度(+復原備份)]。
          手機窄寬下 224px 的動作區吃掉約 6 成,左側真正要點的「載入存檔」被擠成細條、存檔名稱被迫折成多行。
