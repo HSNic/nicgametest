@@ -35,12 +35,17 @@
   //   🎨 2026-07-11 使用者回饋再調整:「外掛」框只留掉落查詢/小百科兩個大方格(呼應 V17
   //   原設計的 3 格大工具列);備份管理/批次結算改移到獨立的「其他功能」小方格區
   //   (見 ensureOtherFrame),用較小的按鈕呈現、但顏色仍與外掛方格一致(同一組藍色漸層)。
+  //   🎨 2026-07-13 使用者再次調整:雲端同步/批次結算/角色背包(新增)三顆小方格,改成
+  //   緊貼在掉落查詢/小百科方格列「正下方、同一個外框內」,不再另開一個有獨立標題的
+  //   「其他功能」框(見下方 ensureFrame,tiles 直接 append 進 #afk-plugin-frame)。
   var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row'];
-  // 從 AFK_SETTINGS._items 找這兩個項目、升格成獨立方格(不再顯示於 ⚙其他功能 下拉選單,
+  // 從 AFK_SETTINGS._items 找這些項目、升格成獨立方格(不再顯示於 ⚙其他功能 下拉選單,
   // 已在 afk-storage.js 的 PROMOTED_TO_TILE 排除)。label 要跟各自的 AFK_SETTINGS.add() 完全一致。
+  // 「角色背包」只是顯示名稱改了,底層仍是 afk-asset-manager.js 的角色資產管理功能。
   var PROMOTED_TILES = [
     { key: 'cloud-sync', srcLabel: '☁️ 配對碼雲端同步', icon: '☁️', label: '備份管理' },
-    { key: 'batch-settle', srcLabel: '⏱️ 批次結算', icon: '⏱️', label: '批次結算' }
+    { key: 'batch-settle', srcLabel: '⏱️ 批次結算', icon: '⏱️', label: '批次結算' },
+    { key: 'asset-manager', srcLabel: '🏦 角色資產管理', icon: '🎒', label: '角色背包' }
   ];
 
   // ---- CSS ----------------------------------------------------------------
@@ -70,18 +75,8 @@
     /* 方格容器(m-dex-entry-row/m-wiki-entry-row):本身就是一個 grid 儲存格。
        2026-07-12 使用者要求:↗新分頁鈕改放方格「下方」(不再浮在角落),故容器改直向排列
        (主方格在上、↗鈕在下),兩者寬度一致。 */
-    '#afk-plugin-frame .m-dex-entry-row,#afk-plugin-frame .m-wiki-entry-row{position:relative;display:flex;flex-direction:column;gap:6px;}',
+    '#afk-plugin-frame .m-dex-entry-row,#afk-plugin-frame .m-wiki-entry-row{position:relative;display:flex;flex-direction:row;gap:6px;}',
 
-    /* 🎨 2026-07-11 第二次調整:「其他功能」小方格區(備份管理/批次結算),樣式比照外掛框但較窄矮,
-       放在外掛框正下方。顏色與外掛方格同一組藍色漸層(使用者明確要求維持一致,不要另外分色)。 */
-    '#afk-other-frame{position:relative;width:100%;max-width:22rem;margin:14px auto 0;padding:16px 14px 12px;',
-      'border:1px solid rgba(190,145,75,.6);border-radius:14px;background:rgba(6,5,4,.4);',
-      'box-shadow:inset 0 0 14px rgba(0,0,0,.4),0 3px 14px rgba(0,0,0,.18);',
-      'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}',
-    '#afk-other-frame .afk-frame-label{position:absolute;top:-11px;left:50%;transform:translateX(-50%);',
-      'padding:2px 12px;font-size:11.5px;font-weight:700;letter-spacing:1.5px;color:#ead09a;',
-      'background:linear-gradient(180deg,#1d1710,#090704);',
-      'border:1px solid rgba(190,145,75,.7);border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.35);white-space:nowrap;}',
 
     /* 工具方格按鈕(掉落查詢/小百科)+ 其他功能小按鈕(備份管理/批次結算):圖示在上、文字在下,
        呼應 V17 的 3x1 工具格。⚠ 2026-07-11 使用者依實際 V17 渲染截圖糾正:工具方格是「藍色」
@@ -111,16 +106,18 @@
     'body.m-mobile #main-menu .m-dex-entry-main,body.m-mobile #main-menu .m-wiki-entry-main,body.m-mobile #main-menu .afk-tile-btn{',
       'font-size:13px;min-height:76px;}',
     /* ↗「在新分頁開啟」小鈕:2026-07-11 使用者回饋原本疊在方格內角落「很醜」——改成浮在方格
-       右上角「外側」的小圓形徽章。2026-07-12 使用者再次要求:改放方格「下方」,寬度跟主方格一致
-       (不再是小圓鈕),樣式與主方格同一組藍色漸層,只是矮一點(次要動作)。
+       右上角「外側」的小圓形徽章。2026-07-12 使用者要求:改放方格「下方」,寬度跟主方格一致。
+       2026-07-13 使用者再次要求:改回方格「右側」並排,高度跟主方格一樣、寬度窄。
        ⚠ afk-dex.js/afk-wiki.js 各自的 `.m-dex-entry-row > button{width:auto !important}` 規則
-       選擇器比這裡更具體(多一層 > button 的 tag 選擇器)且帶 !important,會蓋掉這裡的 width:100%,
-       故這裡的 width 也要加 !important 才蓋得過去。 */
-    '#main-menu .m-dex-entry-newtab,#main-menu .m-wiki-entry-newtab{position:static;width:100% !important;',
-      'min-height:26px;padding:4px 6px;display:flex;align-items:center;justify-content:center;gap:4px;',
-      'font-size:11px;line-height:1;border-radius:5px;',
+       選擇器比這裡更具體(多一層 > button 的 tag 選擇器)且帶 !important,故這裡的 width 也要
+       加 !important 才蓋得過去。高度靠 row 的 align-items:stretch(afk-dex.js/afk-wiki.js 已設)
+       自動撐到跟主方格一樣高,這裡不需另外指定 min-height。 */
+    '#main-menu .m-dex-entry-newtab,#main-menu .m-wiki-entry-newtab{position:static;width:26px !important;flex:0 0 26px;',
+      'padding:2px 0;display:flex;align-items:center;justify-content:center;gap:0;',
+      'font-size:13px;line-height:1;border-radius:7px;',
       'border-color:#80623d;background:linear-gradient(180deg,#16385f,#08192e);color:#efe2c8;',
       'box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -2px 0 rgba(0,0,0,.3),0 3px 8px rgba(0,0,0,.45);}',
+    'body.m-mobile #main-menu .m-dex-entry-newtab,body.m-mobile #main-menu .m-wiki-entry-newtab{width:24px !important;flex:0 0 24px;}',
     '#main-menu .m-dex-entry-newtab:hover,#main-menu .m-wiki-entry-newtab:hover{filter:brightness(1.15);transform:translateY(-1px);}',
 
     /* 🔘 2026-07-12 使用者要求:選角畫面右側「進入遊戲/創新角色/匯入進度/返回」四顆按鈕跑圓角
@@ -272,32 +269,18 @@
     // 依 FRAME_ORDER 重新 append → 框內順序固定(把散在 #main-menu 的也一起收進來;idempotent)
     els.forEach(function (el) { frame.appendChild(el); });
 
-    // 🎨 2026-07-11:「其他功能」小方格區(備份管理/批次結算),放在外掛框正下方、
-    // ⚙其他功能齒輪鈕之上。沒有任何升格方格可顯示時整個區塊移除,不留空框。
-    var otherFrame = document.getElementById('afk-other-frame');
-    var tiles = [];
+    // 🎨 2026-07-13 使用者調整:雲端同步/批次結算/角色背包三顆小方格,直接 append 進同一個
+    // #afk-plugin-frame(緊貼在掉落查詢/小百科方格「正下方、同一個外框內」),不再另外開一個
+    // 有獨立標題的「其他功能」框——避免視覺上被當成不同區塊。沒有任何升格方格可顯示時
+    // 什麼都不 append(維持只有 dex/wiki 兩格)。
     PROMOTED_TILES.forEach(function (def) {
       var tile = ensurePromotedTile(def);
-      if (tile) tiles.push(tile);
+      if (tile) frame.appendChild(tile);
     });
-    if (tiles.length) {
-      if (!otherFrame) {
-        otherFrame = document.createElement('div'); otherFrame.id = 'afk-other-frame';
-        var oLabel = document.createElement('div'); oLabel.className = 'afk-frame-label'; oLabel.textContent = '其他功能';
-        otherFrame.appendChild(oLabel);
-        menu.insertBefore(otherFrame, frame.nextSibling);
-      } else if (otherFrame.previousElementSibling !== frame) {
-        menu.insertBefore(otherFrame, frame.nextSibling);
-      }
-      tiles.forEach(function (t) { otherFrame.appendChild(t); });
-    } else if (otherFrame) {
-      otherFrame.remove();
-    }
 
-    // ⚙ 其他功能(齒輪+下拉選單)固定在「外掛框/其他功能小方格區」的正下方
+    // ⚙ 其他功能(齒輪+下拉選單)固定在外掛框的正下方
     var stgWrap = menu.querySelector(':scope > #afk-stg-wrap');
-    var afterEl = otherFrame || frame;
-    if (stgWrap && stgWrap.previousElementSibling !== afterEl) menu.insertBefore(stgWrap, afterEl.nextSibling);
+    if (stgWrap && stgWrap.previousElementSibling !== frame) menu.insertBefore(stgWrap, frame.nextSibling);
   }
 
   // 🩹 2026-07-13 寬螢幕矮視窗防裁切:量測 #main-menu(含外掛/其他功能方格)的「自然高度」

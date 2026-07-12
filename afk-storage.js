@@ -191,7 +191,7 @@
     //   外掛項在前、內建項在後;帶 visible() 的條件項(安裝裝好後即隱藏)於此時求值。
     // 🎨 2026-07-11 首頁 V17 改版:「☁️ 配對碼雲端同步」「⏱️ 批次結算」這兩項移到外掛工具方格區
     // 當獨立方格顯示(見 afk-skin.js ensureFrame),下拉選單裡不再重複顯示。
-    var PROMOTED_TO_TILE = { '☁️ 配對碼雲端同步': 1, '⏱️ 批次結算': 1 };
+    var PROMOTED_TO_TILE = { '☁️ 配對碼雲端同步': 1, '⏱️ 批次結算': 1, '🏦 角色資產管理': 1 };
     function renderMenu() {
       var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
       list.innerHTML = '';

@@ -108,14 +108,18 @@
         });
         setTimeout(function () { if (card.parentNode) card.parentNode.removeChild(card); }, 400);
       }
-      card.addEventListener('click', kill);   // 點 toast 一下提早關
+      // 2026-07-13:卡片改 pointer-events:none(見下方 CSS),不再吃觸控,「點 toast 提早關」
+      // 這個小便利跟著拿掉——換來的是通知顯示期間手指點下去會直接穿透打到底下的按鈕/道具,
+      // 不用等 3.5 秒過期才能操作(使用者決定:兩者只能擇一,選擇不擋操作優先)。
       setTimeout(kill, TOAST_MS);
     }
 
     function injectCSS() {
       var css = [
-        '#m-toast-wrap{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(' + NAV_H + 'px + 14px);z-index:99999;display:flex;flex-direction:column;gap:8px;width:min(92vw,420px);pointer-events:none;}',
-        '#m-toast-wrap .m-toast{pointer-events:auto;background:rgba(15,23,42,.96);border:1px solid #334155;border-left:3px solid #38bdf8;border-radius:10px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);color:#e2e8f0;font-size:14px;line-height:1.5;word-break:break-word;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease;}',
+        // 2026-07-13:改移到畫面頂部(遠離底部導覽列/喝水列/操作按鈕熱區),即使殘留疊加也不會擋
+        // 到操作區域;卡片本身也加 pointer-events:none(下一行),雙保險確保通知不影響觸控操作。
+        '#m-toast-wrap{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:99999;display:flex;flex-direction:column;gap:8px;width:min(92vw,420px);pointer-events:none;}',
+        '#m-toast-wrap .m-toast{pointer-events:none;background:rgba(15,23,42,.96);border:1px solid #334155;border-left:3px solid #38bdf8;border-radius:10px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.5);color:#e2e8f0;font-size:14px;line-height:1.5;word-break:break-word;opacity:0;transform:translateY(-10px);transition:opacity .22s ease,transform .22s ease;}',
         '#m-toast-wrap .m-toast.m-toast-in{opacity:1;transform:translateY(0);}',
         '#m-toast-wrap .m-toast-line + .m-toast-line{margin-top:4px;}',
         '#m-toast-wrap .m-toast-more{color:#94a3b8;font-size:12px;margin-bottom:4px;}'

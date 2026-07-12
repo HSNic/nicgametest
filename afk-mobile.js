@@ -1432,6 +1432,29 @@
       var ic = document.getElementById('interaction-content');
       if (e.target.closest('.tip-host') || (ic && e.target.closest('[title]') && ic.contains(e.target.closest('[title]')))) e.preventDefault();
     });
+
+    preventDoubleTapZoom();
+  }
+
+  // 2026-07-13:手機版取消雙擊縮放,保留雙指縮放。不能用 viewport user-scalable=no / CSS
+  // touch-action:manipulation 全域套用(那樣連雙指縮放也會被關掉)——改在 document 層級攔截
+  // touchend:兩次「單指」touchend 間隔 <300ms 判定為雙擊才 preventDefault;只要曾經是多指觸控
+  // (雙指縮放手勢),就放行不攔截,避免誤傷雙指縮放。
+  function preventDoubleTapZoom() {
+    var lastTouchEnd = 0;
+    var wasMultiTouch = false;
+    document.addEventListener('touchstart', function (e) {
+      if (e.touches.length > 1) wasMultiTouch = true;
+    }, { passive: true });
+    document.addEventListener('touchend', function (e) {
+      if (!document.body.classList.contains('m-mobile')) return;
+      var now = Date.now();
+      if (e.changedTouches.length === 1 && e.touches.length === 0 && !wasMultiTouch) {
+        if (now - lastTouchEnd <= 300) e.preventDefault();
+        lastTouchEnd = now;
+      }
+      if (e.touches.length === 0) wasMultiTouch = false;   // 所有手指離開後重置,不影響下一次判斷
+    }, { passive: false });
   }
 
   // 🔒 零接觸桌機:init() 會插入手機元素、搬動戰鬥/系統日誌、改地圖標題列等——這些都動到原作者既有 DOM。

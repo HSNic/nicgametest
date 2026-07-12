@@ -50,6 +50,7 @@ const rawUrl = (p) => `https://raw.githubusercontent.com/${UPSTREAM_USER}/${REPO
 //   重排前留意上面兩點即可。
 const PLUGINS = [
   { file: 'afk-offline.js', comment: '離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-sfx-fastload.js', comment: '音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-mobile.js',  comment: '手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-backnav.js', comment: '手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-slotinfo.js', comment: '選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可)' },
@@ -65,6 +66,7 @@ const PLUGINS = [
   { file: 'afk-statpts.js', comment: '能力值面板補點數分解 始/升/藥/總(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-syncinfo.js', comment: '外掛工具面板(僅保留 hooks OK log,DOM 內容已於 2026-07-08 精簡移除;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-ui.js',       comment: '統一自製彈窗:全域接管 window.alert(可獨立維護;原作者更新後重新加回此行即可)' },
+  { file: 'afk-quickpanel.js', comment: '首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-autobuy.js',  comment: '外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-pwa.js',      comment: 'PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-storage.js',  comment: '首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可)' },
@@ -82,6 +84,7 @@ const PLUGINS = [
   { file: 'afk-crit-fx.js', comment: '爆擊特效仿天堂W:被動監看飄傷害數字,爆擊時追加衝擊環/全螢幕閃光/戰場震動(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-ally-buffs.js', comment: '協力傭兵隊伍面板顯示 buff 圖示(讀 ally.buffs,共用玩家狀態圖示資源;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-panacea-batch.js', comment: '萬能藥一次選數量批量服用(物品詳情視窗多加批量鈕,外面迴圈呼叫既有單瓶服用邏輯;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-warehouse-scroll-anchor.js', comment: '倉庫存取物品捲動錨定(包 renderWarehouseNPC,修正存/取後畫面跳動;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-whdeposit-bycat.js', comment: '一鍵存入只存入「目前分類篩選」命中的物品(整支覆寫全域 whOneClickDeposit,既有按鈕不用動;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-char-switch.js', comment: '「協力傭兵隊伍」面板加「存檔並切換至此角色」(monkey-patch renderSquadPanel,重用既有選存檔位讀取路徑;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-asset-manager.js', comment: '首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可)' },
