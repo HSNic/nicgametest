@@ -301,14 +301,15 @@
         grid.appendChild(ov);
       }
       // 2026-07-13:用「容器實際寬度」算固定像素裁切(不用百分比),不受容器高度/裝置差異影響。
-      // 原圖(640×480)固定裁切窗:x=170~330(中間拱門柱,寬160px)、y 從 30px 起算(見上方 CSS
-      // 註解的量測記錄,30~250px 是安全的拱門+柱身暗色區,280px 起會碰到金色徽章裝飾)。
+      // 原圖(640×480)固定裁切窗:x=163~318(實測兩根柱子中心點,寬155px)、y 從 5px 起算,
+      // 讓左右兩側對稱各露出半根柱子、上方拱形雕花弧線完整可見(2026-07-13 稍晚使用者回報
+      // 舊座標 170~330 兩側不對稱、弧線被切掉,重新量測像素後修正,取得使用者確認預覽圖後套用)。
       // 只套在拱門疊圖(load1.png)上——#load-slot-grid 本身已改純黑填色,不需要裁切背景圖。
       var w = grid.getBoundingClientRect().width;
       if (w > 0) {
-        var scale = w / 160;
+        var scale = w / 155;
         var bgSize = Math.round(640 * scale) + 'px ' + Math.round(480 * scale) + 'px';
-        var bgPos = (-Math.round(170 * scale)) + 'px ' + (-Math.round(30 * scale)) + 'px';
+        var bgPos = (-Math.round(163 * scale)) + 'px ' + (-Math.round(5 * scale)) + 'px';
         ov.style.backgroundSize = bgSize;
         ov.style.backgroundPosition = bgPos;
       }
