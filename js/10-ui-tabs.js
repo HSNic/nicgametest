@@ -962,7 +962,7 @@ function openModal(item, isEq, slot) {
             act += `<button class="col-span-2 w-full btn border-red-700 bg-red-900 hover:bg-red-800 text-red-200 py-3 text-lg font-bold" onclick="unequipItem('${slot}')">卸除</button>`;
         }
     } else {
-        if(d.type === 'pot' || d.type === 'skillbk' || (d.type === 'misc' && d.eff && !d.noUse)) {   // 🔧 misc 且有效果(萬能藥/回憶蠟燭/靈魂之球等)亦顯示使用按鈕；noUse 除外
+        if(d.type === 'pot' || d.type === 'skillbk' || ((d.type === 'misc' || d.type === 'etc') && d.eff && !d.noUse)) {   // 🔧 misc/etc 且有效果(萬能藥/回憶蠟燭/靈魂之球/🥚頑皮幼龍蛋等)亦顯示使用按鈕；noUse 除外
             act += `<button class="col-span-2 w-full btn border-green-700 bg-emerald-800 hover:bg-emerald-700 text-green-100 py-3 text-lg font-bold" onclick="useItem('${item.uid}')">使用</button>`;
         }
         if(d.type === 'scroll') {
@@ -1485,7 +1485,7 @@ const legacyInvSortCmp = (function () {
     let isUsable = (i, d) => {
         if (d.type === 'pot') return true;
         if (d.type === 'scroll') return i.id !== 'scroll_revive';   // 復活卷軸無法從道具欄使用
-        if (d.type === 'misc') return !!d.eff;                       // 有效果(回憶蠟燭等)才可使用
+        if (d.type === 'misc' || d.type === 'etc') return !!d.eff;   // 有效果(回憶蠟燭/🥚頑皮幼龍蛋等)才可使用
         if (d.type === 'skillbk') {
             let sk = DB.skills[d.sk]; if (!sk) return false;
             let cls = skillReqLv(sk, d.sk);   // 🏅 集中化：含魔導精通特例
@@ -1901,7 +1901,8 @@ function switchTab(t, btn) {
 }
 
 // ===== 🤝 協力傭兵隊伍面板（Phase 1：顯示血/魔/經驗條＋每傭兵攻擊技能/治癒魔法設定）=====
-let _squadSig = '';          // 結構簽章：名單(slot)變動才重建 DOM，避免每幀 innerHTML 重繪
+let _squadSigTeam = '';      // 🩹 v3.2.74 拆兩簽章：team 分頁(血/魔/經驗條·含寵物/召喚 HP 5%階)——變動才重建 team DOM
+let _squadSigSkill = '';     // 🩹 v3.2.74 skill 分頁(攻擊/治癒/轉換技能下拉＋自動維持勾選)——只看傭兵名單/等級，戰鬥中寵物/召喚掉血不重建→開啟的技能下拉不會被關掉（原用單一簽章·寵物/召喚每 tick 掉血→整面板重建→下拉自動收合）
 let _squadTab = 'team';      // 目前分頁：team / skill
 let _autoCollapseInit = false;   // 自動化設定收合偏好只在首次套用
 
@@ -1945,13 +1946,16 @@ function renderSquadPanel() {
     let _summons = (typeof summonV2List === 'function' && player && player.cls) ? summonV2List().filter(s => s && !s._downed && (s.hp || 0) > 0) : [];
     let _summonSk = (typeof summonV2ActiveSk === 'function') ? summonV2ActiveSk() : '';
     let _summonVisible = _summons.length > 0 || !!(player && player._summonV2On && _summonSk && typeof summonV2Knows === 'function' && summonV2Knows(_summonSk));
-    if (!allies.length && !_pets.length && !_summonVisible) { panel.style.display = 'none'; _squadSig = ''; return; }
+    if (!allies.length && !_pets.length && !_summonVisible) { panel.style.display = 'none'; _squadSigTeam = ''; _squadSigSkill = ''; return; }
     panel.style.display = '';
-    let sig = allies.map(a => a._slot + ':' + (a._allyName || '') + ':' + (a._downed ? 'D' : '') + ':' + (a.lv || 1)).join('|')
+    let _sigAllies = allies.map(a => a._slot + ':' + (a._allyName || '') + ':' + (a._downed ? 'D' : '') + ':' + (a.lv || 1)).join('|');
+    let sigTeam = _sigAllies
         + '||P:' + _pets.map(p => p.uid + ':' + p.lv + ':' + (p._downed ? 'D' : '') + ':' + Math.round(p.hp / Math.max(1, p.mhp) * 20) + ':' + Math.round(p.mp / Math.max(1, p.mmp) * 20) + ':' + Math.round((p.exp || 0) / Math.max(1, petExpReq(p.lv)) * 20) + ':' + (p.potPct || 0) + ':' + Math.ceil((p._reviveCd || 0) / 10)).join('|')
-        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '');   // 名單/倒地/等級變動才重建結構（寵物與召喚物血量以 5% 階重建）
-    if (sig !== _squadSig) {
-        _squadSig = sig;
+        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '');   // team 分頁：名單/倒地/等級＋寵物/召喚血量(5%階)變動才重建
+    let sigSkill = _sigAllies;   // 🩹 v3.2.74 skill 分頁只看傭兵名單/等級→戰鬥中寵物/召喚掉血不重建·開啟的技能下拉不被關
+    let _squadRebuilt = false;
+    if (sigTeam !== _squadSigTeam) {
+        _squadSigTeam = sigTeam;
         document.getElementById('squad-tab-team').innerHTML = allies.map(a => {
             let s = a._slot;
             if (a._downed) {   // 🤝 Phase 3：倒地→灰顯卡片。返生術＝手動鈕（消耗MP·無冷卻立即）；復活卷軸＝v2.6.6 改自動（15秒冷卻結束身上有卷軸即自動使用），此處只顯示狀態文字（不可點）。每幀更新。
@@ -1973,6 +1977,10 @@ function renderSquadPanel() {
         }).join('')
             + ((typeof renderPetTeamHTML === 'function') ? renderPetTeamHTML() : '')
             + ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 召喚物
+        _squadRebuilt = true;
+    }
+    if (sigSkill !== _squadSigSkill) {
+        _squadSigSkill = sigSkill;
         document.getElementById('squad-tab-skill').innerHTML = allies.map(a => {
             let s = a._slot;
             let hpPct = (a._healHpPct != null) ? a._healHpPct : 70;
@@ -1991,8 +1999,9 @@ function renderSquadPanel() {
                 ${_allyAutoBuffChips(a)}
             </div>`;
         }).join('');
-        switchSquadTab(_squadTab);   // 重建後還原目前分頁與按鈕高亮
+        _squadRebuilt = true;
     }
+    if (_squadRebuilt) switchSquadTab(_squadTab);   // 有任一分頁重建→還原目前分頁與按鈕高亮
     // 每幀更新血/魔/經驗條（不重建 DOM）
     allies.forEach(a => {
         let s = a._slot, el;
@@ -2072,7 +2081,7 @@ function setAllyAutoBuff(slot, sid, on) {
     }
     if ((typeof TEAM_AURA_SKILLS !== 'undefined' && TEAM_AURA_SKILLS.includes(sid)) || (DB.skills[sid] && DB.skills[sid].illuSummon)) { try { if (typeof calcStats === 'function') calcStats(); } catch (e) {} }   // 🌟 v3.0.100 團隊光環開關→刷新玩家 d（化身攻擊光環注入玩家；關閉時傭兵化身已於上方清 0）；🔮 v3.2.2 幻覺（歐吉/巫妖/高崙）關閉時同樣要刷新，否則玩家 d 殘留 +4傷/+4命/+2魔傷 直到下次重算
     try { saveGame(); } catch (e) {}
-    _squadSig = '';   // 強制下一輪重建隊伍面板→更新勾選外觀（邊框/文字色於建構時決定）
+    _squadSigSkill = '';   // 🩹 v3.2.74 強制重建 skill 分頁→更新勾選外觀（邊框/文字色於建構時決定；勾選列在 skill 分頁·team 分頁不受影響）
     try { renderSquadPanel(); } catch (e) {}
 }
 

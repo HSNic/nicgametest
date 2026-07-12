@@ -357,6 +357,13 @@ async function exportSave(){
         let _obj = JSON.parse(data);
         let _whRaw = _lzGet(whKey());   // 🎮 目前角色（經典/非經典）對應的倉庫（💾 解壓成明文）
         if(_whRaw) _obj.wh = JSON.parse(_whRaw);
+        // 🐾 v3.2.75 一併收錄共用寵物名冊（依角色模式取對應桶·匯入時可選還原）。桶內為 _saveWrap 簽章格式→先解簽取出陣列存明文。saveGame() 已於上方 flush petRosterSave→桶為最新。
+        try {
+            if (typeof _petBucketKey === 'function') {
+                let _petRaw = _lzGet(_petBucketKey());
+                if (_petRaw != null) { let _pu = _saveUnwrap(_petRaw); if (_pu && _pu.ok) { let _arr = JSON.parse(_pu.payload); if (Array.isArray(_arr)) _obj.pets = _arr; } }
+            }
+        } catch(e){}
         data = JSON.stringify(_obj);
     } catch(e){}
     data = _saveWrap(data);   // 🛡️ 匯出檔加完整性簽章（前綴 'SIG1:'，匯入時驗章；payload 仍為明文 JSON）
@@ -414,10 +421,11 @@ function importSave(n){
             }
             let existing = slotSummary(n);
             if(existing && !confirm(`存檔 ${n} 已有角色（${existing.cls} Lv.${existing.lv} ${existing.name}）。\n確定要用匯入的存檔「取代」它嗎？\n（原存檔會自動備份，可於載入畫面點「復原備份」還原）`)) return;
-            // 🔧 抽出倉庫資料（若匯入檔含 wh）；寫入存檔位時不保留 wh 欄位
+            // 🔧 抽出倉庫資料（若匯入檔含 wh）；🐾 v3.2.75 也抽出寵物名冊（pets）；寫入存檔位時不保留 wh/pets 欄位（它們是共用桶·不進角色存檔）
             let whData = d.wh;
+            let petData = d.pets;
             let saveText = text;
-            if(whData !== undefined){ let _c = {}; for(let k in d){ if(k !== 'wh') _c[k] = d[k]; } saveText = JSON.stringify(_c); }
+            if(whData !== undefined || petData !== undefined){ let _c = {}; for(let k in d){ if(k !== 'wh' && k !== 'pets') _c[k] = d[k]; } saveText = JSON.stringify(_c); }
             let cur = _lsGet('lineage_idle_save_' + n);
             if(cur) _lzSetStoredRaw('lineage_idle_save_' + n + '_bak', cur);   // 匯入前自動備份原存檔
             _lzSet('lineage_idle_save_' + n, _saveWrap(saveText));   // 💾 匯入 → 以本機簽章重新封裝後壓縮存入（之後讀檔即可驗章）
@@ -433,10 +441,22 @@ function importSave(n){
                     whMsg = '\n（倉庫維持原狀，未還原）';
                 }
             }
+            // 🐾 v3.2.75 詢問是否一併還原共用寵物名冊（會覆蓋該模式現有名冊·同模式角色共用·比照倉庫）。桶存 _saveWrap 簽章格式。
+            let petMsg = '';
+            if(petData !== undefined && Array.isArray(petData) && petData.length){
+                if(confirm(`此匯入檔包含寵物名冊（${petData.length} 隻）。\n是否一併還原寵物？\n⚠ 會覆蓋該角色所屬模式（${(d.p && d.p.classicMode) ? '經典' : '非經典'}）的共用寵物名冊。`)){
+                    let _petKey = (typeof PET_ROSTER_KEY !== 'undefined' ? PET_ROSTER_KEY : 'fb5_pet_roster') + (typeof modeSuffix === 'function' ? modeSuffix(!!(d.p && d.p.classicMode), false) : '');
+                    _lzSet(_petKey, _saveWrap(JSON.stringify(petData)));   // 💾 依匯入角色模式寫入對應桶（_saveWrap 簽章＋壓縮）
+                    try { if (typeof _petRosterKey !== 'undefined') _petRosterKey = null; } catch(e){}   // 失效記憶體快取→下次 petRoster() 從新桶重載
+                    petMsg = '\n寵物名冊已一併還原。';
+                } else {
+                    petMsg = '\n（寵物名冊維持原狀，未還原）';
+                }
+            }
             if(_slotMode === 'load-grid') renderLoadSelect();
             else openSlotSelect(_slotMode);   // 重新整理存檔位清單（更新名稱/等級與可載入狀態）
             let ns = slotSummary(n);
-            alert(`已匯入到存檔 ${n}：${ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成'}。${cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : ''}${whMsg}`);
+            alert(`已匯入到存檔 ${n}：${ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成'}。${cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : ''}${whMsg}${petMsg}`);
         };
         reader.readAsText(file);
     };
@@ -1122,6 +1142,38 @@ function consolidateInventory() {
     player.inv = out;
 }
 
+// 🧹 v3.2.62 清除「已停用的舊版物品」：功能被移除後連 DB.items 定義都刪掉的孤兒物品（如舊版進化果實/肉/哨子）
+//   ——渲染時被 `if(!DB.items[id])` 守衛跳過（看不到卻仍佔背包格＋脹存檔）、無價格無法販售、無 eff/type 無法使用。
+//   載入時自動從「背包＋共用倉庫」移除並彙總一則訊息。⚠️保留舊項圈 ID（由 petMigrateLegacy 轉為寵物·勿當孤兒刪）。
+//   倉庫僅在「讀取成功」時寫回（沿用 saveWarehouse 的 _whLoadOk 防護·不覆蓋救得回的位元組）。
+function purgeOrphanItems() {
+    try {
+        if (!player || typeof DB === 'undefined' || !DB.items) return 0;
+        let _keepCollar = (typeof _PET_LEGACY_COLLARS !== 'undefined') ? _PET_LEGACY_COLLARS : {};
+        let isOrphan = (id) => id != null && !DB.items[id] && !_keepCollar[id];
+        let removed = 0;
+        if (Array.isArray(player.inv)) {
+            let before = player.inv.length;
+            player.inv = player.inv.filter(i => i && !isOrphan(i.id));
+            removed += before - player.inv.length;
+        }
+        try {
+            if (typeof loadWarehouse === 'function' && typeof saveWarehouse === 'function') {
+                let wh = loadWarehouse();
+                if (typeof _whLoadOk === 'undefined' || _whLoadOk !== false) {
+                    let items = (wh && wh.items) || [];
+                    let kept = items.filter(it => it && !isOrphan(it.id));
+                    if (kept.length !== items.length) { wh.items = kept; saveWarehouse(wh); removed += items.length - kept.length; }
+                }
+            }
+        } catch (e) { console.warn('purgeOrphanItems warehouse', e); }
+        if (removed > 0 && typeof logSys === 'function') {
+            logSys(`<span class="text-slate-400">🧹 已自動清除 ${removed} 個已停用的舊版物品（功能已移除·無法使用或販售）。</span>`);
+        }
+        return removed;
+    } catch (e) { console.warn('purgeOrphanItems', e); return 0; }
+}
+
 function loadGame() {
     _uiConfigReady = false;   // 🛡️ 審計#1：載入期間 DOM 仍是上一個畫面/預設值，禁止 saveGame 以它重建 config
     let _u = _saveUnwrap(_lzGet('lineage_idle_save_' + currentSlot));   // 🛡️ 解存檔簽章（舊明文存檔 signed:false 照常載入）
@@ -1178,6 +1230,7 @@ function loadGame() {
         if(player.allies === undefined || !Array.isArray(player.allies)) player.allies = [];   // 協力角色（其他存檔位）
         // 🐾 v3.2.17 夥伴系統 v2：舊項圈/肉/哨子/舊進化果實/舊 petStorage 一次性轉換與清除（項圈→新寵物入共用保管）
         try { if (typeof petMigrateLegacy === 'function') petMigrateLegacy(); } catch (e) { console.warn('petMigrateLegacy', e); }
+        try { purgeOrphanItems(); } catch (e) { console.warn('purgeOrphanItems', e); }   // 🧹 v3.2.62 清除已停用舊物品（DB 無定義的孤兒·背包+倉庫·排除待轉換的舊項圈）
         // 相容舊存檔：返生術改為被動技能，清除先前施放殘留的無作用 buff；初始化復活卷軸冷卻
         if(player.buffs) player.buffs.sk_resurrection = 0;
         if(player.buffs && player.buffs.haste >= 999999) player.buffs.haste = 0;   // 修復舊版伊娃之盾殘留的永久加速（改由 _equipHaste 旗標處理）
@@ -1225,6 +1278,19 @@ function loadGame() {
         if (player.eq.arrow === undefined) player.eq.arrow = null; // 相容舊存檔
         // 相容舊存檔：手套曾被錯存於 eq.glove（單數），搬移到正確的 gloves 欄位
         if (player.eq.glove) { if (!player.eq.gloves) player.eq.gloves = player.eq.glove; delete player.eq.glove; }
+        // 🏺 v3.2.79 相容舊存檔：聖伯納的急救酒桶／貴重狐毛圍巾曾誤用 slot:'neck'（非法欄位）→ 裝備後落入幽靈槽 eq.neck、界面不顯示而「消失」。
+        //   定義已改回 'amulet'；此處把卡在幽靈槽的既有裝備搬回項鍊欄（項鍊欄已占用則退回背包），玩家＋傭兵皆處理。
+        {
+            let _fixNeck = (owner) => {
+                if (!owner || !owner.eq || !owner.eq.neck) return;
+                let _it = owner.eq.neck;
+                if (!owner.eq.amulet) owner.eq.amulet = _it;
+                else (Array.isArray(owner.inv) ? owner.inv : player.inv).push(_it);   // 項鍊欄已有裝備→退回背包（傭兵無自身背包則退玩家背包，與卸下傭兵裝備一致）
+                delete owner.eq.neck;
+            };
+            _fixNeck(player);
+            (player.allies || []).forEach(_fixNeck);
+        }
 
         // ⚠️ v2.6.47 一次性經驗刻度遷移（修「更新後經驗條看似歸零」）：v2.6.40 取消打怪經驗遞減、改把「高等升級需求」放大 ×2~×1024，
         //    但既有存檔的 per-level 經驗未同步放大 → 經驗條%＝exp/getExpReq(lv) 從舊制比例暴跌（Lv90 半滿→0.05%）看似歸零（數值其實還在）。

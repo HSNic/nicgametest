@@ -1,6 +1,6 @@
 /** 遊戲核心資料庫 */
 // 🏷️ 遊戲版本號（顯示於登入頁面下方·單一真相來源）：更新版本時只改這一行，登入頁面自動同步。
-const GAME_VERSION = 'v3.2.60';
+const GAME_VERSION = 'v3.2.79';
 // ===== 💾 存檔壓縮（LZString compressToUTF16/decompressFromUTF16·MIT, Pieroxy）：localStorage 內部以 UTF-16 壓縮，省 ~89%，繞過 5MB 上限 =====
 //  ⚠️ 只壓 localStorage（存檔位/倉庫/共用桶/_bak）；匯出檔維持明文 JSON（可攜·importSave 用 JSON.parse 驗證）。_lzGet 相容舊明文存檔（無 'LZ1:' 前綴→原樣回傳）。
 var LZString = (function () {
@@ -765,8 +765,8 @@ const DB = {
         "relic_panda_eyes":      { n: "熊貓的黑眼圈",     type: "arm", slot: "helm",   relic: true, noEnhance: true, ac: 4, dr: 3, mr: 8, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】戴上便睡意朦朧的黑眼圈頭飾，以慵懶化解攻勢。" },
         "relic_pup_fang":        { n: "幼犬的稚嫩犬齒",   type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 1, meleeDmg: 1, rangedDmg: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】高麗幼犬換牙時掉落的小小犬齒，蘊含初生之銳。" },
         "relic_raccoon_leaf":    { n: "浣熊的變身葉",     type: "arm", slot: "helm",   relic: true, noEnhance: true, ac: 2, polyAtkSpdPct: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】浣熊變身戲法用的神奇樹葉，頂在頭上就能幻化萬千。" },
-        "relic_stbernard_barrel":{ n: "聖伯納的急救酒桶", type: "acc", slot: "neck",   relic: true, noEnhance: true, ac: 0, lowHpPotionX2: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】聖伯納犬掛在頸間的救難小酒桶，危急時刻滴滴救命。" },
-        "relic_fox_scarf":       { n: "貴重狐毛圍巾",     type: "acc", slot: "neck",   relic: true, noEnhance: true, ac: 0, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以整條狐尾織成的華貴圍巾，軟毛間流轉抗魔的靈氣。" },
+        "relic_stbernard_barrel":{ n: "聖伯納的急救酒桶", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, lowHpPotionX2: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】聖伯納犬掛在頸間的救難小酒桶，危急時刻滴滴救命。" },
+        "relic_fox_scarf":       { n: "貴重狐毛圍巾",     type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以整條狐尾織成的華貴圍巾，軟毛間流轉抗魔的靈氣。" },
         "relic_rabbit_foot":     { n: "幸運暴走兔腳",     type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 0, relicDropX2: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】傳說中招來厄運之外一切好運的兔腳護符。" },
         "relic_beagle_nose":     { n: "小獵犬的追蹤鼻",   type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 0, trackBoost: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】小獵犬引以為傲的靈敏鼻子做成的護符，氣味無所遁形。" },
         "relic_collie_fur":      { n: "柯利的柔毛",       type: "arm", slot: "shin",   relic: true, noEnhance: true, ac: 1, mr: 5, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】柯利牧羊犬蓬鬆柔毛織成的護脛，溫暖而堅韌。" },
@@ -2338,7 +2338,7 @@ const DB = {
                 { id: "npc_wh_aden", n: "恬金", title: "倉庫", type: "warehouse", d: "存放物品與金幣，四個存檔角色共用。" },
                 { id: "npc_upni", n: "烏普尼", title: "製作", type: "craft", d: "通曉禁忌符文的烏普尼，能將塔之力封入一紙。以 傲慢之塔傳送符 與 移動卷軸 製作 傲慢之塔支配符。" },
                 { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的寵物。" },
-                { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 20 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上的寵物進化（基礎寵物需進化果實、高等寵物需勝利果實·黃金龍除外）。" }
+                { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 20 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上「一般型態」的寵物進化——用進化果實→對應高等，或用勝利果實→黃金龍（兩種果實都帶著時可自選）；高等型態與黃金龍皆為最終型態。" }
             ]
         },
         "town_pride": {

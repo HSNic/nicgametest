@@ -10,6 +10,13 @@
  *      4:3 藝術舞台,#main-menu 高度固定、不捲動,擔心入口全展開會擠爆),已依需求
  *      移除;如果之後真的因為外掛項目變多、桌機出現擠爆/裁切,要恢復 Modal 收合前
  *      先跟使用者確認,不要自己默默加回去。
+ *      🩹 2026-07-13:寬螢幕但視窗不夠高時,#main-menu 疊了「外掛/其他功能」方格後
+ *      總高度真的會超出 4:3 舞台(舞台 overflow:hidden,超出部分會被整段裁掉、玩家
+ *      完全看不到、也摸不到)。踩過一次「改成可捲動」的修法,使用者不滿意(捲出去後
+ *      視覺上跑到背景圖之外,且事前沒問過使用者就直接動手,違反「任何修改先問過
+ *      同意」的鐵律)。改採使用者選定的方向:偵測到會超出舞台時,把整個 #main-menu
+ *      等比縮小(transform:scale,顯示上還是「塞在」背景舞台範圍內),塞得下時完全
+ *      不縮放、外觀不變(見 fitMainMenu())。
  *   3. 外掛入口按鈕套用原版首頁按鈕的皮(深藍漸層+金邊,抄 css/style.css 的
  *      #main-menu > button),讓外掛鈕與作者的按鈕風格一致。
  *
@@ -293,11 +300,33 @@
     if (stgWrap && stgWrap.previousElementSibling !== afterEl) menu.insertBefore(stgWrap, afterEl.nextSibling);
   }
 
+  // 🩹 2026-07-13 寬螢幕矮視窗防裁切:量測 #main-menu(含外掛/其他功能方格)的「自然高度」
+  //   是否超出 4:3 舞台底部,超出就整組等比縮小(transform:scale)塞回舞台內;塞得下(scale
+  //   會 ≥1)就完全不縮放、不影響任何現有外觀。MIN_SCALE 是下限,避免極端情況縮到無法閱讀
+  //   ——低於下限仍會被舞台 overflow:hidden 裁掉一點,但這種極端窄高比視窗本來就是邊緣情境。
+  var MIN_SCALE = 0.62;
+  function fitMainMenu() {
+    var menu = document.getElementById('main-menu');
+    var stage = document.getElementById('login-art-stage');
+    if (!menu || !stage) return;
+    menu.style.transform = 'none';   // 先歸零才能量到真正的「未縮放」高度,避免拿上一輪縮放後的高度誤算
+    var stageRect = stage.getBoundingClientRect();
+    var menuRect = menu.getBoundingClientRect();
+    var margin = stageRect.height * 0.02;   // 底部留一點呼吸空間,避免貼死邊緣
+    var available = stageRect.bottom - menuRect.top - margin;
+    var needed = menuRect.height;
+    if (available <= 0 || needed <= 0) return;
+    var scale = needed > available ? Math.max(MIN_SCALE, available / needed) : 1;
+    if (scale >= 0.995) { menu.style.transform = ''; menu.style.transformOrigin = ''; }
+    else { menu.style.transformOrigin = 'top center'; menu.style.transform = 'scale(' + scale.toFixed(4) + ')'; }
+  }
+
   function apply() {
     if (_busy) return; _busy = true;
     try {
       injectCss(); ensureBadge(); ensureMarquee();
       ensureFrame();
+      fitMainMenu();
     } catch (e) { /* 視覺外掛,出錯不影響遊戲 */ }
     _busy = false;
   }
@@ -310,6 +339,12 @@
       var obs = new MutationObserver(function () { apply(); });
       obs.observe(menu, { childList: true });
     }
+    // 視窗尺寸變化(含手機轉向)重新量測是否需要縮放;debounce 避免拖曳視窗時狂算
+    var _fitTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(_fitTimer);
+      _fitTimer = setTimeout(fitMainMenu, 120);
+    });
     // 後援:外掛可能延遲 append,前幾秒多試幾次
     var n = 0, iv = setInterval(function () { apply(); if (++n > 20) clearInterval(iv); }, 300);
   }
