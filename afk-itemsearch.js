@@ -171,6 +171,21 @@
     window.renderTabs = wrapped;
   }
 
+  // 2026-07-13:切分頁(switchTab,原作全域函式)只是切 hidden class 顯示/隱藏,不會觸發
+  // renderTabs → 搜尋欄寬度沿用「上次量測」的舊值(可能是分頁還藏著、量到 0 被跳過時的舊寬度),
+  // 使用者反映點進武器/防具/道具分頁時搜尋欄先偏短、約1秒後(下次背包內容變動觸發真正重繪時)
+  // 才跳寬。包一層 switchTab,分頁真的切換顯示後立刻重新量測寬度,不必等內容變動。
+  if (typeof window.switchTab === 'function' && !window.switchTab.__afkISearch) {
+    var _origSwitchTab = window.switchTab;
+    var wrappedSwitchTab = function () {
+      var r = _origSwitchTab.apply(this, arguments);
+      try { ensureTabSearch(); } catch (e) {}
+      return r;
+    };
+    wrappedSwitchTab.__afkISearch = true;
+    window.switchTab = wrappedSwitchTab;
+  }
+
   // ---- 倉庫(背包側/倉庫側共用同一個搜尋框,2026-07-12 使用者要求合併,同時過濾兩側) ----
   var WH_INV_ID = 'wh-inv-list', WH_STORE_ID = 'wh-store-list', WH_SEARCH_ID = 'afk-isearch-wh';
   function ensureWhSearch() {
