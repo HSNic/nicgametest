@@ -1,6 +1,6 @@
 /** 遊戲核心資料庫 */
 // 🏷️ 遊戲版本號（顯示於登入頁面下方·單一真相來源）：更新版本時只改這一行，登入頁面自動同步。
-const GAME_VERSION = 'v3.2.9';
+const GAME_VERSION = 'v3.2.60';
 // ===== 💾 存檔壓縮（LZString compressToUTF16/decompressFromUTF16·MIT, Pieroxy）：localStorage 內部以 UTF-16 壓縮，省 ~89%，繞過 5MB 上限 =====
 //  ⚠️ 只壓 localStorage（存檔位/倉庫/共用桶/_bak）；匯出檔維持明文 JSON（可攜·importSave 用 JSON.parse 驗證）。_lzGet 相容舊明文存檔（無 'LZ1:' 前綴→原樣回傳）。
 var LZString = (function () {
@@ -103,6 +103,46 @@ try { if (_FS && typeof document !== 'undefined' && document.documentElement) do
 function _lsGet(k) { try { return _FS ? _FS.get(k) : localStorage.getItem(k); } catch (e) { return null; } }
 function _lsSet(k, v) { try { if (_FS) return _FS.set(k, v); localStorage.setItem(k, v); return true; } catch (e) { return false; } }
 function _lsRemove(k) { try { if (_FS) { _FS.remove(k); return; } localStorage.removeItem(k); } catch (e) {} }
+
+// Web saves are written immediately, then compressed in a Worker so LZString cannot block
+// rendering or combat. A per-key revision prevents an older Worker result replacing a newer save.
+var _lzWorker = null, _lzWorkerSeq = 0, _lzWorkerRev = Object.create(null);
+// Direct raw replacements (backup restore / migration) must invalidate a queued compression
+// result for the same key, otherwise an older Worker reply can overwrite the restored value.
+function _lzSetStoredRaw(key, value) {
+  if (!_FS) _lzWorkerRev[key] = (_lzWorkerRev[key] || 0) + 1;
+  return _lsSet(key, value);
+}
+function _lzRemoveStored(key) {
+  if (!_FS) _lzWorkerRev[key] = (_lzWorkerRev[key] || 0) + 1;
+  _lsRemove(key);
+}
+function _getLzWorker() {
+  if (_lzWorker || typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') return _lzWorker;
+  try {
+    var source = [
+      'var f=String.fromCharCode,LZString={};',
+      'LZString._compress=' + LZString._compress.toString() + ';',
+      'LZString.compressToUTF16=' + LZString.compressToUTF16.toString() + ';',
+      'self.onmessage=function(e){var d=e.data;try{self.postMessage({id:d.id,key:d.key,rev:d.rev,packed:"LZ1:"+LZString.compressToUTF16(d.value)});}catch(err){self.postMessage({id:d.id,key:d.key,rev:d.rev,error:true});}};'
+    ].join('\n');
+    _lzWorker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })));
+    _lzWorker.onmessage = function(e) {
+      var d = e.data || {};
+      if (d.error || _lzWorkerRev[d.key] !== d.rev) return;
+      // Revision matching is enough: every successful write increments this key before queueing.
+      _lsSet(d.key, d.packed);
+    };
+    _lzWorker.onerror = function() { try { _lzWorker.terminate(); } catch (e) {} _lzWorker = null; };
+  } catch (e) { _lzWorker = null; }
+  return _lzWorker;
+}
+function _queueLzCompression(key, value, rev) {
+  if (_FS) return;
+  var worker = _getLzWorker();
+  if (!worker) return;
+  try { worker.postMessage({ id: ++_lzWorkerSeq, key: key, rev: rev, value: value }); } catch (e) {}
+}
 // 一次性遷移：打包版首次啟用檔案存檔時，把舊版存在 Chromium localStorage(userdata/Local Storage)的所有資料複製進檔案存檔，避免玩家存檔「消失」。
 (function _migrateToFileStore() {
   try {
@@ -115,6 +155,16 @@ function _lsRemove(k) { try { if (_FS) { _FS.remove(k); return; } localStorage.r
 })();
 // 壓縮寫入：把 JSON 字串以 'LZ1:'+UTF16 壓縮存入；壓縮或寫入失敗(多半 localStorage 配額)時退回明文（再不行才警告）
 function _lzSet(key, jsonStr) {
+  // Electron uses real files and is not constrained by localStorage quotas. Writing the
+  // signed JSON directly avoids blocking the game loop while LZString compresses a large save.
+  // _lzGet already accepts both LZ1-compressed and plain values, so old saves remain compatible.
+  if (_FS) return _lsSet(key, jsonStr);
+  // Web: make the save durable first and move compression off the main thread. This keeps both
+  // manual and timed saves responsive. If raw data exceeds the quota, retain the synchronous
+  // compressed fallback below so an already-large save can still be written safely.
+  var rev = (_lzWorkerRev[key] || 0) + 1;
+  _lzWorkerRev[key] = rev; // Invalidate every older result before either write path starts.
+  if (_lsSet(key, jsonStr)) { _queueLzCompression(key, jsonStr, rev); return true; }
   var packed = null;
   try { packed = 'LZ1:' + LZString.compressToUTF16(jsonStr); } catch (e) { packed = null; }
   if (packed != null && _lsSet(key, packed)) return true;
@@ -224,8 +274,8 @@ const DB = {
         "wpn_1": { n: "斧", type: "wpn", dmgS: 3, dmgL: 5, hit: 0, spd: 1, req: "all", safe: 6, p: 28, gachaWeight: 100 },
         "wpn_2hsword": { n: "雙手劍", type: "wpn", w2h: true,dmgS: 14, dmgL: 16, hit: 0, spd: 1, req: "knight", safe: 6, p: 25200, eff: "cleave", gachaWeight: 10 },
         "wpn_official_2h": { n: "武官雙手劍", type: "wpn", w2h: true, dmgS: 19, dmgL: 23, hit: 1, dmgBonus: 2, spd: 1, req: "knight", safe: 6, p: 95940, eff: "cleave", gachaWeight: 10 },   // 🔧 非傳說：權重 10（同武官頭盔/護鎧），避免潘朵拉抽獎誤判為「傳說大獎(權重1)」
-        "wpn_dragonslayer": { n: "屠龍劍", type: "wpn", w2h: true, dmgS: 28, dmgL: 35, hit: 2, dmgBonus: 9, spd: 1, req: "knight", safe: 6, p: 300000, eff: "cleave", dragonStrike: 12, legend: true, gachaWeight: 1, d: "傳說中為屠龍而鍛造的雙手巨劍，劍身中沉眠著龍魂，一旦甦醒便嗜血咆哮。<br>龍的一擊：發動一般攻擊時，固定機率對場上所有敵人造成無視防禦力的無屬性傷害。" },   // 🔧 卡瑞 100% 掉落（🎮 經典模式亦 100%·v2.6.75）；潘朵拉抽不到
-        "wpn_vander_sword": { n: "騎士范德之劍", type: "wpn", w2h: true, dmgS: 22, dmgL: 34, hit: 5, dmgBonus: 6, spd: 1, req: "knight", safe: 6, p: 210000, eff: "cleave", str: 1, vanderStunHit: true, legend: true, gachaWeight: 1, d: "闇黑騎士范德生前佩持的雙手巨劍，劍上仍纏著未散的殺意。<br>施展 衝擊之暈 時，近距離命中 +1。" },
+        "wpn_dragonslayer": { n: "屠龍劍", type: "wpn", w2h: true, dmgS: 28, dmgL: 35, hit: 2, dmgBonus: 9, spd: 1, req: "knight", safe: 6, p: 300000, eff: "cleave", dragonStrike: 12, legend: true, gachaWeight: 1, d: "傳說中為屠龍而鍛造的雙手巨劍，劍身中沉眠著龍魂，一旦甦醒便嗜血咆哮。" },   // 🔧 卡瑞 100% 掉落（🎮 經典模式亦 100%·v2.6.75）；潘朵拉抽不到
+        "wpn_vander_sword": { n: "騎士范德之劍", type: "wpn", w2h: true, dmgS: 22, dmgL: 34, hit: 5, dmgBonus: 6, spd: 1, req: "knight", safe: 6, p: 210000, eff: "cleave", str: 1, vanderStunHit: true, legend: true, gachaWeight: 1, d: "闇黑騎士范德生前佩持的雙手巨劍，劍上仍纏著未散的殺意。" },
         "wpn_2": { n: "釘錘", type: "wpn", dmgS: 6, dmgL: 8, hit: 0, spd: 1.1, req: "all", safe: 6, p: 133, gachaWeight: 100 },
         "wpn_3": { n: "弓", type: "wpn", isBow: true, ranged: true, rapidfire: 20, dmgS: 2, dmgL: 2, hit: 0, spd: 1.0, req: "all", safe: 6, p: 70, gachaWeight: 100 },
         "wpn_4": { n: "矛", type: "wpn", dmgS: 6, dmgL: 8, hit: 0, spd: 1, req: "all", safe: 6, p: 120, gachaWeight: 100 },
@@ -285,8 +335,8 @@ const DB = {
         "wpn_strwand": { n: "力量魔法杖", type: "wpn", dmgS: 9, dmgL: 9, hit: 0, dmgBonus: 3, mdmg: -2, str: 3, spd: 1.0, req: "mage", safe: 6, p: 71500, meleeHitPerEn: 1, eff: "magicstrike", gachaWeight: 10 },
         "wpn_manawand": { n: "瑪那魔杖", type: "wpn", dmgS: 3, dmgL: 3, hit: -1, spd: 1.0, req: "mage", safe: 6, p: 10000, eff: "mp_drain", gachaWeight: 20 },
         // 🔷🔶 鋼鐵瑪那魔杖（象牙塔『神秘的魔法師』客製製作·成品恆 +0）：單手魔杖（名稱含「魔杖」→ 自動歸類魔杖家族＋貫穿）；mpOnHitBase:2 → 命中回 2 MP、+7 起每強化再 +1
-        "wpn_steel_manawand_blue": { n: "藍色鋼鐵瑪那魔杖", type: "wpn", dmgS: 15, dmgL: 15, hit: 6, dmgBonus: 3, str: 3, mdmg: 3, spd: 1.0, req: "mage,illusion", safe: 6, p: 75000, mpOnHit: true, mpOnHitBase: 2, gachaWeight: 10, d: "以鋼鐵重鑄的瑪那魔杖，杖心的魔法寶石映著幽藍冷光。<br>共鳴（一般限定）；力量 +3、魔法傷害 +3；一般攻擊命中恢復 2 MP（突破安定值每 +1 額外恢復 1 MP）；近距離傷害 +3、近距離命中 +6。" },
-        "wpn_steel_manawand_red": { n: "紅色鋼鐵瑪那魔杖", type: "wpn", dmgS: 15, dmgL: 15, hit: 6, dmgBonus: 3, str: 3, mdmg: 3, spd: 1.0, req: "mage,illusion", safe: 6, p: 75000, eff: "magicstrike", mpOnHit: true, mpOnHitBase: 2, gachaWeight: 10, d: "以鋼鐵重鑄的力量魔法杖，杖心的魔法寶石燃著赤紅烈焰。<br>魔擊（一般限定）；力量 +3、魔法傷害 +3；一般攻擊命中恢復 2 MP（突破安定值每 +1 額外恢復 1 MP）；近距離傷害 +3、近距離命中 +6。" },
+        "wpn_steel_manawand_blue": { n: "藍色鋼鐵瑪那魔杖", type: "wpn", dmgS: 15, dmgL: 15, hit: 6, dmgBonus: 3, str: 3, mdmg: 3, spd: 1.0, req: "mage,illusion", safe: 6, p: 75000, mpOnHit: true, mpOnHitBase: 2, gachaWeight: 10, d: "以鋼鐵重鑄的瑪那魔杖，杖心的魔法寶石映著幽藍冷光。" },
+        "wpn_steel_manawand_red": { n: "紅色鋼鐵瑪那魔杖", type: "wpn", dmgS: 15, dmgL: 15, hit: 6, dmgBonus: 3, str: 3, mdmg: 3, spd: 1.0, req: "mage,illusion", safe: 6, p: 75000, eff: "magicstrike", mpOnHit: true, mpOnHitBase: 2, gachaWeight: 10, d: "以鋼鐵重鑄的力量魔法杖，杖心的魔法寶石燃著赤紅烈焰。" },
         "wpn_crystalwand": { n: "水晶魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, spd: 1.0, req: "mage", safe: 6, p: 10000, mpR: 10, mpROverSafe: 2, gachaWeight: 20 },
         "wpn_powerless_baless": { n: "失去魔力的巴列斯魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, dmgBonus: 0, spd: 1.0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "魔力早已枯竭的古老魔杖，杖芯卻仍隱隱悸動。攜帶它並使用『靈魂之球』，或許能喚回沉睡的力量……（封印狀態無法強化；傳統模式下解封印才附加隨機強化值。可販售，售價 0）" },   // 🔧 巴列斯任務武器；🏛️ noEnhance＝封印恆 +0（傳統模式自帶強化值延後到靈魂之球解封印時附加）
         "wpn_baless": { n: "巴列斯魔杖", type: "wpn", dmgS: 2, dmgL: 3, hit: 0, dmgBonus: 0, mdmg: 2, spd: 1.0, req: "mage", safe: 0, p: 250000, mpR: 10, mpROverSafe: 2, legend: true, gachaWeight: 1, d: "重獲魔力的傳說魔杖，杖身蘊含撼動萬物的共鳴之力。" },   // 🏅 傳說武器（共鳴：見 WAND_LIGHTARROW_IDS）；🔧 安定值0：+0 為 MP自然恢復10，每強化+1再+2（10/12/14…）
@@ -309,18 +359,18 @@ const DB = {
         "wpn_baranka_claw":      { n: "魔獸軍王之爪", type: "wpn", w2h: true, dmgS: 12, dmgL: 12, hit: 0, dmgBonus: 2, spd: 0.8, req: "dark", safe: 6, p: 25000,  eff: "combo", gachaWeight: 10 },
         "wpn_baranka_steelclaw": { n: "巴蘭卡鋼爪",   type: "wpn", w2h: true, dmgS: 18, dmgL: 18, hit: 0, dmgBonus: 8, spd: 0.7, req: "dark", safe: 6, p: 125000, eff: "combo", legend: true, gachaWeight: 1 },
         // ===== 傳說單手劍：附帶魔法施放特效（spellProc，不需學會技能、必中、受魔法傷害影響） =====
-        "wpn_dk_flameblade": { n: "死亡騎士的烈炎之劍", type: "wpn", dmgS: 16, dmgL: 10, hit: 5, dmgBonus: 2, spd: 0.8, req: "knight", safe: 6, p: 152000, legend: true, gachaWeight: 1, spellProc: { skn: "地獄火", dice: [1, 60], ele: "fire", aoe: true }, procRateBase: 3, procRatePerEn: 1, d: "死亡騎士緊握至死的劍，劍刃終年燃著不滅的地獄業火。<br>3%機率額外施放地獄火，每+1發動機率增加1%。地獄火：對敵方全體造成相當於裂炎術的火屬性魔法傷害。" },
-        "wpn_kurt_sword":    { n: "克特之劍", type: "wpn", dmgS: 15, dmgL: 11, hit: 9, dmgBonus: 5, spd: 0.8, req: "knight,elf", safe: 6, p: 152000, legend: true, gachaWeight: 1, spellProc: { skn: "極道落雷", dice: [6, 8], ele: "wind" }, procRateBase: 15, procRatePerEn: 1, d: "克特之劍，劍鋒間遊走著被馴服的雷霆。<br>15%機率額外施放極道落雷，每+1發動機率增加1%。" },
+        "wpn_dk_flameblade": { n: "死亡騎士的烈炎之劍", type: "wpn", dmgS: 16, dmgL: 10, hit: 5, dmgBonus: 2, spd: 0.8, req: "knight", safe: 6, p: 152000, legend: true, gachaWeight: 1, spellProc: { skn: "地獄火", dice: [1, 60], ele: "fire", aoe: true }, procRateBase: 3, procRatePerEn: 1, d: "死亡騎士緊握至死的劍，劍刃終年燃著不滅的地獄業火。" },
+        "wpn_kurt_sword":    { n: "克特之劍", type: "wpn", dmgS: 15, dmgL: 11, hit: 9, dmgBonus: 5, spd: 0.8, req: "knight,elf", safe: 6, p: 152000, legend: true, gachaWeight: 1, spellProc: { skn: "極道落雷", dice: [6, 8], ele: "wind" }, procRateBase: 15, procRatePerEn: 1, d: "克特之劍，劍鋒間遊走著被馴服的雷霆。" },
         // ===== ⚡ 元素施放傳說武器（spellProc·攻擊1%+每強化1%觸發·必中·受魔法傷害影響·不吃法師階級加成） =====
-        "wpn_thor_hammer":   { n: "雷神之鎚", type: "wpn", dmgS: 7, dmgL: 12, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,elf,mage,warrior", safe: 6, p: 46000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "電光衝擊", dice: [5, 5], flat: 5, ele: "wind", status: { kind: "stun", pct: 5, dur: 3 } }, procRateBase: 1, procRatePerEn: 1, d: "雷神遺落的戰鎚，鎚頭間纏繞著未平息的雷霆。<br>鈍擊；貫穿（無視硬皮額外減傷）；近距離命中+3。<br>攻擊時 1%（每強化 +1%）機率發動電光衝擊：造成基礎 5D5+5 的風屬性單體魔法傷害，並有 5% 固定機率使目標暈眩。" },
-        "wpn_pagrio_wrath":  { n: "帕格里奧之怒", type: "wpn", dmgS: 13, dmgL: 9, hit: 2, dmgBonus: 2, spd: 0.8, req: "royal,knight,elf", safe: 6, p: 56000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "火焰之陣", dice: [6, 6], flat: 6, ele: "fire", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "帕格里奧之怒，劍身灼燒著永不熄滅的怒火。<br>反擊；貫穿（無視硬皮額外減傷）；近距離傷害+2、近距離命中+2。<br>攻擊時 1%（每強化 +1%）機率發動火焰之陣：對敵方全體造成基礎 6D6+6 的火屬性魔法傷害。" },
-        "wpn_mapler_punish": { n: "馬普勒的懲罰", type: "wpn", w2h: true, dmgS: 14, dmgL: 15, hit: 0, dmgBonus: 11, spd: 1, req: "royal,knight,elf,warrior", safe: 6, p: 46000, legend: true, gachaWeight: 1, eff: "crush", ignHardSkin: true, spellProc: { skn: "震裂術", dice: [4, 11], ele: "earth", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "馬普勒降下的懲戒之鎚，每一擊都撼動大地。<br>重擊；貫穿（無視硬皮額外減傷）；近距離傷害+11。<br>攻擊時 1%（每強化 +1%）機率發動震裂術：對敵方全體造成等同法師震裂術的土屬性魔法傷害。" },
-        "wpn_osis_hammer":   { n: "歐西斯衝撞錘", type: "wpn", dmgS: 8, dmgL: 9, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,warrior", safe: 6, p: 66000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "流星雨", dice: [6, 10], ele: "fire", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "歐西斯鍛造的衝撞之錘，揮動之間天降流火。<br>鈍擊；貫穿（無視硬皮額外減傷）；近距離命中+3。<br>攻擊時 1%（每強化 +1%）機率發動流星雨：對敵方全體造成等同法師流星雨的火屬性魔法傷害。" },
-        "wpn_eva_scold":     { n: "伊娃的責罵", type: "wpn", dmgS: 9, dmgL: 9, hit: 1, dmgBonus: 1, spd: 0.8, req: "royal,knight,elf,mage,dark,dragon,illusion", safe: 6, p: 56400, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "水之矛", dice: [5, 5], flat: 5, ele: "water", status: { kind: "freeze", pct: 5, dur: 4 } }, procRateBase: 1, procRatePerEn: 1, d: "伊娃的責罵，劍鋒凝著沁骨的寒泉。<br>反擊；貫穿（無視硬皮額外減傷）；近距離傷害+1、近距離命中+1。<br>攻擊時 1%（每強化 +1%）機率發動水之矛：造成基礎 5D5+5 的水屬性單體魔法傷害，並有 5% 固定機率使目標冰凍。" },
+        "wpn_thor_hammer":   { n: "雷神之鎚", type: "wpn", dmgS: 7, dmgL: 12, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,elf,mage,warrior", safe: 6, p: 46000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "電光衝擊", dice: [5, 5], flat: 5, ele: "wind", status: { kind: "stun", pct: 5, dur: 3 } }, procRateBase: 1, procRatePerEn: 1, d: "雷神遺落的戰鎚，鎚頭間纏繞著未平息的雷霆。" },
+        "wpn_pagrio_wrath":  { n: "帕格里奧之怒", type: "wpn", dmgS: 13, dmgL: 9, hit: 2, dmgBonus: 2, spd: 0.8, req: "royal,knight,elf", safe: 6, p: 56000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "火焰之陣", dice: [6, 6], flat: 6, ele: "fire", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "帕格里奧之怒，劍身灼燒著永不熄滅的怒火。" },
+        "wpn_mapler_punish": { n: "馬普勒的懲罰", type: "wpn", w2h: true, dmgS: 14, dmgL: 15, hit: 0, dmgBonus: 11, spd: 1, req: "royal,knight,elf,warrior", safe: 6, p: 46000, legend: true, gachaWeight: 1, eff: "crush", ignHardSkin: true, spellProc: { skn: "震裂術", dice: [4, 11], ele: "earth", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "馬普勒降下的懲戒之鎚，每一擊都撼動大地。" },
+        "wpn_osis_hammer":   { n: "歐西斯衝撞錘", type: "wpn", dmgS: 8, dmgL: 9, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,warrior", safe: 6, p: 66000, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "流星雨", dice: [6, 10], ele: "fire", aoe: true }, procRateBase: 1, procRatePerEn: 1, d: "歐西斯鍛造的衝撞之錘，揮動之間天降流火。" },
+        "wpn_eva_scold":     { n: "伊娃的責罵", type: "wpn", dmgS: 9, dmgL: 9, hit: 1, dmgBonus: 1, spd: 0.8, req: "royal,knight,elf,mage,dark,dragon,illusion", safe: 6, p: 56400, legend: true, gachaWeight: 1, ignHardSkin: true, spellProc: { skn: "水之矛", dice: [5, 5], flat: 5, ele: "water", status: { kind: "freeze", pct: 5, dur: 4 } }, procRateBase: 1, procRatePerEn: 1, d: "伊娃的責罵，劍鋒凝著沁骨的寒泉。" },
         // ===== 軍王之室：掉落裝備 =====
         "wpn_assassin_mark": { n: "暗殺軍王之痕", type: "wpn", w2h: true, dmgS: 13, dmgL: 13, hit: 0, dmgBonus: 2, spd: 0.7, req: "dark", safe: 6, p: 25000, eff: "combo", gachaWeight: 10 },   // 雙刀・連擊
-        "wpn_priest_wand":   { n: "神官魔杖", type: "wpn", w2h: true, dmgS: 9, dmgL: 9, hit: 0, spd: 1.0, req: "mage", safe: 6, p: 13340, unBonus: true, eff: "magicburst", gachaWeight: 10, d: "神官祈禱經年的法杖，能將信仰化為爆裂的魔力。<br>魔爆：施放單體傷害魔法時 智力/100、全體傷害魔法時 智力/60 機率引發魔法能力爆炸，將該次魔法傷害 30% 的無屬性傷害均分給場上所有敵人。" },
-        "wpn_laia_wand":     { n: "蕾雅魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: -3, dmgBonus: 0, mdmg: -2, spd: 1.0, req: "mage", safe: 6, p: 23340, legend: true, gachaWeight: 10, meleeHitSpell: { skn: "冰裂術", dice: [6, 10], ele: "water", freezePbase: 200, shatter: 100 }, d: "冰之女王蕾雅愛用的魔杖，杖尖凝結著永不消融的寒霜。<br>一般攻擊命中時觸發冰裂術：造成 6D10 水屬性魔法傷害（受魔法傷害影響·吃武器強化最終傷害倍率），有機率冰凍目標；對冰凍目標額外造成 100 水屬性傷害並解除其冰凍。" },
+        "wpn_priest_wand":   { n: "神官魔杖", type: "wpn", w2h: true, dmgS: 9, dmgL: 9, hit: 0, spd: 1.0, req: "mage", safe: 6, p: 13340, unBonus: true, eff: "magicburst", gachaWeight: 10, d: "神官祈禱經年的法杖，能將信仰化為爆裂的魔力。" },
+        "wpn_laia_wand":     { n: "蕾雅魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: -3, dmgBonus: 0, mdmg: -2, spd: 1.0, req: "mage", safe: 6, p: 23340, legend: true, gachaWeight: 10, meleeHitSpell: { skn: "冰裂術", dice: [6, 10], ele: "water", freezePbase: 200, shatter: 100 }, d: "冰之女王蕾雅愛用的魔杖，杖尖凝結著永不消融的寒霜。" },
         "shd_priest_book":   { n: "神官魔法書", type: "arm", slot: "shield", ac: 3, mmp: 50, mpR: 3, req: "mage", safe: 6, p: 93000, gachaWeight: 5 },
         "amr_laia_robe":     { n: "蕾雅長袍", type: "arm", slot: "armor", ac: 2, mmp: 100, req: "mage", safe: 4, p: 58000, gachaWeight: 1 },
         "acc_necro_king_ring": { n: "冥法軍王之戒", legend: true, type: "acc", slot: "amulet", ac: 0, cha: 3, req: "mage,elf", safe: 0, p: 193000, gachaWeight: 1 },
@@ -328,16 +378,16 @@ const DB = {
         "acc_darkmage_amulet": { n: "黑法師項鍊", type: "acc", slot: "amulet", ac: 0, con: -1, int: 2, req: "mage", safe: 0, p: 100000, gachaWeight: 1 },
         "acc_summoner_amulet": { n: "喚獸師項鍊", type: "acc", slot: "amulet", ac: 0, wis: -1, cha: 2, req: "mage", safe: 0, p: 100000, gachaWeight: 1 },
         "acc_law_king_chain": { n: "法令軍王之鍊", legend: true, type: "acc", slot: "amulet", ac: 0, mmp: 15, mpR: 5, req: "mage,elf", safe: 0, p: 100000, gachaWeight: 1 },
-        "acc_laia_ring":     { n: "蕾雅戒指", legend: true, type: "acc", slot: "ring", ac: 5, req: "all", safe: 0, p: 250000, gachaWeight: 1, stunResist: 5, d: "冰之女王蕾雅指間的戒指，冷冽之氣令神智不致動搖。<br>5%機率抵抗暈眩。" },
-        "acc_orin_amulet": { n: "歐林的項鍊", legend: true, type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 1, set: "orin", d: "歐林珍藏的項鍊，與西瑪戒指本是一對，分離已久。<br><span class='text-amber-300'>【歐林西瑪套裝】歐林的項鍊＋西瑪戒指 同時裝備：AC-5、HP+50、力量／敏捷／體質／智力／精神／魅力 各+1。</span>" },
-        "acc_sima_ring":   { n: "西瑪戒指", legend: true, type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 1, set: "orin", d: "刻著西瑪之名的古老戒指，與歐林的項鍊遙相呼應。<br><span class='text-amber-300'>【歐林西瑪套裝】歐林的項鍊＋西瑪戒指 同時裝備：AC-5、HP+50、力量／敏捷／體質／智力／精神／魅力 各+1。</span>" },
-        "hlm_icequeen_charm": { n: "冰之女王魅力頭飾", legend: true, type: "arm", slot: "helm",  ac: 3, req: "royal", reqAvatar: "公主", safe: 4, p: 126000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），頭飾上的冰晶折射出懾人的高貴。<br><span class='text-amber-300'>【冰之女王魅力套裝】頭飾＋禮服＋涼鞋 同時裝備：AC-5、力量+2、魅力+2、HP+100、MP自然恢復+4、水屬性抗性+20。</span>" },
-        "amr_icequeen_charm": { n: "冰之女王魅力禮服", legend: true, type: "arm", slot: "armor", ac: 7, req: "royal", reqAvatar: "公主", safe: 4, p: 186000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），禮服如初雪般華美而凜然。<br><span class='text-amber-300'>【冰之女王魅力套裝】頭飾＋禮服＋涼鞋 同時裝備：AC-5、力量+2、魅力+2、HP+100、MP自然恢復+4、水屬性抗性+20。</span>" },
-        "bot_icequeen_charm": { n: "冰之女王魅力涼鞋", legend: true, type: "arm", slot: "boots", ac: 3, req: "royal", reqAvatar: "公主", safe: 4, p: 115000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），踏之如行於薄冰，步步生寒。<br><span class='text-amber-300'>【冰之女王魅力套裝】頭飾＋禮服＋涼鞋 同時裝備：AC-5、力量+2、魅力+2、HP+100、MP自然恢復+4、水屬性抗性+20。</span>" },
-        "hlm_frost": { n: "寒冰頭盔", legend: true, type: "arm", slot: "helm",  ac: 4, req: "royal,dragon", safe: 4, p: 136000, gachaWeight: 0, set: "frost", d: "寒冰套裝之一，頭盔覆著萬年不化的堅冰。<br><span class='text-amber-300'>【寒冰套裝】頭盔＋盔甲＋長靴 同時裝備：AC-5、體質+3、HP+100、HP自然恢復+8、MP自然恢復+4、MR+15、水屬性抗性+20。</span>" },
-        "amr_frost": { n: "寒冰盔甲", legend: true, type: "arm", slot: "armor", ac: 5, req: "royal,dragon", safe: 4, p: 196000, gachaWeight: 0, set: "frost", d: "寒冰套裝之一，盔甲沁出徹骨寒氣，護身如冰封壁壘。<br><span class='text-amber-300'>【寒冰套裝】頭盔＋盔甲＋長靴 同時裝備：AC-5、體質+3、HP+100、HP自然恢復+8、MP自然恢復+4、MR+15、水屬性抗性+20。</span>" },
-        "bot_frost": { n: "寒冰長靴", legend: true, type: "arm", slot: "boots", ac: 4, req: "royal,dragon", safe: 4, p: 125000, gachaWeight: 0, set: "frost", d: "千年寒霜凝鑄的長靴，踏處留下不化的冰痕。寒冰套裝之一。<br><span class='text-amber-300'>【寒冰套裝】頭盔＋盔甲＋長靴 同時裝備：AC-5、體質+3、HP+100、HP自然恢復+8、MP自然恢復+4、MR+15、水屬性抗性+20。</span>" },
-        "wpn_icequeen_wand": { n: "冰之女王魔杖", type: "wpn", dmgS: 3, dmgL: 4, hit: 5, dmgBonus: 1, spd: 1.0, req: "mage", safe: 6, p: 143340, legend: true, gachaWeight: 1, procSkill: "sk_ice_spike", procRateBase: 8, procRatePerEn: 2, d: "冰之女王御用的魔杖，杖尖凝著永不消融的霜華。攻擊時 8% 機率額外施放冰錐（每強化 +1 機率 +2%，不需學習、不耗MP，效果同法師冰錐）。" },
+        "acc_laia_ring":     { n: "蕾雅戒指", legend: true, type: "acc", slot: "ring", ac: 5, req: "all", safe: 0, p: 250000, gachaWeight: 1, stunResist: 5, d: "冰之女王蕾雅指間的戒指，冷冽之氣令神智不致動搖。" },
+        "acc_orin_amulet": { n: "歐林的項鍊", legend: true, type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 1, set: "orin", d: "歐林珍藏的項鍊，與西瑪戒指本是一對，分離已久。" },
+        "acc_sima_ring":   { n: "西瑪戒指", legend: true, type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 1, set: "orin", d: "刻著西瑪之名的古老戒指，與歐林的項鍊遙相呼應。" },
+        "hlm_icequeen_charm": { n: "冰之女王魅力頭飾", legend: true, type: "arm", slot: "helm",  ac: 3, req: "royal", reqAvatar: "公主", safe: 4, p: 126000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），頭飾上的冰晶折射出懾人的高貴。" },
+        "amr_icequeen_charm": { n: "冰之女王魅力禮服", legend: true, type: "arm", slot: "armor", ac: 7, req: "royal", reqAvatar: "公主", safe: 4, p: 186000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），禮服如初雪般華美而凜然。" },
+        "bot_icequeen_charm": { n: "冰之女王魅力涼鞋", legend: true, type: "arm", slot: "boots", ac: 3, req: "royal", reqAvatar: "公主", safe: 4, p: 115000, gachaWeight: 1, set: "icequeen_charm", d: "冰之女王魅力套裝之一（公主限定），踏之如行於薄冰，步步生寒。" },
+        "hlm_frost": { n: "寒冰頭盔", legend: true, type: "arm", slot: "helm",  ac: 4, req: "royal,dragon", safe: 4, p: 136000, gachaWeight: 0, set: "frost", d: "寒冰套裝之一，頭盔覆著萬年不化的堅冰。" },
+        "amr_frost": { n: "寒冰盔甲", legend: true, type: "arm", slot: "armor", ac: 5, req: "royal,dragon", safe: 4, p: 196000, gachaWeight: 0, set: "frost", d: "寒冰套裝之一，盔甲沁出徹骨寒氣，護身如冰封壁壘。" },
+        "bot_frost": { n: "寒冰長靴", legend: true, type: "arm", slot: "boots", ac: 4, req: "royal,dragon", safe: 4, p: 125000, gachaWeight: 0, set: "frost", d: "千年寒霜凝鑄的長靴，踏處留下不化的冰痕。寒冰套裝之一。" },
+        "wpn_icequeen_wand": { n: "冰之女王魔杖", type: "wpn", dmgS: 3, dmgL: 4, hit: 5, dmgBonus: 1, spd: 1.0, req: "mage", safe: 6, p: 143340, legend: true, gachaWeight: 1, procSkill: "sk_ice_spike", procRateBase: 8, procRatePerEn: 2, d: "冰之女王御用的魔杖，杖尖凝著永不消融的霜華。" },
         "wpn_demon_scythe":  { n: "惡魔鐮刀", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, dmgBonus: 0, mdmg: 5, spd: 1.0, req: "mage", safe: 6, p: 173340, legend: true, gachaWeight: 1, isWand: true },   // 🔮 單手魔杖（共鳴·見 WAND_LIGHTARROW_IDS）；isWand→魔劍精通排除、不轉奇古獸
         // ===== 冥法軍訓練場：掉落武器 =====
         "wpn_blood_2hsword":   { n: "血色巨劍", type: "wpn", w2h: true, dmgS: 13, dmgL: 15, hit: 0, dmgBonus: 0, spd: 1, req: "knight",      safe: 6, p: 11140, eff: "cleave", gachaWeight: 30 },   // 切割（雙手劍）
@@ -353,19 +403,19 @@ const DB = {
         "wpn_dual_damascus": { n: "大馬士革雙刀", type: "wpn", w2h: true, dmgS: 15, dmgL: 9, hit: 1, spd: 0.8, req: "dark", safe: 6, p: 39600, eff: "combo", hardWear: 1, gachaWeight: 50 },
         "wpn_dual_abyss":    { n: "暗黑雙刀", type: "wpn", w2h: true, dmgS: 18, dmgL: 14, hit: 4, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 80000, eff: "combo", gachaWeight: 5 },
         // ===== 🏛️ 底比斯·歐西里斯武器（攻擊時 4% 發動「惡魔之吻」：3D20 地屬性魔法傷害，受魔法傷害公式影響；玩家＋傭兵皆觸發） =====
-        "wpn_thebes_bow":     { n: "底比斯歐西里斯弓", legend: true, type: "wpn", isBow: true, ranged: true, rapidfire: 80, dmgS: 3, dmgL: 3, hit: 0, dmgBonus: 1, int: 2, wis: 1, spd: 0.9, req: "elf,illusion", safe: 6, p: 235000, gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "底比斯亡靈守護者持用的長弓，弓弦低語著歐西里斯的審判。連射 80%。智力+2、精神+1。攻擊時 4% 機率發動惡魔之吻（3D20 地屬性魔法傷害，受魔法傷害公式影響）。" },
-        "wpn_thebes_dual":    { n: "底比斯歐西里斯雙刀", legend: true, type: "wpn", w2h: true, dmgS: 16, dmgL: 11, hit: 0, dmgBonus: 1, dex: 2, wis: 1, spd: 0.7, req: "dark", safe: 6, p: 215000, eff: "combo", comboRate: 30, gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "自底比斯神殿出土的雙刃，刀身刻滿守墓的咒文。雙擊。敏捷+2、精神+1。攻擊時 4% 機率發動惡魔之吻（3D20 地屬性魔法傷害，受魔法傷害公式影響）。" },
-        "wpn_thebes_2hsword": { n: "底比斯歐西里斯雙手劍", legend: true, type: "wpn", w2h: true, dmgS: 21, dmgL: 26, hit: 5, dmgBonus: 0, str: 1, con: 2, spd: 0.9, req: "knight,dragon", safe: 6, p: 255000, eff: "cleave", gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "沉睡於歐西里斯祭壇的巨劍，承載著冥府之主的威壓。切割。力量+1、體質+2。攻擊時 4% 機率發動惡魔之吻（3D20 地屬性魔法傷害，受魔法傷害公式影響）。" },
-        "wpn_thebes_wand":    { n: "底比斯歐西里斯魔杖", legend: true, type: "wpn", w2h: true, dmgS: 20, dmgL: 18, hit: 2, dmgBonus: 3, str: 2, mdmg: 2, mpR: 7, spd: 0.9, req: "mage,illusion", safe: 6, p: 185000, eff: "magicstrike", gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "底比斯祭司執掌的魔杖，引動黃沙與亡魂之力。魔擊。力量+2、魔攻+2、MP自然恢復+7。攻擊時 4% 機率發動惡魔之吻（3D20 地屬性魔法傷害，受魔法傷害公式影響）。" },
-        "blt_thebes_osiris":  { n: "底比斯歐西里斯腰帶", type: "acc", slot: "belt", ac: 0, mmp: 10, mpR: 2, weightCap: 250, req: "all", safe: 0, p: 326000, gachaWeight: 1, d: "以歐西里斯之名祝聖的腰帶，繫上者得享冥界的豐沃。MP+10、MP自然恢復+2、負重上限+250。" },
-        "acc_thebes_horus":   { n: "底比斯賀洛斯戒指", legend: true, type: "acc", slot: "ring", ac: 0, int: 1, mpR: 1, mdmg: 2, req: "all", safe: 0, p: 600000, gachaWeight: 1, d: "鑲著鷹神賀洛斯之眼的戒指，洞悉魔力的流轉。智力+1、MP自然恢復+1、魔法傷害+2。" },
-        "acc_thebes_anubis":  { n: "底比斯阿努比斯戒指", legend: true, type: "acc", slot: "ring", ac: 0, str: 1, mhp: 15, stunResist: 25, req: "all", safe: 0, p: 600000, gachaWeight: 1, d: "鐫刻胡狼神阿努比斯印記的戒指，守護佩戴者免於昏厥。力量+1、HP+15、25%機率抵抗暈眩。" },
+        "wpn_thebes_bow":     { n: "底比斯歐西里斯弓", legend: true, type: "wpn", isBow: true, ranged: true, rapidfire: 80, dmgS: 3, dmgL: 3, hit: 0, dmgBonus: 1, int: 2, wis: 1, spd: 0.9, req: "elf,illusion", safe: 6, p: 235000, gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "底比斯亡靈守護者持用的長弓，弓弦低語著歐西里斯的審判。" },
+        "wpn_thebes_dual":    { n: "底比斯歐西里斯雙刀", legend: true, type: "wpn", w2h: true, dmgS: 16, dmgL: 11, hit: 0, dmgBonus: 1, dex: 2, wis: 1, spd: 0.7, req: "dark", safe: 6, p: 215000, eff: "combo", comboRate: 30, gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "自底比斯神殿出土的雙刃，刀身刻滿守墓的咒文。雙擊。" },
+        "wpn_thebes_2hsword": { n: "底比斯歐西里斯雙手劍", legend: true, type: "wpn", w2h: true, dmgS: 21, dmgL: 26, hit: 5, dmgBonus: 0, str: 1, con: 2, spd: 0.9, req: "knight,dragon", safe: 6, p: 255000, eff: "cleave", gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "沉睡於歐西里斯祭壇的巨劍，承載著冥府之主的威壓。切割。" },
+        "wpn_thebes_wand":    { n: "底比斯歐西里斯魔杖", legend: true, type: "wpn", w2h: true, dmgS: 20, dmgL: 18, hit: 2, dmgBonus: 3, str: 2, mdmg: 2, mpR: 7, spd: 0.9, req: "mage,illusion", safe: 6, p: 185000, eff: "magicstrike", gachaWeight: 1, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, d: "底比斯祭司執掌的魔杖，引動黃沙與亡魂之力。魔擊。" },
+        "blt_thebes_osiris":  { n: "底比斯歐西里斯腰帶", type: "acc", slot: "belt", ac: 0, mmp: 10, mpR: 2, weightCap: 250, req: "all", safe: 0, p: 326000, gachaWeight: 1, d: "以歐西里斯之名祝聖的腰帶，繫上者得享冥界的豐沃。" },
+        "acc_thebes_horus":   { n: "底比斯賀洛斯戒指", legend: true, type: "acc", slot: "ring", ac: 0, int: 1, mpR: 1, mdmg: 2, req: "all", safe: 0, p: 600000, gachaWeight: 1, d: "鑲著鷹神賀洛斯之眼的戒指，洞悉魔力的流轉。" },
+        "acc_thebes_anubis":  { n: "底比斯阿努比斯戒指", legend: true, type: "acc", slot: "ring", ac: 0, str: 1, mhp: 15, stunResist: 25, req: "all", safe: 0, p: 600000, gachaWeight: 1, d: "鐫刻胡狼神阿努比斯印記的戒指，守護佩戴者免於昏厥。" },
         // ===== 黑暗妖精武器：十字弓（雙手，遠程，連射） =====
         "wpn_xbow_dark":  { n: "黑暗十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 35, w2h: true, dmgS: 2, dmgL: 2, hit: 4, dmgBonus: 0, spd: 1.0, req: "elf,dark", safe: 6, p: 17300, gachaWeight: 70 },
         "wpn_xbow_gloom": { n: "幽暗十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 70, w2h: true, dmgS: 3, dmgL: 2, hit: 5, dmgBonus: 2, spd: 1.0, req: "elf,dark", safe: 6, p: 33300, gachaWeight: 50 },
-        "wpn_xbow_abyss": { n: "暗黑十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 70, w2h: true, dmgS: 5, dmgL: 5, hit: 4, dmgBonus: 6, spd: 1.0, req: "elf,dark", safe: 6, p: 180000, gachaWeight: 1, ignHardSkin: true, d: "以深淵暗黑之力凝成的十字弓，箭矢能穿透一切血肉與甲冑。連射 70%；貫穿——攻擊（含連射）無視目標硬皮的額外物理減傷。" },
+        "wpn_xbow_abyss": { n: "暗黑十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 70, w2h: true, dmgS: 5, dmgL: 5, hit: 4, dmgBonus: 6, spd: 1.0, req: "elf,dark", safe: 6, p: 180000, gachaWeight: 1, ignHardSkin: true, d: "以深淵暗黑之力凝成的十字弓，箭矢能穿透一切血肉與甲冑。" },
         // ===== 魔力短劍（匕首，全職業） =====
-        "wpn_manadagger": { n: "魔力短劍", type: "wpn", dmgS: 6, dmgL: 4, hit: 0, dmgBonus: 1, spd: 0.6, req: "all", safe: 6, p: 191000, eff: "mp_drain", unBonus: true, str: 1, mpR: 1, legend: true, gachaWeight: 1, d: "刃中封藏著流動魔力的短劍，飲血之餘亦能回吐法力。一般攻擊命中恢復 MP，並帶出血。" },   // 🔧 傳說武器：琥珀金名稱＋專屬藍色圖示光芒
+        "wpn_manadagger": { n: "魔力短劍", type: "wpn", dmgS: 6, dmgL: 4, hit: 0, dmgBonus: 1, spd: 0.6, req: "all", safe: 6, p: 191000, eff: "mp_drain", unBonus: true, str: 1, mpR: 1, legend: true, gachaWeight: 1, d: "刃中封藏著流動魔力的短劍，飲血之餘亦能回吐法力。" },   // 🔧 傳說武器：琥珀金名稱＋專屬藍色圖示光芒
         // ===== 拉斯塔巴德地下洞穴：掉落武器 =====
         "wpn_xbow_rasta":   { n: "拉斯塔巴德十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 45, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 2, spd: 0.9, req: "elf,dark", safe: 6, p: 2300, gachaWeight: 80 },
         "wpn_bow_rasta":    { n: "拉斯塔巴德弓", type: "wpn", isBow: true, ranged: true, rapidfire: 55, w2h: true, dmgS: 2, dmgL: 2, hit: 2, dmgBonus: 2, spd: 0.9, req: "knight,elf", safe: 6, p: 1800, gachaWeight: 80 },
@@ -378,10 +428,10 @@ const DB = {
         "wpn_xbow_heavy_rasta": { n: "拉斯塔巴德重十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 45, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 3, spd: 0.9, req: "elf", safe: 6, p: 5300, gachaWeight: 80 },
         "wpn_spear_rasta":  { n: "拉斯塔巴德矛", type: "wpn", dmgS: 8, dmgL: 8, hit: 0, spd: 0.9, req: "knight,elf", safe: 6, p: 1800, gachaWeight: 100 },
         // ===== 🏛️ 格蘭肯神殿．長老之室 新物品（掉落用武器/防具/特殊道具/製作材料；5 把傳說製作武器另於製作階段新增） =====
-        "wpn_dual_spike":     { n: "尖刺雙刀", type: "wpn", w2h: true, dmgS: 8, dmgL: 8, hit: 0, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 2000, gachaWeight: 100, eff: "combo", comboRate: 25, ignHardSkin: true, d: "佈滿尖刺的雙刀，連環撕咬穿透敵人的防護。<br>雙擊 25%；貫穿（無視硬皮額外減傷）。" },
-        "wpn_official_blade": { n: "武官之刃", type: "wpn", dmgS: 13, dmgL: 10, hit: 1, dmgBonus: 2, spd: 0.9, req: "knight,elf,royal,dragon", safe: 6, p: 58000, gachaWeight: 10, d: "拉斯塔巴德武官佩帶的單手劍，以靜制動、伺機反擊。<br>反擊（單手劍）。" },
-        "arm_official_cloak": { n: "武官斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 20, hpR: 3, req: "knight,dark,royal,dragon", safe: 4, p: 13000, gachaWeight: 20, d: "拉斯塔巴德武官的斗篷，內襯堅韌、護住要害。<br>HP+20、HP自然恢復+3。" },
-        "glv_dark": { n: "黑暗手套", type: "arm", slot: "gloves", ac: 1, rangedHit: 2, req: "dark", safe: 4, p: 4000, gachaWeight: 90, d: "黑暗妖精的手套，握持間更顯穩準。<br>遠距離命中+2。" },
+        "wpn_dual_spike":     { n: "尖刺雙刀", type: "wpn", w2h: true, dmgS: 8, dmgL: 8, hit: 0, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 2000, gachaWeight: 100, eff: "combo", comboRate: 25, ignHardSkin: true, d: "佈滿尖刺的雙刀，連環撕咬穿透敵人的防護。" },
+        "wpn_official_blade": { n: "武官之刃", type: "wpn", dmgS: 13, dmgL: 10, hit: 1, dmgBonus: 2, spd: 0.9, req: "knight,elf,royal,dragon", safe: 6, p: 58000, gachaWeight: 10, d: "拉斯塔巴德武官佩帶的單手劍，以靜制動、伺機反擊。" },
+        "arm_official_cloak": { n: "武官斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 20, hpR: 3, req: "knight,dark,royal,dragon", safe: 4, p: 13000, gachaWeight: 20, d: "拉斯塔巴德武官的斗篷，內襯堅韌、護住要害。" },
+        "glv_dark": { n: "黑暗手套", type: "arm", slot: "gloves", ac: 1, rangedHit: 2, req: "dark", safe: 4, p: 4000, gachaWeight: 90, d: "黑暗妖精的手套，握持間更顯穩準。" },
         "item_dk_insignia":   { n: "死亡騎士之印記", type: "etc", p: 50000, maxHold: 1, noUse: true, gachaWeight: 0, c: "text-red-400", d: "死亡騎士的印記（唯一）。持有時於拉斯塔巴德區域擊敗怪物，有機率獲得聖地遺物。可賣出。" },
         "mat_holy_relic":     { n: "聖地遺物", type: "etc", p: 100, noUse: true, gachaWeight: 0, c: "text-yellow-200", d: "格蘭肯神殿的聖地遺物。製作材料。" },
         "mat_black_blood":    { n: "黑色血痕", type: "etc", p: 100, noUse: true, gachaWeight: 0, c: "text-red-300", d: "凝結不散的黑色血痕。製作材料。" },
@@ -395,11 +445,11 @@ const DB = {
         "mat_history_7": { n: "封印的歷史書第7頁", type: "etc", p: 100, noUse: true, gachaWeight: 0, c: "text-amber-200", d: "封印的歷史書殘頁。集齊 8 頁可製作『拉斯塔巴德製作武器秘笈』。" },
         "mat_history_8": { n: "封印的歷史書第8頁", type: "etc", p: 100, noUse: true, gachaWeight: 0, c: "text-amber-200", d: "封印的歷史書殘頁。集齊 8 頁可製作『拉斯塔巴德製作武器秘笈』。" },
         // ===== 🏛️ 長老之室 5 傳說製作武器（可羅蘭斯製作·潘朵拉0·安定0·無法在商店/抽獎取得） =====
-        "wpn_emperor_blade":   { n: "真．冥皇執行劍", type: "wpn", w2h: true, legend: true, dmgS: 28, dmgL: 33, hit: 5, dmgBonus: 20, spd: 1, req: "knight,dragon", safe: 0, p: 500000, gachaWeight: 0, eff: "cleave", ignHardSkin: true, str: 2, dex: 1, stunHitBonus: 20, d: "冥皇執行劍的真實之姿，劍勢凝著鎮魂的威壓。<br>切割；貫穿（無視硬皮額外減傷）；力量+2、敏捷+1；施展衝擊之暈時暈眩命中率 +20%。" },
-        "wpn_windblade_dagger":{ n: "風刃短劍", type: "wpn", legend: true, dmgS: 23, dmgL: 16, hit: 10, dmgBonus: 10, spd: 0.6, req: "knight,elf,mage,royal,dark", safe: 0, p: 500000, gachaWeight: 0, ignHardSkin: true, mhp: 100, dex: 2, vampPct: 0.1, d: "風之精靈寄宿的短劍，揮斬之間清風奪命。<br>出血（匕首）；貫穿（無視硬皮額外減傷）；HP+100、敏捷+2；恢復一般攻擊造成傷害的 10% HP。" },
-        "wpn_redshadow_dual":  { n: "紅影雙刀", type: "wpn", w2h: true, legend: true, dmgS: 27, dmgL: 18, hit: 10, dmgBonus: 18, spd: 0.8, req: "dark", safe: 0, p: 500000, gachaWeight: 0, eff: "combo", comboRate: 35, ignHardSkin: true, dex: 2, wis: 2, procStatusSkill: { skId: "sk_slow", rate: 10 }, d: "殷紅殘影交織的雙刀，刃過之處敵人遲滯難動。<br>雙擊 35%；貫穿（無視硬皮額外減傷）；敏捷+2、精神+2；攻擊時 10% 機率使目標緩速。" },
-        "wpn_beastking_claw":  { n: "獸王鋼爪", type: "wpn", w2h: true, legend: true, dmgS: 25, dmgL: 20, hit: 15, dmgBonus: 10, spd: 0.9, req: "dark", safe: 0, p: 500000, gachaWeight: 0, eff: "combo", comboRate: 33, ignHardSkin: true, str: 2, dex: 2, d: "獸王之力灌注的鋼爪，撕咬如百獸之王臨陣。<br>雙擊 33%；貫穿（無視硬皮額外減傷）；力量+2、敏捷+2。" },
-        "wpn_holycrystal_wand":{ n: "聖晶魔杖", type: "wpn", w2h: true, legend: true, dmgS: 13, dmgL: 15, hit: 8, dmgBonus: 0, spd: 1.0, req: "mage,illusion", safe: 0, p: 500000, gachaWeight: 0, eff: "magicburst", ignHardSkin: true, int: 2, mdmg: 8, mmp: 50, procSkill: "sk_holy_lightning", procRateBase: 10, procRatePerEn: 1, d: "聖潔水晶鑲嵌的魔杖，杖端雷光蓄勢待發。<br>魔爆；貫穿（無視硬皮額外減傷）；智力+2、魔法傷害+8、MP+50；攻擊時 10% 機率發動致命落雷（每強化 +1 機率 +1%，6D10 風屬性·吃武器強化最終傷害倍率）。" },
+        "wpn_emperor_blade":   { n: "真．冥皇執行劍", type: "wpn", w2h: true, legend: true, dmgS: 28, dmgL: 33, hit: 5, dmgBonus: 20, spd: 1, req: "knight,dragon", safe: 0, p: 500000, gachaWeight: 0, eff: "cleave", ignHardSkin: true, str: 2, dex: 1, stunHitBonus: 20, d: "冥皇執行劍的真實之姿，劍勢凝著鎮魂的威壓。" },
+        "wpn_windblade_dagger":{ n: "風刃短劍", type: "wpn", legend: true, dmgS: 23, dmgL: 16, hit: 10, dmgBonus: 10, spd: 0.6, req: "knight,elf,mage,royal,dark", safe: 0, p: 500000, gachaWeight: 0, ignHardSkin: true, mhp: 100, dex: 2, vampPct: 0.1, d: "風之精靈寄宿的短劍，揮斬之間清風奪命。" },
+        "wpn_redshadow_dual":  { n: "紅影雙刀", type: "wpn", w2h: true, legend: true, dmgS: 27, dmgL: 18, hit: 10, dmgBonus: 18, spd: 0.8, req: "dark", safe: 0, p: 500000, gachaWeight: 0, eff: "combo", comboRate: 35, ignHardSkin: true, dex: 2, wis: 2, procStatusSkill: { skId: "sk_slow", rate: 10 }, d: "殷紅殘影交織的雙刀，刃過之處敵人遲滯難動。" },
+        "wpn_beastking_claw":  { n: "獸王鋼爪", type: "wpn", w2h: true, legend: true, dmgS: 25, dmgL: 20, hit: 15, dmgBonus: 10, spd: 0.9, req: "dark", safe: 0, p: 500000, gachaWeight: 0, eff: "combo", comboRate: 33, ignHardSkin: true, str: 2, dex: 2, d: "獸王之力灌注的鋼爪，撕咬如百獸之王臨陣。" },
+        "wpn_holycrystal_wand":{ n: "聖晶魔杖", type: "wpn", w2h: true, legend: true, dmgS: 13, dmgL: 15, hit: 8, dmgBonus: 0, spd: 1.0, req: "mage,illusion", safe: 0, p: 500000, gachaWeight: 0, eff: "magicburst", ignHardSkin: true, int: 2, mdmg: 8, mmp: 50, procSkill: "sk_holy_lightning", procRateBase: 10, procRatePerEn: 1, d: "聖潔水晶鑲嵌的魔杖，杖端雷光蓄勢待發。" },
         "mat_rasta_codex":     { n: "拉斯塔巴德製作武器秘笈", type: "etc", p: 100, noUse: true, gachaWeight: 0, c: "text-amber-300", d: "集封印的歷史書八頁殘篇而成的武器鍛造秘笈。可羅蘭斯製作五件傳說武器的核心材料。" },
         "hlm_elf": { n: "精靈皮盔", type: "arm", slot: "helm", ac: 1, req: "elf,mage", safe: 6, p: 120, gachaWeight: 100 },
         "hlm_oasis": { n: "歐西斯頭盔", type: "arm", slot: "helm", ac: 1, req: "all", safe: 4, p: 10, gachaWeight: 100 },
@@ -417,7 +467,7 @@ const DB = {
         "hlm_bone": { n: "骷髏頭盔", type: "arm", slot: "helm", ac: 3, req: "all", safe: 0, p: 100, gachaWeight: 100 },
         "hlm_steel": { n: "鋼鐵頭盔", type: "arm", slot: "helm", ac: 3, req: "knight", safe: 4, p: 18250, gachaWeight: 20 },
         "hlm_mage": { n: "法師之帽", type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 4250, gachaWeight: 50 },
-        "hlm_dk": { n: "死亡騎士頭盔", legend: true, type: "arm", slot: "helm", ac: 3, req: "knight", safe: 4, p: 36000, gachaWeight: 1, d: "死亡騎士頭盔，殘存的怨念在頭盔深處幽幽燃燒。死亡騎士套裝之一。<br>【死亡騎士套裝】4 件齊：AC-4、變身「真‧死亡騎士」（額外傷害+6、額外命中+6、套用死亡騎士的攻擊速度）。" },
+        "hlm_dk": { n: "死亡騎士頭盔", legend: true, type: "arm", slot: "helm", ac: 3, req: "knight", safe: 4, p: 36000, gachaWeight: 1, d: "死亡騎士頭盔，殘存的怨念在頭盔深處幽幽燃燒。死亡騎士套裝之一。" },
         "arm_50": { n: "精靈敏捷頭盔", type: "arm", slot: "helm", ac: 1, req: "elf", safe: 6, p: 4800, dex: 1, gachaWeight: 20 },
         "arm_51": { n: "精靈體質頭盔", type: "arm", slot: "helm", ac: 1, req: "elf", safe: 6, p: 4800, con: 1, gachaWeight: 20 },
         "arm_53": { n: "紅騎士頭巾", type: "arm", slot: "helm", ac: 2, req: "knight", safe: 6, p: 6500, gachaWeight: 20 },
@@ -425,7 +475,7 @@ const DB = {
         "arm_55": { n: "卡士柏之帽", legend: true, type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 23500, mmp: 25, gachaWeight: 1 },
         "arm_56": { n: "馬庫爾之帽", legend: true, type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 23500, int: 1, gachaWeight: 1 },
         "arm_57": { n: "西瑪之帽", legend: true, type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 23500, mmp: 15, mpR: 2, gachaWeight: 1 },
-        "hlm_kurt": { n: "克特頭盔", legend: true, type: "arm", slot: "helm", ac: 3, req: "knight", safe: 4, p: 32000, gachaWeight: 1, d: "曾屬於墮落者克特的頭盔，盔影下不見生人氣息。克特套裝之一。<br>【克特套裝】4 件齊：AC-4、變身「真‧克特」（額外傷害+4、額外命中+8、套用克特的攻擊速度）。" },
+        "hlm_kurt": { n: "克特頭盔", legend: true, type: "arm", slot: "helm", ac: 3, req: "knight", safe: 4, p: 32000, gachaWeight: 1, d: "曾屬於墮落者克特的頭盔，盔影下不見生人氣息。克特套裝之一。" },
         "amr_plate": { n: "金屬盔甲", type: "arm", slot: "armor", ac: 7, req: "knight", safe: 4, p: 51800, gachaWeight: 30 },
         "arm_59": { n: "水晶盔甲", type: "arm", slot: "armor", ac: 8, req: "knight", safe: 4, p: 48000, gachaWeight: 20 },   // 🔧 由 惡魔(10%)／密密(0.1%)／黑暗復仇者(0.1%) 掉落；潘朵拉權重 20（進黑市/血盟野外抽獎池）
         "arm_60": { n: "青銅盔甲", type: "arm", slot: "armor", ac: 6, req: "knight", safe: 4, p: 22400, gachaWeight: 50 },
@@ -457,258 +507,271 @@ const DB = {
         "arm_81": { n: "地龍鱗盔甲", legend: true, type: "arm", slot: "armor", ac: 9, resEarth: 20, req: "all", safe: 4, p: 336000, gachaWeight: 1 },
         "arm_82": { n: "火龍鱗盔甲", legend: true, type: "arm", slot: "armor", ac: 9, resFire: 20, req: "all", safe: 4, p: 336000, gachaWeight: 1 },
         "arm_83": { n: "風龍鱗盔甲", legend: true, type: "arm", slot: "armor", ac: 9, resWind: 20, req: "all", safe: 4, p: 336000, gachaWeight: 1 },
-        "amr_dk": { n: "死亡騎士盔甲", legend: true, type: "arm", slot: "armor", ac: 7, req: "knight", safe: 4, p: 128000, gachaWeight: 1, d: "死亡騎士的胸甲，甲面浮現著不滅的死亡紋章。死亡騎士套裝之一。<br>【死亡騎士套裝】4 件齊：AC-4、變身「真‧死亡騎士」（額外傷害+6、額外命中+6、套用死亡騎士的攻擊速度）。" },
+        "amr_dk": { n: "死亡騎士盔甲", legend: true, type: "arm", slot: "armor", ac: 7, req: "knight", safe: 4, p: 128000, gachaWeight: 1, d: "死亡騎士的胸甲，甲面浮現著不滅的死亡紋章。死亡騎士套裝之一。" },
         "arm_84": { n: "黑長者長袍", legend: true, type: "arm", slot: "armor", ac: 5, req: "mage", safe: 4, p: 124000, mmp: 50, mpR: 5, gachaWeight: 1 },
-        "amr_kurt": { n: "克特盔甲", legend: true, type: "arm", slot: "armor", ac: 7, req: "knight", safe: 4, p: 126000, gachaWeight: 1, d: "克特生前征戰所披的盔甲，鎧縫間仍滲著陳年的血鏽。克特套裝之一。<br>【克特套裝】4 件齊：AC-4、變身「真‧克特」（額外傷害+4、額外命中+8、套用克特的攻擊速度）。" },
+        "amr_kurt": { n: "克特盔甲", legend: true, type: "arm", slot: "armor", ac: 7, req: "knight", safe: 4, p: 126000, gachaWeight: 1, d: "克特生前征戰所披的盔甲，鎧縫間仍滲著陳年的血鏽。克特套裝之一。" },
         "tsh_tshirt": { n: "T恤", type: "arm", slot: "tshirt", ac: 0, req: "all", safe: 4, p: 8500, gachaWeight: 50 },
         "arm_85": { n: "精靈T恤", type: "arm", slot: "tshirt", ac: 0, req: "elf", safe: 6, p: 6600, gachaWeight: 20 },
         // ===== 🏺 遺物（relic:true）：單一怪物專屬掉落·名稱/圖示海藍色·無法強化(noEnhance)/不會祝福/無法賦予屬性·永不進潘朵拉黑市(gachaWeight:0)·獨立遺物圖鑑(分類同裝備圖鑑) =====
-        "relic_orc_lid":           { n: "妖魔的鍋蓋",         type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 4, dr: 3, cha: -2, block: 30, req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】妖魔隨手抓來擋刀的鍋蓋，凹痕累累卻意外耐打。<br>格檔 30%（一般限定）；傷害減免 +3；魅力 -2。" },
+        "relic_orc_lid":           { n: "妖魔的鍋蓋",         type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 4, dr: 3, cha: -2, block: 30, req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】妖魔隨手抓來擋刀的鍋蓋，凹痕累累卻意外耐打。" },
         "relic_goblin_blade":      { n: "哥布林的石刃",       type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 6, hit: 4, dmgBonus: 3, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】哥布林用石片磨成的粗劣短刃，鋒利得不像廢料。" },
-        "relic_orcarcher_bow":     { n: "妖魔弓箭手的彈簧弓", type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 50, dmgS: 2, dmgL: 2, hit: 4, dmgBonus: 3, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】妖魔弓箭手臨時綁製的彈簧弓，射出的箭竟能穿透硬甲。<br>連射 50%（一般限定）。" },
-        "relic_gremlin_club":      { n: "地靈的木棍",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 2, dmgBonus: 2, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】地靈揮舞的粗木棍，敲中要害會令人眼冒金星。<br>攻擊命中時 1% 機率使目標暈眩。" },
+        "relic_orcarcher_bow":     { n: "妖魔弓箭手的彈簧弓", type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 50, dmgS: 2, dmgL: 2, hit: 4, dmgBonus: 3, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】妖魔弓箭手臨時綁製的彈簧弓，射出的箭竟能穿透硬甲。" },
+        "relic_gremlin_club":      { n: "地靈的木棍",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 2, dmgBonus: 2, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】地靈揮舞的粗木棍，敲中要害會令人眼冒金星。" },
         "relic_mushroom_cap":      { n: "菌菇傘帽",           type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, mr: 5, req: "elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】從巨大蘑菇摘下的傘帽，戴上竟能抵禦魔法。" },
         "relic_gnomeearth_tshirt": { n: "髒汙的地精靈T恤",     type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 7, resFire: -10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】沾滿污泥的破舊 T 恤，防禦驚人卻格外怕火。" },
         "relic_wolf_shawl":        { n: "狼毛披肩",           type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 6, resEarth: -5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以狼毛編成的粗獷披肩，厚實但沾著泥土氣息。" },
-        "relic_husky_bone":        { n: "哈士奇的骨棒",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 6, dmgBonus: 6, partnerHit: { "哈士奇": 6 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】哈士奇最愛叼著到處跑的骨棒。<br>當夥伴為 哈士奇 時，該夥伴命中 +6。" },
-        "relic_dwarf_sheet":       { n: "侏儒的舊床單",       type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 9, cha: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】侏儒睡了不知多久的舊床單，防禦極佳但氣味擾人。<br>魅力 -2。" },
-        "relic_bear_fishbone":     { n: "吃剩的魚骨頭",       type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 1, dex: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】熊吃剩後掛在耳邊的魚骨，硌得人動作遲鈍。<br>敏捷 -1。" },
-        "relic_shepherd_boots":    { n: "放牧者的皮靴",       type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 5, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】牧羊犬主人遺落的皮靴，走起路來格外輕快。<br>敏捷 +1。" },
-        "relic_zombie_shin":       { n: "殭屍的小腿骨",       type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 4, hit: 3, dmgBonus: 3, extraMp: 7, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】殭屍的小腿骨，握著竟能感應到殘留的魔力。<br>額外魔法點數 +7。" },
+        "relic_husky_bone":        { n: "哈士奇的骨棒",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 6, dmgBonus: 6, partnerHit: { "哈士奇": 6 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】哈士奇最愛叼著到處跑的骨棒。" },
+        "relic_dwarf_sheet":       { n: "侏儒的舊床單",       type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 9, cha: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】侏儒睡了不知多久的舊床單，防禦極佳但氣味擾人。" },
+        "relic_bear_fishbone":     { n: "吃剩的魚骨頭",       type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 1, dex: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】熊吃剩後掛在耳邊的魚骨，硌得人動作遲鈍。" },
+        "relic_shepherd_boots":    { n: "放牧者的皮靴",       type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 5, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】牧羊犬主人遺落的皮靴，走起路來格外輕快。" },
+        "relic_zombie_shin":       { n: "殭屍的小腿骨",       type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 4, hit: 3, dmgBonus: 3, extraMp: 7, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】殭屍的小腿骨，握著竟能感應到殘留的魔力。" },
         "relic_doberman_fang":     { n: "杜賓的尖銳犬齒",     type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 2, hit: 11, dmgBonus: 9, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】杜賓狗銳利的犬齒，出手又快又狠。" },
-        "relic_amp_staff":          { n: "安普長老的拐杖",     type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 4, hit: 5, dmgBonus: 5, extraMp: 9, procSkill: "sk_hell_fang", req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】安普長老生前倚仗的拐杖，杖端仍纏繞著地獄的餘燼。<br>額外魔法點數 +9；共鳴（一般限定）；攻擊時 1% 機率觸發【地獄之牙】。" },
-        "relic_ent_bark":           { n: "安特的乾枯樹皮",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 6, dr: 5, resFire: -10, block: 50, req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】污染之安特剝落的乾枯樹皮，堅硬如盾卻格外怕火。<br>格檔 50%（一般限定）；傷害減免 +5。" },
-        "relic_eye_crystal":        { n: "通透的水晶體",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 10, mmp: 10, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】漂浮之眼的透明晶體，凝視久了竟覺神清氣爽。臂甲（裝於副手，可與雙手武器並用）。<br>HP +10、MP +10。" },
+        "relic_amp_staff":          { n: "安普長老的拐杖",     type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 4, hit: 5, dmgBonus: 5, extraMp: 9, procSkill: "sk_hell_fang", procRateBase: 15, procRatePerEn: 0, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】安普長老生前倚仗的拐杖，杖端仍纏繞著地獄的餘燼。" },
+        "relic_ent_bark":           { n: "安特的乾枯樹皮",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 6, dr: 5, resFire: -10, block: 50, req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】污染之安特剝落的乾枯樹皮，堅硬如盾卻格外怕火。" },
+        "relic_eye_crystal":        { n: "通透的水晶體",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 10, mmp: 10, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】漂浮之眼的透明晶體，凝視久了竟覺神清氣爽。臂甲（裝於副手，可與雙手武器並用）。" },
         "relic_gladiator_scimitar": { n: "鬥士的歷戰彎刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 9, dmgBonus: 9, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】妖魔鬥士在無數搏鬥中砍缺了刃口的彎刀，殺意未減。" },
-        "relic_icefield_pick":      { n: "冰原十字鎬",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 4, hit: 5, dmgBonus: 5, procStatusSkill: { skId: "sk_relic_freeze", rate: 1 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】冰原狼人用來鑿冰的十字鎬，敲擊時激起刺骨寒氣。<br>攻擊命中時 1% 機率使目標冰凍。" },
+        "relic_icefield_pick":      { n: "冰原十字鎬",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 4, hit: 5, dmgBonus: 5, procStatusSkill: { skId: "sk_relic_freeze", rate: 1 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】冰原狼人用來鑿冰的十字鎬，敲擊時激起刺骨寒氣。" },
         "relic_monsterhand_skin":   { n: "怪手皮",             type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 7, mr: -5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】怪手蛻下的厚實皮膜，護住雙手卻削弱了魔法防護。" },
-        "relic_werewolf_mace":      { n: "狼人的釘錘",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 8, hit: 6, dmgBonus: 6, str: 1, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】狼人揮舞的粗製釘錘，掄起時帶著野性的蠻力。<br>力量 +1。" },
+        "relic_werewolf_mace":      { n: "狼人的釘錘",         type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 8, hit: 6, dmgBonus: 6, str: 1, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】狼人揮舞的粗製釘錘，掄起時帶著野性的蠻力。" },
         "relic_dwarf_chainmail":    { n: "侏儒的笨重鎖甲",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 11, req: "royal,knight,elf,dark,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】侏儒戰士笨重的鎖子甲，防禦極佳但沉重無比。" },
-        "relic_weathered_skull":    { n: "風化的頭蓋骨",       type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, mr: 10, abnormalResist: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】不知名骷髏風化的頭蓋骨，戴上竟能穩定心神。<br>10% 機率抵抗異常狀態。" },
-        "relic_orc_nail":           { n: "惡臭的妖魔指甲",     type: "wpn", relic: true, noEnhance: true, dmgS: 2, dmgL: 3, hit: 9, dmgBonus: 7, procPoison: { rate: 30, dmg: [10, 1], dur: 10, tick: 1 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】妖魔殭屍剝落的惡臭指甲，抓傷處會潰爛流膿。<br>攻擊命中時 30% 機率使目標中毒，每秒受到 10 點固定傷害。" },
+        "relic_weathered_skull":    { n: "風化的頭蓋骨",       type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, mr: 10, abnormalResist: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】不知名骷髏風化的頭蓋骨，戴上竟能穩定心神。" },
+        "relic_orc_nail":           { n: "惡臭的妖魔指甲",     type: "wpn", relic: true, noEnhance: true, dmgS: 2, dmgL: 3, hit: 9, dmgBonus: 7, procPoison: { rate: 30, dmg: [10, 1], dur: 10, tick: 1 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】妖魔殭屍剝落的惡臭指甲，抓傷處會潰爛流膿。" },
         "relic_orc_gloves":         { n: "妖魔的拳擊套",       type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 4, meleeHit: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】甘地妖魔纏在拳上的破爛拳套，出拳更準更狠。" },
-        "relic_pan_staff":          { n: "牧神的放牧棍",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 8, hit: 6, dmgBonus: 6, petDmgAll: 3, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】污染之潘驅趕牲口的長棍，揮舞時彷彿能號令群獸。<br>所有項圈夥伴額外傷害 +3。" },
-        "relic_croc_tshirt":        { n: "鱷魚皮內衣",         type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 5, dex: -1, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以鱷魚皮縫製的貼身內衣，堅韌卻略顯笨重。<br>敏捷 -1、體質 +1。" },
+        "relic_pan_staff":          { n: "牧神的放牧棍",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 8, hit: 6, dmgBonus: 6, petDmgAll: 3, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】污染之潘驅趕牲口的長棍，揮舞時彷彿能號令群獸。" },
+        "relic_croc_tshirt":        { n: "鱷魚皮內衣",         type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 5, dex: -1, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以鱷魚皮縫製的貼身內衣，堅韌卻略顯笨重。" },
         "relic_maid_gift":          { n: "侍女的贈禮",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 3, resWater: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】冰之女王侍女偷偷相贈的髮飾，蘊藏著寒冰的祝福。" },
-        "relic_giantant_antenna":   { n: "巨蟻的誘導觸角",     type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, rapidfire: 100, dmgS: 2, dmgL: 2, hit: 11, dmgBonus: 6, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】巨蟻的誘導觸角改製而成的長弓，能引導箭矢精準命中。<br>連射 100%（一般限定）；遠距離命中格外優異（＋11）。" },
-        "relic_orcmage_cloth":      { n: "妖魔法師的餐桌巾",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 2, wis: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】妖魔法師當作斗篷披著的餐桌巾，殘留著施法的靈光。<br>精神 +2。" },
-        "relic_elastic_rib":        { n: "有彈性的肋骨",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 8, dmgL: 8, hit: 6, dmgBonus: 9, dr: 2, eff: "combo", comboRate: 30, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】骷髏弓箭手身上抽出的柔韌肋骨，揮舞如刃、格擋如盾。<br>雙擊 30%；傷害減免 +2。" },
-        "relic_roach_shell":        { n: "蟑螂的黑光甲殼",     type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, extraDmg: 3, cha: -3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蟑螂人泛黑光的甲殼，堅硬中透出令人不適的氣息。臂甲（裝於副手，可與雙手武器並用）。<br>額外傷害 +3、魅力 -3。" },
-        "relic_golem_fist":         { n: "石頭高崙的重拳",     type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 19, hit: 7, dmgBonus: 7, eff: "crush", procSkill: "sk_quake", req: "royal,knight,elf,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】石頭高崙揮出的沉重巨拳，砸中地面震起碎石。<br>攻擊時 1% 機率發動【震裂術】。" },
-        "relic_orc_cleaver":        { n: "妖魔的老舊菜刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 6, dmgBonus: 6, ele: "earth", req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】妖魔廚房裡鏽蝕的老菜刀，刀身沾染大地的濁氣。<br>一般攻擊轉為地屬性。" },
-        "relic_strong_femur":       { n: "強韌的大腿骨",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 4, dmgBonus: 4, procInstakill: { p: 0.20, tag: "undead", maxLv: 49 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】異常強韌的大腿骨，對付不死生物格外好使。<br>攻擊命中時 20% 機率使等級 49 以下的不死生物立即死亡。" },
-        "relic_forgotten_spear":    { n: "遺忘士兵的老舊長槍",  type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 10, dmgL: 12, hit: 7, dmgBonus: 7, eff: "pierce", pierceChance: 90, req: "royal,elf", p: 10000, gachaWeight: 0, d: "【遺物】遺忘士兵生前緊握的長槍，槍尖仍殘留貫穿之志。<br>穿透 90%（一般限定）。" },
-        "relic_spider_claw":        { n: "巨大蜘蛛的恐懼尖爪",  type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 15, hit: 10, dmgBonus: 9, eff: "combo", comboRate: 30, procPoison: { rate: 50, dmg: [10, 1], dur: 10, tick: 1 }, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】巨大蜘蛛的恐懼尖爪，撕裂處滲出致命劇毒。<br>攻擊命中時 50% 機率使目標中毒，每秒受到 10 點固定傷害。" },
+        "relic_giantant_antenna":   { n: "巨蟻的誘導觸角",     type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, rapidfire: 100, dmgS: 2, dmgL: 2, hit: 11, dmgBonus: 6, req: "royal,knight,elf,mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】巨蟻的誘導觸角改製而成的長弓，能引導箭矢精準命中。" },
+        "relic_orcmage_cloth":      { n: "妖魔法師的餐桌巾",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 2, wis: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】妖魔法師當作斗篷披著的餐桌巾，殘留著施法的靈光。" },
+        "relic_elastic_rib":        { n: "有彈性的肋骨",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 8, dmgL: 8, hit: 6, dmgBonus: 9, dr: 2, eff: "combo", comboRate: 30, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】骷髏弓箭手身上抽出的柔韌肋骨，揮舞如刃、格擋如盾。" },
+        "relic_roach_shell":        { n: "蟑螂的黑光甲殼",     type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, extraDmg: 3, cha: -3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蟑螂人泛黑光的甲殼，堅硬中透出令人不適的氣息。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_golem_fist":         { n: "石頭高崙的重拳",     type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 19, hit: 7, dmgBonus: 7, eff: "crush", procSkill: "sk_quake", procRateBase: 5, procRatePerEn: 0, req: "royal,knight,elf,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】石頭高崙揮出的沉重巨拳，砸中地面震起碎石。" },
+        "relic_orc_cleaver":        { n: "妖魔的老舊菜刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 6, dmgBonus: 6, ele: "earth", req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】妖魔廚房裡鏽蝕的老菜刀，刀身沾染大地的濁氣。" },
+        "relic_strong_femur":       { n: "強韌的大腿骨",       type: "wpn", relic: true, noEnhance: true, dmgS: 6, dmgL: 3, hit: 4, dmgBonus: 4, procInstakill: { p: 0.20, tag: "undead", maxLv: 49 }, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】異常強韌的大腿骨，對付不死生物格外好使。" },
+        "relic_forgotten_spear":    { n: "遺忘士兵的老舊長槍",  type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 10, dmgL: 12, hit: 7, dmgBonus: 7, eff: "pierce", pierceChance: 90, req: "royal,elf", p: 10000, gachaWeight: 0, d: "【遺物】遺忘士兵生前緊握的長槍，槍尖仍殘留貫穿之志。" },
+        "relic_spider_claw":        { n: "巨大蜘蛛的恐懼尖爪",  type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 15, hit: 10, dmgBonus: 9, eff: "combo", comboRate: 30, procPoison: { rate: 50, dmg: [10, 1], dur: 10, tick: 1 }, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】巨大蜘蛛的恐懼尖爪，撕裂處滲出致命劇毒。" },
         "relic_scout_scope":        { n: "巡守的望遠鏡",       type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 4, rangedHit: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】妖魔巡守用來遠望的望遠鏡，看得更遠也瞄得更準。" },
         "relic_hobgoblin_grinder":  { n: "哈柏哥布林的研磨刀",  type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 6, hit: 12, dmgBonus: 11, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】哈柏哥布林反覆研磨的短刀，鋒利得能削鐵如泥。" },
         "relic_orc_butcher":        { n: "妖魔的屠刀",         type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 10, dmgBonus: 10, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】阿吐巴妖魔宰殺獵物的厚重屠刀，寒光森森。" },
-        "relic_orc_pole":           { n: "妖魔的曬衣桿",       type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 6, hit: 9, dmgBonus: 9, unBonus: true, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】妖魔拿來曬衣的細長桿子，捅刺不死與狼人格外有效。<br>對不死 / 狼人加成。" },
-        "relic_bear_fur":           { n: "歐熊的柔軟毛皮",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 6, er: 20, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐熊柔軟厚實的毛皮，披上後身形靈巧、魔法難侵。<br>ER +20。" },
-        "relic_lizard_shield":      { n: "蜥蜴人的鋼鐵圓盾",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, block: 30, immFreeze: true, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】蜥蜴人鑄造的鋼鐵圓盾，冷血之軀使它不懼冰寒。<br>格檔 30%（一般限定）；免疫冰凍。" },
-        "relic_caveman_webbing":    { n: "穴居人的蹼",         type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 5, resWater: 10, mpR: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】穴居人腳上的蹼，涉水如履平地。<br>MP自然恢復量 +1。" },
-        "relic_sparta_grudge":      { n: "史巴托的怨念",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 11, dmgL: 7, hit: 11, dmgBonus: 10, eff: "combo", comboRate: 25, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】史巴托死後凝聚的怨念雙刀，揮舞時透出徹骨恨意。<br>雙擊 25%。" },
-        "relic_ghoul_bracelet":     { n: "食屍鬼的手環",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 1, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食屍鬼腐朽的手環，戴上後肢體不再僵麻。<br>免疫麻痺。" },
-        "relic_shark_teeth":        { n: "鯊魚的千刃牙",       type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 3, hit: 9, dmgBonus: 7, unBonus: true, ele: "water", req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】鯊魚層疊如刃的利牙，撕咬帶著洶湧水勢。<br>對不死 / 狼人加成；一般攻擊轉為水屬性。" },
-        "relic_guard_towershield":  { n: "鎧衛隊的漆黑塔盾",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 9, block: 60, dr: 5, req: "knight", p: 10000, gachaWeight: 0, d: "【遺物】鎧衛隊的漆黑塔盾，厚重如壁、堅不可摧。<br>格檔 60%（一般限定）；傷害減免 +5。" },
+        "relic_orc_pole":           { n: "妖魔的曬衣桿",       type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 6, hit: 9, dmgBonus: 9, unBonus: true, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】妖魔拿來曬衣的細長桿子，捅刺不死與狼人格外有效。" },
+        "relic_bear_fur":           { n: "歐熊的柔軟毛皮",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 6, er: 20, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐熊柔軟厚實的毛皮，披上後身形靈巧、魔法難侵。" },
+        "relic_lizard_shield":      { n: "蜥蜴人的鋼鐵圓盾",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, block: 30, immFreeze: true, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】蜥蜴人鑄造的鋼鐵圓盾，冷血之軀使它不懼冰寒。" },
+        "relic_caveman_webbing":    { n: "穴居人的蹼",         type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 5, resWater: 10, mpR: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】穴居人腳上的蹼，涉水如履平地。" },
+        "relic_sparta_grudge":      { n: "史巴托的怨念",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 11, dmgL: 7, hit: 11, dmgBonus: 10, eff: "combo", comboRate: 25, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】史巴托死後凝聚的怨念雙刀，揮舞時透出徹骨恨意。" },
+        "relic_ghoul_bracelet":     { n: "食屍鬼的手環",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 1, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食屍鬼腐朽的手環，戴上後肢體不再僵麻。" },
+        "relic_shark_teeth":        { n: "鯊魚的千刃牙",       type: "wpn", relic: true, noEnhance: true, dmgS: 4, dmgL: 3, hit: 9, dmgBonus: 7, unBonus: true, ele: "water", req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】鯊魚層疊如刃的利牙，撕咬帶著洶湧水勢。" },
+        "relic_guard_towershield":  { n: "鎧衛隊的漆黑塔盾",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 9, block: 60, dr: 5, req: "knight", p: 10000, gachaWeight: 0, d: "【遺物】鎧衛隊的漆黑塔盾，厚重如壁、堅不可摧。" },
         // ===== 🏺 遺物 第二批（v3.1.1·29 件·單一怪物專屬掉落 0.0001%）=====
-        "relic_guard_spear":        { n: "鎧衛隊的漆黑長槍",   type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 6, dmgL: 8, hit: 12, dmgBonus: 12, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鎧衛隊配發的漆黑長槍，槍尖既裂皮肉又破重甲。<br>出血（一般限定·矛）；貫穿（無視硬皮）。" },
-        "relic_mermaid_tear":       { n: "人魚的淚滴",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mpR: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】人魚落下凝成寶石的淚滴，蘊藏綿延不絕的魔力。<br>MP自然恢復量 +5。" },
-        "relic_orc_loincloth":      { n: "妖魔的兜襠布",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 2, crushDr: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】那魯加妖魔僅存的遮羞布，卻莫名擅長卸去重擊之力。<br>受到重擊時傷害減少 20%。" },
-        "relic_crescent_earring":   { n: "月牙耳環",           type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, hpR: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】映著月牙微光的耳環，佩戴時傷勢悄然癒合。<br>HP自然恢復量 +30。" },
-        "relic_ungoliant_plate":    { n: "楊果里恩的腹甲",     type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 5, resFire: -5, req: "royal,knight,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】楊果里恩剝落的腹甲，厚重堅硬卻格外怕火。<br>火屬性抗性 -5。" },
-        "relic_crab_claw":          { n: "蟹人的巨鉗",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 14, dmgL: 12, hit: -2, dmgBonus: 7, eff: "combo", comboRate: 33, mcrit: 5, ele: "water", req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】蟹人巨大的甲鉗，一開一闔便是致命的雙重夾擊。<br>雙擊 33%；貫穿；近距離爆擊率 +5%；近距離命中 -2；一般攻擊轉為水屬性。" },
-        "relic_wild_mane_coat":     { n: "狂野的鬃毛外套",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 12, meleeHaste: 15, meleeHit: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂野之毒身上狂亂的鬃毛外套，激起野性的迅捷。<br>裝備近距離武器時攻擊速度 +15%；近距離命中 -1。" },
-        "relic_venom_fang":         { n: "劇毒的獠牙",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 21, hit: 9, dmgBonus: 12, eff: "cleave", procPoison: { rate: 50, dmg: [30, 1], dur: 10, tick: 1 }, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】狂野毒牙淬鍊的巨牙，切開之處毒液奔流不止。<br>切割（一般限定）；攻擊命中時 50% 機率使目標中毒，每秒受到 30 點固定傷害。" },
-        "relic_ohm_shackle":        { n: "歐姆的腳鐐",         type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 1, weightCap: 300, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐姆囚身的沉重腳鐐，習慣其重量後負重如無物。<br>負重上限 +300。" },
-        "relic_soldierant_carapace":{ n: "兵蟻的光澤背甲",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 14, resEarth: 10, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】巨大兵蟻泛著光澤的背甲，厚實堅硬、親和大地。<br>地屬性抗性 +10。" },
-        "relic_ratman_skewer":      { n: "鼠人的烤肉叉",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 16, dmgL: 16, hit: 11, dmgBonus: 8, eff: "pierce", pierceChance: 80, extraDmg: 10, unBonus: true, ele: "fire", req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鼠人炙烤獵物的長叉，燒得通紅、一叉貫穿數敵。<br>穿透 80%（一般限定）；貫穿；出血（矛）；固定傷害 +10；對不死 / 狼人加成；一般攻擊轉為火屬性。" },
-        "relic_starfish_arm":       { n: "海星的分裂腕足",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 21, dmgL: 20, hit: 14, dmgBonus: 11, eff: "combo", comboRate: 20, procStatusSkill: { skId: "sk_relic_paralyze", rate: 1 }, str: 2, wis: 2, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】海星再生不絕的分裂腕足，纏擊之間暴露敵人弱點。<br>弱點曝光；貫穿；雙擊 20%；攻擊命中時 1% 機率使目標麻痺；力量 +2、精神 +2。" },
-        "relic_croc_soul":          { n: "被遺忘的鱷魚靈魂",   type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 24, hit: 0, mdmg: 2, wis: 2, extraMp: 9, procSkill: "sk_icearrow", procRateBase: 15, procRatePerEn: 0, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島鱷魚殘留的靈魂，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。<br>魔法傷害 +2、精神 +2、額外魔法點數 +9；攻擊時 15% 機率觸發冰箭。" },
-        "relic_lizard_scale":       { n: "破舊的蜥蜴甲",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 1, mpR: 3, mr: 5, req: "mage,elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島蜥蜴人剝下的破舊甲片，涼薄卻凝聚魔力。<br>MP自然恢復量 +3、MR +5。" },
-        "relic_veteran_lizard_gauntlet":{ n: "資深蜥蜴族護手", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 7, meleeDmg: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂暴蜥蜴人的護手，久經戰陣使出手更具威力。<br>近距離傷害 +2。" },
-        "relic_black_gale":         { n: "黑色疾風",           type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, hpR: 20, mpR: 1, dr: 6, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂野之魔化成的漆黑疾風，纏身而過生機盎然。<br>HP自然恢復量 +20、MP自然恢復量 +1、傷害減免 +6。" },
-        "relic_elder_thunder":      { n: "長老的雷電能量",     type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 4, dmgL: 5, hit: 4, dmgBonus: 4, extraMp: 3, procSkill: "sk_thunder", procRateBase: 100, procRatePerEn: 0, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】長老掌中凝聚的雷電能量，每一擊都招來天雷。<br>貫穿；額外魔法點數 +3；共鳴（一般限定）；攻擊命中時 100% 機率觸發【極道落雷】。" },
-        "relic_green_imp_nail":     { n: "綠色妖鬼的指甲",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 3, atkSpdPct: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】卡司特尖銳的綠色指甲，套上後出手快如鬼魅。<br>攻擊速度 +20%。" },
-        "relic_ohm_hidepants":      { n: "歐姆的粗皮褲",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 1, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂暴的歐姆脫下的粗皮褲，粗糙厚實、抗拒魔法。<br>MR +10。" },
-        "relic_ogre_mawashi":       { n: "食人妖精的相撲褌",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 3, resFire: 5, dr: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精纏腰的相撲褌，厚布層層擋下烈焰與重擊。<br>火屬性抗性 +5、傷害減免 +5。" },
-        "relic_lamia_tailscale":    { n: "蛇女的尾鱗甲",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, meleeDmg: 1, extraDmg: 5, mhp: 50, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蛇女尾端剝落的鱗甲，貼身護衛且蘊藏毒性之力。臂甲（裝於副手，可與雙手武器並用）。<br>近距離傷害 +1、固定傷害 +5、HP +50。" },
-        "relic_bat_wing":           { n: "飛蝠之翼",           type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, er: 15, mr: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】魔蝙蝠的薄翼，披上後身形飄忽、魔法難侵。<br>ER +15、MR +15。" },
-        "relic_mandra_spirit":      { n: "曼陀羅之靈",         type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 26, dmgL: 26, hit: 0, mpR: 15, int: 1, extraMp: 7, procInstakill: { p: 0.01 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】底比斯曼陀羅草凝成的靈體，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。<br>MP自然恢復量 +15、智力 +1、額外魔法點數 +7；攻擊命中時 1% 機率使目標即死。" },
-        "relic_ohm_heavyarmor":     { n: "歐姆士兵的重裝鎧甲", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 20, er: -50, dr: 10, req: "knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐姆裝甲兵的重裝鎧甲，堅不可摧卻笨重難行。<br>ER -50、傷害減免 +10。" },
-        "relic_cerberus_wand":      { n: "三頭犬魔杖",         type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 2, dmgL: 3, hit: 9, dmgBonus: 9, mdmg: 3, extraMp: 5, ele: "fire", spellProc: { skn: "噴火", dice: [4, 6], ele: "fire", aoe: true }, procRateBase: 10, procRatePerEn: 0, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】以地獄犬三首煉成的魔杖，杖端噴吐地獄業火。<br>貫穿；魔法傷害 +3、額外魔法點數 +5；共鳴（一般限定）；一般攻擊轉為火屬性；攻擊時 10% 機率噴火，對敵方全體造成 4D6 魔法傷害。" },
-        "relic_watersprite_string": { n: "水靈的琴弦",         type: "wpn", isBow: true, ranged: true, w2h: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 70, dmgS: 3, dmgL: 3, hit: 8, dmgBonus: 11, extraDmg: 5, ele: "water", spellProc: { skn: "寒冰氣息", dice: [3, 6], ele: "water", aoe: true }, procRateBase: 5, procRatePerEn: 0, req: "elf,illusion", p: 10000, gachaWeight: 0, d: "【遺物】希爾黛斯撥動的水靈琴弦，箭如寒流連綿不絕。<br>貫穿；連射 70%（一般限定）；固定傷害 +5；一般攻擊轉為水屬性；攻擊時 5% 機率觸發寒冰氣息（對敵方全體）。" },
-        "relic_dragonturtle_shell": { n: "龍龜的背殼",         type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 10, dr: 6, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "royal,dragon,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】龍龜堅不可摧的背殼，抵禦萬般傷害與四方之力。<br>傷害減免 +6、全屬性抗性 +5。" },
-        "relic_bluetail_tail":      { n: "藍尾蜥蜴的斷尾",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 150, hpR: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】藍尾蜥蜴自斷的尾巴，輕盈且生機勃勃、再生不息。<br>負重上限 +150、HP自然恢復量 +10。" },
-        "relic_lizardman_cleaver":  { n: "蜥蜴人的大砍刀",     type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 10, dmgL: 17, hit: 10, dmgBonus: 10, eff: "pierce", pierceChance: 50, vampPct: 0.03, mhp: 60, req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】重裝蜥蜴人揮舞的大砍刀，一刀劈落數敵、飲血自癒。<br>穿透 50%（一般限定）；出血（矛）；恢復一般攻擊造成傷害的 3% HP；HP +60。" },
+        "relic_guard_spear":        { n: "鎧衛隊的漆黑長槍",   type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 6, dmgL: 8, hit: 12, dmgBonus: 12, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鎧衛隊配發的漆黑長槍，槍尖既裂皮肉又破重甲。" },
+        "relic_mermaid_tear":       { n: "人魚的淚滴",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mpR: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】人魚落下凝成寶石的淚滴，蘊藏綿延不絕的魔力。" },
+        "relic_orc_loincloth":      { n: "妖魔的兜襠布",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 2, crushDr: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】那魯加妖魔僅存的遮羞布，卻莫名擅長卸去重擊之力。" },
+        "relic_crescent_earring":   { n: "月牙耳環",           type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, hpR: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】映著月牙微光的耳環，佩戴時傷勢悄然癒合。" },
+        "relic_ungoliant_plate":    { n: "楊果里恩的腹甲",     type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 5, resFire: -5, req: "royal,knight,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】楊果里恩剝落的腹甲，厚重堅硬卻格外怕火。" },
+        "relic_crab_claw":          { n: "蟹人的巨鉗",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 14, dmgL: 12, hit: -2, dmgBonus: 7, eff: "combo", comboRate: 33, mcrit: 5, ele: "water", req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】蟹人巨大的甲鉗，一開一闔便是致命的雙重夾擊。" },
+        "relic_wild_mane_coat":     { n: "狂野的鬃毛外套",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 12, meleeHaste: 15, meleeHit: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂野之毒身上狂亂的鬃毛外套，激起野性的迅捷。" },
+        "relic_venom_fang":         { n: "劇毒的獠牙",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 21, hit: 9, dmgBonus: 12, eff: "cleave", procPoison: { rate: 50, dmg: [30, 1], dur: 10, tick: 1 }, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】狂野毒牙淬鍊的巨牙，切開之處毒液奔流不止。" },
+        "relic_ohm_shackle":        { n: "歐姆的腳鐐",         type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 1, weightCap: 300, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐姆囚身的沉重腳鐐，習慣其重量後負重如無物。" },
+        "relic_soldierant_carapace":{ n: "兵蟻的光澤背甲",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 14, resEarth: 10, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】巨大兵蟻泛著光澤的背甲，厚實堅硬、親和大地。" },
+        "relic_ratman_skewer":      { n: "鼠人的烤肉叉",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 16, dmgL: 16, hit: 11, dmgBonus: 8, eff: "pierce", pierceChance: 80, extraDmg: 10, unBonus: true, ele: "fire", req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鼠人炙烤獵物的長叉，燒得通紅、一叉貫穿數敵。" },
+        "relic_starfish_arm":       { n: "海星的分裂腕足",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 21, dmgL: 20, hit: 14, dmgBonus: 11, eff: "combo", comboRate: 20, procStatusSkill: { skId: "sk_relic_paralyze", rate: 1 }, str: 2, wis: 2, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】海星再生不絕的分裂腕足，纏擊之間暴露敵人弱點。" },
+        "relic_croc_soul":          { n: "被遺忘的鱷魚靈魂",   type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 24, hit: 0, mdmg: 2, wis: 2, extraMp: 9, procSkill: "sk_icearrow", procRateBase: 15, procRatePerEn: 0, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島鱷魚殘留的靈魂，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。" },
+        "relic_lizard_scale":       { n: "破舊的蜥蜴甲",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 1, mpR: 3, mr: 5, req: "mage,elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島蜥蜴人剝下的破舊甲片，涼薄卻凝聚魔力。" },
+        "relic_veteran_lizard_gauntlet":{ n: "資深蜥蜴族護手", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 7, meleeDmg: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂暴蜥蜴人的護手，久經戰陣使出手更具威力。" },
+        "relic_black_gale":         { n: "黑色疾風",           type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, hpR: 20, mpR: 1, dr: 6, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂野之魔化成的漆黑疾風，纏身而過生機盎然。" },
+        "relic_elder_thunder":      { n: "長老的雷電能量",     type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 4, dmgL: 5, hit: 4, dmgBonus: 4, extraMp: 3, procSkill: "sk_thunder", procRateBase: 100, procRatePerEn: 0, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】長老掌中凝聚的雷電能量，每一擊都招來天雷。" },
+        "relic_green_imp_nail":     { n: "綠色妖鬼的指甲",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 3, atkSpdPct: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】卡司特尖銳的綠色指甲，套上後出手快如鬼魅。" },
+        "relic_ohm_hidepants":      { n: "歐姆的粗皮褲",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 1, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】狂暴的歐姆脫下的粗皮褲，粗糙厚實、抗拒魔法。" },
+        "relic_ogre_mawashi":       { n: "食人妖精的相撲褌",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 3, resFire: 5, dr: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精纏腰的相撲褌，厚布層層擋下烈焰與重擊。" },
+        "relic_lamia_tailscale":    { n: "蛇女的尾鱗甲",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, meleeDmg: 1, extraDmg: 5, mhp: 50, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蛇女尾端剝落的鱗甲，貼身護衛且蘊藏毒性之力。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_bat_wing":           { n: "飛蝠之翼",           type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, er: 15, mr: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】魔蝙蝠的薄翼，披上後身形飄忽、魔法難侵。" },
+        "relic_mandra_spirit":      { n: "曼陀羅之靈",         type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 26, dmgL: 26, hit: 0, mpR: 15, int: 1, extraMp: 7, procInstakill: { p: 0.01 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】底比斯曼陀羅草凝成的靈體，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。" },
+        "relic_ohm_heavyarmor":     { n: "歐姆士兵的重裝鎧甲", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 20, er: -50, dr: 10, req: "knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐姆裝甲兵的重裝鎧甲，堅不可摧卻笨重難行。" },
+        "relic_cerberus_wand":      { n: "三頭犬魔杖",         type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 2, dmgL: 3, hit: 9, dmgBonus: 9, mdmg: 3, extraMp: 5, ele: "fire", spellProc: { skn: "噴火", dice: [4, 6], ele: "fire", aoe: true }, procRateBase: 10, procRatePerEn: 0, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】以地獄犬三首煉成的魔杖，杖端噴吐地獄業火。" },
+        "relic_watersprite_string": { n: "水靈的琴弦",         type: "wpn", isBow: true, ranged: true, w2h: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 70, dmgS: 3, dmgL: 3, hit: 8, dmgBonus: 11, extraDmg: 5, ele: "water", spellProc: { skn: "寒冰氣息", dice: [3, 6], ele: "water", aoe: true }, procRateBase: 5, procRatePerEn: 0, req: "elf,illusion", p: 10000, gachaWeight: 0, d: "【遺物】希爾黛斯撥動的水靈琴弦，箭如寒流連綿不絕。" },
+        "relic_dragonturtle_shell": { n: "龍龜的背殼",         type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 10, dr: 6, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "royal,dragon,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】龍龜堅不可摧的背殼，抵禦萬般傷害與四方之力。" },
+        "relic_bluetail_tail":      { n: "藍尾蜥蜴的斷尾",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 150, hpR: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】藍尾蜥蜴自斷的尾巴，輕盈且生機勃勃、再生不息。" },
+        "relic_lizardman_cleaver":  { n: "蜥蜴人的大砍刀",     type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 10, dmgL: 17, hit: 10, dmgBonus: 10, eff: "pierce", pierceChance: 50, vampPct: 0.03, mhp: 60, req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】重裝蜥蜴人揮舞的大砍刀，一刀劈落數敵、飲血自癒。" },
         // ===== 🏺 遺物 第三批（v3.1.2·19 件·單一怪物專屬掉落 0.0001%）=====
-        "relic_ohm_maul":           { n: "歐姆裝甲兵的超重鎚", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 26, hit: 7, dmgBonus: 11, eff: "crush", mcrit: 3, mcritDmg: 10, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐姆裝甲兵掄起的超重戰鎚，一擊粉碎鋼鐵。<br>重擊（一般限定）；貫穿；近距離爆擊率 +3%、近距離爆擊傷害 +10%。" },
-        "relic_darkspirit_shroud":  { n: "暗靈的迷霧披肩",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 0, mr: 30, dr: 3, er: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】闇之精靈凝成的迷霧披肩，輕如無物卻魔法難侵。<br>MR +30、傷害減免 +3、ER +5。" },
-        "relic_armadillo_helm":     { n: "犰狳尖刺頭盔",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, thorns: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】犰狳背甲製成的尖刺頭盔，觸之者反受其傷。<br>受到一般攻擊時，對攻擊者造成 15 點固定傷害。" },
-        "relic_whiteant_shell":     { n: "白螞蟻蛋殼",       type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 0, onDmgHeal: "sk_heal1", req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】白螞蟻群未孵化的堅殼，受創時湧出療癒之力。<br>受到傷害時，對自身施展不消耗 MP 的初級治癒術（每 5 秒最多 1 次）。" },
-        "relic_high_lizard_armguard":{ n: "高等蜥蜴鱗臂甲",  type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, rangedDmg: 5, rangedHit: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】高等蜥蜴人的鱗片臂甲，穩住持弓的手。臂甲（裝於副手，可與雙手武器並用）。<br>遠距離傷害 +5、遠距離命中 +1。" },
-        "relic_parrot_beak":        { n: "七彩鸚鵡喙",       type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 17, hit: 9, dmgBonus: 12, eff: "cleave", ele: "wind", procStatusSkill: { skId: "sk_relic_silence", rate: 1 }, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】奇異鸚鵡巨大的七彩喙，啄擊如疾風、令人噤聲。<br>切割（一般限定）；一般攻擊轉為風屬性；攻擊命中時 1% 機率使目標沉默。" },
-        "relic_pirate_scimitar":    { n: "海賊經典彎刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 15, dmgBonus: 15, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏至死緊握的經典彎刀，鋒芒歷久不衰。<br>反擊（一般限定）。" },
-        "relic_scorpion_sting":     { n: "毒蠍的尾刺",       type: "wpn", relic: true, noEnhance: true, dmgS: 3, dmgL: 3, hit: 7, dmgBonus: 5, procPoison: { rate: 100, dmg: [30, 1], dur: 10, tick: 1 }, procInstakill: { p: 0.01 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】毒蠍淬滿劇毒的尾刺，一擊致命。<br>出血（一般限定）；攻擊命中時 100% 使目標中毒，每秒受到 30 點固定傷害；攻擊命中時 1% 機率使目標即死。" },
-        "relic_harvey_claw":        { n: "哈維的吸血爪",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 11, hit: 8, dmgBonus: 8, vampPct: 0.05, spellProc: { skn: "吸血鬼之吻", dice: [2, 9], ele: "none", heal: 1.0 }, procRateBase: 3, procRatePerEn: 0, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】哈維鮮血淋漓的利爪，撕咬間奪取生命。<br>反擊（一般限定）；恢復一般攻擊造成傷害的 5% HP；攻擊時 3% 機率施放【吸血鬼之吻】（吸取造成傷害的 HP）。" },
-        "relic_death_leaf":         { n: "隱蔽的死亡草葉",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, stealth: true, instakillFull: 0.01, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】底比斯曼陀羅草化成的隱蔽草葉，藏形匿影、致人於死。<br>裝備時獲得隱身術效果（非BOSS滿血怪不主動攻擊）；一般攻擊命中滿血怪物時 1% 機率造成即死。" },
-        "relic_apprentice_wand":    { n: "黑魔法學徒魔杖",   type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 1, dmgL: 1, hit: 6, dmgBonus: 6, extraMp: 6, mpR: 15, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精魔法學徒的入門魔杖，蘊藏綿延魔力。<br>貫穿；額外魔法點數 +6、MP自然恢復量 +15。" },
-        "relic_bear_vitality":      { n: "巨熊的生命力",     type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mhp: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】魔熊凝於指環的旺盛生命力，令持有者體魄強健。<br>HP +100。" },
-        "relic_militia_armor":      { n: "民兵的萬用護甲",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 9, mr: 9, extraDmg: 1, extraHit: 1, extraMp: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐姆民兵的萬用護甲，四平八穩、面面俱到。<br>MR +9、額外傷害 +1、額外命中 +1、額外魔法點數 +1。" },
-        "relic_sharpshooter_bow":   { n: "神射手的重弦弓",   type: "wpn", isBow: true, ranged: true, w2h: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 90, dmgS: 2, dmgL: 2, hit: 13, dmgBonus: 9, rcrit: 3, req: "royal,knight,elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】骷髏神射手的重弦長弓，箭無虛發、勁貫甲胄。<br>貫穿；連射 90%（一般限定）；遠距離爆擊率 +3%。" },
-        "relic_guard_pike":         { n: "警衛的穿心矛",     type: "wpn", relic: true, noEnhance: true, dmgS: 7, dmgL: 8, hit: 9, dmgBonus: 9, unBonus: true, mmp: 50, mpOnHit: true, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】骷髏警衛的穿心長矛，破甲奪魂、汲取魔力。<br>出血（一般限定）；對不死 / 狼人加成；MP +50；一般攻擊命中恢復 1 MP。" },
-        "relic_whirlwind_xbow":     { n: "旋風十字弓",       type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 70, dmgS: 3, dmgL: 3, hit: 13, dmgBonus: 10, mdmg: 2, ele: "wind", procSkill: "sk_tornado", procRateBase: 3, procRatePerEn: 0, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗精靈的旋風十字弓，箭矢裹挾狂風。單手十字弓（可與盾牌／臂甲並用，需裝備箭矢）。<br>連射 70%（一般限定）；一般攻擊轉為風屬性；魔法傷害 +2；攻擊時 3% 機率施展龍捲風。" },
-        "relic_darkremnant_boots":  { n: "黑暗殘兵的訓練靴", type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 6, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵的訓練靴，久經操練、步履輕捷。<br>敏捷 +1。" },
-        "relic_ogi_greataxe":       { n: "歐吉的巨大戰斧",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 26, hit: 12, dmgBonus: 12, eff: "crush", str: 3, mhp: 50, req: "royal,knight,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐吉揮舞的巨大戰斧，蠻力橫掃、摧枯拉朽。<br>重擊（一般限定）；貫穿；力量 +3、HP +50。" },
-        "relic_doro_vitality":      { n: "多羅的生命能量",   type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 2, mhp: 30, hpR: 50, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】多羅蘊含的旺盛生命能量，源源不絕地修復傷勢。<br>HP +30、HP自然恢復量 +50。" },
+        "relic_ohm_maul":           { n: "歐姆裝甲兵的超重鎚", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 26, hit: 7, dmgBonus: 11, eff: "crush", mcrit: 3, mcritDmg: 10, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐姆裝甲兵掄起的超重戰鎚，一擊粉碎鋼鐵。" },
+        "relic_darkspirit_shroud":  { n: "暗靈的迷霧披肩",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 0, mr: 30, dr: 3, er: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】闇之精靈凝成的迷霧披肩，輕如無物卻魔法難侵。" },
+        "relic_armadillo_helm":     { n: "犰狳尖刺頭盔",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, thorns: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】犰狳背甲製成的尖刺頭盔，觸之者反受其傷。" },
+        "relic_whiteant_shell":     { n: "白螞蟻蛋殼",       type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 0, onDmgHeal: "sk_heal1", req: "royal,knight,elf,mage,dark,dragon,illusion", p: 10000, gachaWeight: 0, d: "【遺物】白螞蟻群未孵化的堅殼，受創時湧出療癒之力。" },
+        "relic_high_lizard_armguard":{ n: "高等蜥蜴鱗臂甲",  type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, rangedDmg: 5, rangedHit: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】高等蜥蜴人的鱗片臂甲，穩住持弓的手。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_parrot_beak":        { n: "七彩鸚鵡喙",       type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 17, hit: 9, dmgBonus: 12, eff: "cleave", ele: "wind", procStatusSkill: { skId: "sk_relic_silence", rate: 1 }, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】奇異鸚鵡巨大的七彩喙，啄擊如疾風、令人噤聲。" },
+        "relic_pirate_scimitar":    { n: "海賊經典彎刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 15, dmgBonus: 15, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏至死緊握的經典彎刀，鋒芒歷久不衰。" },
+        "relic_scorpion_sting":     { n: "毒蠍的尾刺",       type: "wpn", relic: true, noEnhance: true, dmgS: 3, dmgL: 3, hit: 7, dmgBonus: 5, procPoison: { rate: 100, dmg: [30, 1], dur: 10, tick: 1 }, procInstakill: { p: 0.01 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】毒蠍淬滿劇毒的尾刺，一擊致命。" },
+        "relic_harvey_claw":        { n: "哈維的吸血爪",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 11, hit: 8, dmgBonus: 8, vampPct: 0.05, spellProc: { skn: "吸血鬼之吻", dice: [2, 9], ele: "none", heal: 1.0 }, procRateBase: 3, procRatePerEn: 0, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】哈維鮮血淋漓的利爪，撕咬間奪取生命。" },
+        "relic_death_leaf":         { n: "隱蔽的死亡草葉",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, stealth: true, instakillFull: 0.01, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】底比斯曼陀羅草化成的隱蔽草葉，藏形匿影、致人於死。" },
+        "relic_apprentice_wand":    { n: "黑魔法學徒魔杖",   type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 1, dmgL: 1, hit: 6, dmgBonus: 6, extraMp: 6, mpR: 15, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精魔法學徒的入門魔杖，蘊藏綿延魔力。" },
+        "relic_bear_vitality":      { n: "巨熊的生命力",     type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mhp: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】魔熊凝於指環的旺盛生命力，令持有者體魄強健。" },
+        "relic_militia_armor":      { n: "民兵的萬用護甲",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 9, mr: 9, extraDmg: 1, extraHit: 1, extraMp: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】歐姆民兵的萬用護甲，四平八穩、面面俱到。" },
+        "relic_sharpshooter_bow":   { n: "神射手的重弦弓",   type: "wpn", isBow: true, ranged: true, w2h: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 90, dmgS: 2, dmgL: 2, hit: 13, dmgBonus: 9, rcrit: 3, req: "royal,knight,elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】骷髏神射手的重弦長弓，箭無虛發、勁貫甲胄。" },
+        "relic_guard_pike":         { n: "警衛的穿心矛",     type: "wpn", relic: true, noEnhance: true, dmgS: 7, dmgL: 8, hit: 9, dmgBonus: 9, unBonus: true, mmp: 50, mpOnHit: true, req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】骷髏警衛的穿心長矛，破甲奪魂、汲取魔力。" },
+        "relic_whirlwind_xbow":     { n: "旋風十字弓",       type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 70, dmgS: 3, dmgL: 3, hit: 13, dmgBonus: 10, mdmg: 2, ele: "wind", procSkill: "sk_tornado", procRateBase: 3, procRatePerEn: 0, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗精靈的旋風十字弓，箭矢裹挾狂風。單手十字弓（可與盾牌／臂甲並用，需裝備箭矢）。" },
+        "relic_darkremnant_boots":  { n: "黑暗殘兵的訓練靴", type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 6, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵的訓練靴，久經操練、步履輕捷。" },
+        "relic_ogi_greataxe":       { n: "歐吉的巨大戰斧",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 26, hit: 12, dmgBonus: 12, eff: "crush", str: 3, mhp: 50, req: "royal,knight,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】歐吉揮舞的巨大戰斧，蠻力橫掃、摧枯拉朽。" },
+        "relic_doro_vitality":      { n: "多羅的生命能量",   type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 2, mhp: 30, hpR: 50, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】多羅蘊含的旺盛生命能量，源源不絕地修復傷勢。" },
         // ===== 🏺 遺物 第四批（v3.1.4·11 遺物＋1 一般防具雪人手套·單一怪物專屬掉落 0.0001%）=====
-        "relic_deepfish_skin":      { n: "深海魚的電擊皮",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, resWind: 10, resWater: 10, mr: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】深海電魚剝下的皮膜，帶著麻痺的電流與海潮氣息。<br>風屬性抗性 +10、水屬性抗性 +10、MR +5。" },
-        "relic_bandit_token":       { n: "盜掠者的信物",     type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, hpR: 3, mpR: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】強盜掛在耳邊的贓物信物，佩戴時精神格外充沛。<br>HP自然恢復量 +3、MP自然恢復量 +3。" },
-        "relic_yeti_fist":          { n: "雪人之拳",         type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 6, immFreeze: true, resWater: 8, mhp: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】雪人厚重的拳套，凝結千年寒冰卻不畏冰凍。<br>免疫冰凍；水屬性抗性 +8、HP +5。" },
-        "arm_yeti_gloves":          { n: "雪人手套",         type: "arm", slot: "gloves", ac: 1, resWater: 8, mhp: 5, req: "all", safe: 4, p: 30000, gachaWeight: 30, d: "雪人毛皮縫製的厚實手套，隔絕刺骨寒氣。<br>水屬性抗性 +8、HP +5。" },
-        "relic_paper_cloak":        { n: "輕薄的紙披風",     type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 0, resFire: -10, extraMp: 10, mpR: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】紙人身上輕薄的符紙披風，蘊藏充沛魔力卻一觸即燃。<br>火屬性抗性 -10；額外魔法點數 +10、MP自然恢復量 +10。" },
-        "relic_darkthief_claw":     { n: "黑暗盜賊的兇殺爪", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 15, hit: 10, dmgBonus: 13, eff: "combo", comboRate: 50, extraDmg: 10, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精盜賊行兇的雙爪，撕裂之間血花四濺。<br>雙擊 50%；貫穿；固定傷害 +10。" },
-        "relic_darkelf_chainsword": { n: "暗精靈鎖鏈劍",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 22, dmgL: 16, hit: 8, dmgBonus: 8, hpR: 10, extraMp: 5, spellProc: { skn: "吸血鬼之吻", dice: [2, 9], ele: "none", heal: 1.0 }, procRateBase: 10, procRatePerEn: 0, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】闇精靈王御用的鎖鏈劍，斬擊之餘吸食敵人的生命。<br>弱點曝光；貫穿；HP自然恢復量 +10、額外魔法點數 +5；攻擊時 10% 機率施展【吸血鬼之吻】（吸取造成傷害的 HP）。" },
-        "relic_seawater_shirt":     { n: "浸泡海水的內衣",   type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 6, resWind: -10, resFire: 10, mpR: 3, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏浸透海水的內衣，濕冷卻能澆熄烈焰。<br>風屬性抗性 -10、火屬性抗性 +10、MP自然恢復量 +3、傷害減免 +1。" },
-        "relic_fighter_axe":        { n: "鬥士的老舊戰斧",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 18, dmgL: 18, hit: 9, dmgBonus: 9, eff: "crush", hardWear: 100, req: "royal,knight,elf,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】骷髏鬥士的老舊戰斧，一劈便將堅甲硬皮盡數崩碎。<br>重擊（一般限定）；貫穿；命中硬皮怪可削減 100 硬皮值。" },
-        "relic_hermitcrab_shell":   { n: "寄居蟹的巨大背殼", type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 10, dr: 15, moveSpeedPct: -50, req: "knight", p: 10000, gachaWeight: 0, d: "【遺物】奎斯坦修的巨大背殼，堅如磐石卻沉重拖累身形。<br>傷害減免 +15；移動速度 -50%（怪物重生變慢：5 秒 → 10 秒）。" },
-        "relic_bombflower_core":    { n: "爆彈花蕊",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resFire: 20, hurtExplode: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】爆彈花不穩定的花蕊，受創時炸裂波及四周。<br>火屬性抗性 +20；受到傷害時，對自己與所有敵人造成 100 點火屬性魔法傷害（受魔法傷害影響）。" },
-        "relic_scarab_shin":        { n: "古代聖甲蟲脛甲",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 4, resEarth: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】底比斯聖甲蟲的甲殼脛甲，親和大地之力。<br>地屬性抗性 +10。" },
-        "relic_darkelf_grindblade": { n: "黑暗殘兵的研磨利刃", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 10, dmgL: 12, hit: 15, dmgBonus: 14, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵研磨至極的單手武士刀，刃鋒薄透卻能破甲穿骨。<br>反擊、居合（一般限定）；貫穿（無視硬皮額外減傷）；近距離傷害 +14、近距離命中 +15。" },
-        "relic_darkelf_shootglove": { n: "黑暗殘兵輔助射擊手套", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 5, rangedDmg: 2, rangedHit: 2, req: "knight,elf,dark,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵操弩的皮手套，穩住扣弦瞄準的每一次呼吸。<br>遠距離傷害 +2、遠距離命中 +2。" },
-        "relic_giant_clubfrag":     { n: "巨人的木棒殘片",   type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 3, dr: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】巨人巨棒斷裂的殘片，綁在臂上厚重如盾。臂甲（裝於副手，可與雙手武器並用）。<br>傷害減免 +2。" },
-        "relic_ogreking_collar":    { n: "食人妖精王的尖刺項圈", type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 300, petDmgAll: 3, petHitAll: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精王套在獸群頸上的尖刺項圈，號令群獸為其效死。<br>負重上限 +300；所有項圈夥伴額外傷害 +3、額外命中 +3。" },
-        "relic_monia_sandals":      { n: "莫妮亞的疾速涼鞋", type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 6, moveSpeedPct: 50, er: 10, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】莫妮亞輕盈編織的涼鞋，穿上便如疾風般迅捷。<br>移動速度 +50%（怪物重生變快：5 秒 → 3.3 秒）；ER +10、敏捷 +1。" },
-        "relic_wornout_underwear":  { n: "戰場風化的老舊內衣", type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 5, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾爾摩士兵陣亡後遺留的貼身內衣，歷經戰火依舊堅韌。<br>體質 +1。" },
-        "relic_dream_mushroom_soul":{ n: "夢幻的蘑菇靈魂",   type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 28, dmgL: 28, hit: 0, int: 1, wis: 2, extraMp: 11, procPoison: { rate: 30, dmg: [10, 1], dur: 10, tick: 1 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】夢幻之島蘑菇凝聚的靈魂，化為幻術士操縱的奇古獸。幻術士專屬·奇古獸（一般攻擊化為必中的魔法傷害，受魔抗減免）。<br>智力 +1、精神 +2、額外魔法點數 +11；攻擊時 30% 機率使目標中毒，每秒受到 10 點固定傷害。" },
-        "relic_wisp_remnant":       { n: "幽光的殘念",       type: "wpn", relic: true, noEnhance: true, dmgS: 10, dmgL: 12, hit: 13, dmgBonus: 12, onHitEleDmg: { dmg: 30, ele: "fire" }, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】夢幻之島鬼火凝成的殘念，寒光深處透著不滅的火意。單手武士刀。<br>反擊、居合（一般限定）；一般攻擊命中時額外造成 30 點火屬性固定傷害；近距離傷害 +12、近距離命中 +13。" },
-        "relic_frostdeath_breath":  { n: "殘冰的死亡氣息",   type: "wpn", w2h: true, isWand: true, relic: true, noEnhance: true, ignHardSkin: true, eff: "magicburst", freeChill: true, dmgS: 9, dmgL: 9, hit: 10, dmgBonus: 9, extraMp: 7, int: 1, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】冰人臨終吐出的最後一縷氣息，凝成雙手魔杖。<br>魔爆（一般限定）；貫穿；施放寒冰氣息不消耗 MP；額外魔法點數 +7、智力 +1；近距離傷害 +9、近距離命中 +10。" },
-        "relic_remnant_barrier":    { n: "殘兵法師的魔力護盾", type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 4, mr: 20, int: 1, con: -1, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵法師以殘餘魔力凝成的護盾，副手裝備。<br>MR +20、智力 +1、體質 -1。" },
-        "relic_summoner_whip":      { n: "喚獸師的訓練鞭",   type: "wpn", relic: true, noEnhance: true, eff: "crush", dmgS: 6, dmgL: 4, hit: 8, dmgBonus: 8, summonDmg: 3, summonHit: 6, petDmgAll: 6, petHitAll: 3, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】喚獸師馴服百獸的長鞭，號令召喚物與夥伴同心協力。單手鈍器。<br>鈍擊（一般限定）；貫穿；召喚物額外傷害 +3、額外命中 +6；所有項圈夥伴額外傷害 +6、額外命中 +3；近距離傷害 +8、近距離命中 +8。" },
+        "relic_deepfish_skin":      { n: "深海魚的電擊皮",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, resWind: 10, resWater: 10, mr: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】深海電魚剝下的皮膜，帶著麻痺的電流與海潮氣息。" },
+        "relic_bandit_token":       { n: "盜掠者的信物",     type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, hpR: 3, mpR: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】強盜掛在耳邊的贓物信物，佩戴時精神格外充沛。" },
+        "relic_yeti_fist":          { n: "雪人之拳",         type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 6, immFreeze: true, resWater: 8, mhp: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】雪人厚重的拳套，凝結千年寒冰卻不畏冰凍。" },
+        "arm_yeti_gloves":          { n: "雪人手套",         type: "arm", slot: "gloves", ac: 1, resWater: 8, mhp: 5, req: "all", safe: 4, p: 30000, gachaWeight: 30, d: "雪人毛皮縫製的厚實手套，隔絕刺骨寒氣。" },
+        "relic_paper_cloak":        { n: "輕薄的紙披風",     type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 0, resFire: -10, extraMp: 10, mpR: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】紙人身上輕薄的符紙披風，蘊藏充沛魔力卻一觸即燃。" },
+        "relic_darkthief_claw":     { n: "黑暗盜賊的兇殺爪", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 15, hit: 10, dmgBonus: 13, eff: "combo", comboRate: 50, extraDmg: 10, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精盜賊行兇的雙爪，撕裂之間血花四濺。" },
+        "relic_darkelf_chainsword": { n: "暗精靈鎖鏈劍",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 22, dmgL: 16, hit: 8, dmgBonus: 8, hpR: 10, extraMp: 5, spellProc: { skn: "吸血鬼之吻", dice: [2, 9], ele: "none", heal: 1.0 }, procRateBase: 10, procRatePerEn: 0, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】闇精靈王御用的鎖鏈劍，斬擊之餘吸食敵人的生命。" },
+        "relic_seawater_shirt":     { n: "浸泡海水的內衣",   type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 6, resWind: -10, resFire: 10, mpR: 3, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏浸透海水的內衣，濕冷卻能澆熄烈焰。" },
+        "relic_fighter_axe":        { n: "鬥士的老舊戰斧",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 18, dmgL: 18, hit: 9, dmgBonus: 9, eff: "crush", hardWear: 100, req: "royal,knight,elf,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】骷髏鬥士的老舊戰斧，一劈便將堅甲硬皮盡數崩碎。" },
+        "relic_hermitcrab_shell":   { n: "寄居蟹的巨大背殼", type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 10, dr: 15, moveSpeedPct: -50, req: "knight", p: 10000, gachaWeight: 0, d: "【遺物】奎斯坦修的巨大背殼，堅如磐石卻沉重拖累身形。" },
+        "relic_bombflower_core":    { n: "爆彈花蕊",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resFire: 20, hurtExplode: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】爆彈花不穩定的花蕊，受創時炸裂波及四周。" },
+        "relic_scarab_shin":        { n: "古代聖甲蟲脛甲",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 4, resEarth: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】底比斯聖甲蟲的甲殼脛甲，親和大地之力。" },
+        "relic_darkelf_grindblade": { n: "黑暗殘兵的研磨利刃", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 10, dmgL: 12, hit: 15, dmgBonus: 14, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵研磨至極的單手武士刀，刃鋒薄透卻能破甲穿骨。" },
+        "relic_darkelf_shootglove": { n: "黑暗殘兵輔助射擊手套", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 5, rangedDmg: 2, rangedHit: 2, req: "knight,elf,dark,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵操弩的皮手套，穩住扣弦瞄準的每一次呼吸。" },
+        "relic_giant_clubfrag":     { n: "巨人的木棒殘片",   type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 3, dr: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】巨人巨棒斷裂的殘片，綁在臂上厚重如盾。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_ogreking_collar":    { n: "食人妖精王的尖刺項圈", type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 300, petDmgAll: 3, petHitAll: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精王套在獸群頸上的尖刺項圈，號令群獸為其效死。" },
+        "relic_monia_sandals":      { n: "莫妮亞的疾速涼鞋", type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 6, moveSpeedPct: 50, er: 10, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】莫妮亞輕盈編織的涼鞋，穿上便如疾風般迅捷。" },
+        "relic_wornout_underwear":  { n: "戰場風化的老舊內衣", type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 5, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾爾摩士兵陣亡後遺留的貼身內衣，歷經戰火依舊堅韌。" },
+        "relic_dream_mushroom_soul":{ n: "夢幻的蘑菇靈魂",   type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 28, dmgL: 28, hit: 0, int: 1, wis: 2, extraMp: 11, procPoison: { rate: 30, dmg: [10, 1], dur: 10, tick: 1 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】夢幻之島蘑菇凝聚的靈魂，化為幻術士操縱的奇古獸。幻術士專屬·奇古獸（一般攻擊化為必中的魔法傷害，受魔抗減免）。" },
+        "relic_wisp_remnant":       { n: "幽光的殘念",       type: "wpn", relic: true, noEnhance: true, dmgS: 10, dmgL: 12, hit: 13, dmgBonus: 12, onHitEleDmg: { dmg: 30, ele: "fire" }, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】夢幻之島鬼火凝成的殘念，寒光深處透著不滅的火意。單手武士刀。" },
+        "relic_frostdeath_breath":  { n: "殘冰的死亡氣息",   type: "wpn", w2h: true, isWand: true, relic: true, noEnhance: true, ignHardSkin: true, eff: "magicburst", freeChill: true, dmgS: 9, dmgL: 9, hit: 10, dmgBonus: 9, extraMp: 7, int: 1, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】冰人臨終吐出的最後一縷氣息，凝成雙手魔杖。" },
+        "relic_remnant_barrier":    { n: "殘兵法師的魔力護盾", type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 4, mr: 20, int: 1, con: -1, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵法師以殘餘魔力凝成的護盾，副手裝備。" },
+        "relic_summoner_whip":      { n: "喚獸師的訓練鞭",   type: "wpn", relic: true, noEnhance: true, eff: "crush", dmgS: 6, dmgL: 4, hit: 8, dmgBonus: 8, summonDmg: 3, summonHit: 6, petDmgAll: 6, petHitAll: 3, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】喚獸師馴服百獸的長鞭，號令召喚物與寵物同心協力。單手鈍器。" },
         "relic_metalshell_shin":    { n: "金屬甲殼脛甲",     type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 7, req: "royal,knight,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】金屬蜈蚣蛻下的甲殼，包覆小腿堅硬如鐵。" },
-        "relic_griffin_claw":       { n: "獅鷲的鋒利鷹爪",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 50, mcritDmg: 10, dmgS: 20, dmgL: 18, hit: 13, dmgBonus: 14, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】格利芬鋒利的巨爪，撕裂空氣的速度快得肉眼難辨。雙手鋼爪。<br>雙擊 50%（一般限定）；貫穿；爆擊傷害 +10%；近距離傷害 +14、近距離命中 +13。" },
-        "relic_wither_amulet":      { n: "凋零法師的護身符", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, int: 3, mpR: 5, con: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】凋零法師貼身的護身符，以生命為代價換取深邃魔力。<br>智力 +3、MP自然恢復量 +5、體質 -2。" },
-        "relic_stalker_chest":      { n: "潛行者的祕密箱子", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 9, dr: 15, mr: 15, moveSpeedPct: -100, req: "royal,elf,knight,dark,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】潛行者藏身其中的沉重箱子，堅不可摧卻寸步難行。<br>傷害減免 +15、MR +15；移動速度 -100%（怪物重生大幅變慢）。" },
-        "relic_giantant_eye":       { n: "巨大螞蟻的複眼",   type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 3, showMobEle: true, weakHitBonus: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】巨大螞蟻的複眼，能洞悉敵人的屬性弱點。<br>狀態直接顯示敵人屬性；以敵人的弱點屬性攻擊命中時，額外造成 20 點固定傷害。" },
-        "relic_croc_fang":          { n: "巨大鱷魚的狩獵牙", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", ignHardSkin: true, hardSkinMult: 1.5, dmgS: 17, dmgL: 21, hit: 13, dmgBonus: 16, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨大鱷魚的狩獵利牙，專破厚甲硬皮。雙手劍。<br>切割（一般限定）；貫穿；當目標有硬皮值時，一般攻擊造成傷害 ×1.5；近距離傷害 +16、近距離命中 +13。" },
-        "relic_icestone_maul":      { n: "冰石的強襲鎚",     type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", ele: "water", onHitEleDmg: { dmg: 10, ele: "water" }, procStatusSkill: { skId: "sk_relic_freeze", rate: 1 }, dmgS: 18, dmgL: 24, hit: 10, dmgBonus: 10, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】冰石高崙揮舞的強襲鎚，每一擊都帶著徹骨寒意。雙手鈍器。<br>重擊（一般限定）；貫穿；一般攻擊轉為水屬性，命中額外造成 10 點水屬性固定傷害，並 1% 機率使目標冰凍；近距離傷害 +10、近距離命中 +10。" },
-        "relic_scarab_nest":        { n: "聖甲蟲的孵育巢",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 1, cha: -3, aggroHide: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】聖甲蟲守護幼蟲的孵育巢，散發使敵人本能迴避的氣味。<br>魅力 -3；敵人的指定攻擊會優先攻擊「未裝備」本物品的玩家或傭兵——只有隊伍中未裝備者全數倒下，裝備者才會成為攻擊目標（全體攻擊不受影響）。" },
-        "relic_blackmage_pants":    { n: "黑法師的修身褲",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 0, dex: 2, int: 1, wis: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑法師合身的修身褲，輕巧靈活。<br>敏捷 +2、智力 +1、精神 +1。" },
-        "relic_mutant_lamia_scale": { n: "變種蛇女的詭異鱗片", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, unBonus: true, dmgS: 7, dmgL: 7, hit: 9, dmgBonus: 11, procStatusSkill: { skId: "sk_relic_paralyze", rate: 1 }, procPoison: { rate: 100, dmg: [10, 1], dur: 10, tick: 1 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】變種蛇女詭異的鱗片，鋒利如刃、淬滿劇毒。匕首。<br>出血（一般限定）；貫穿；不死／狼人加成；攻擊命中 1% 機率使目標麻痺；攻擊命中必定使目標中毒，每秒受到 10 點固定傷害；近距離傷害 +11、近距離命中 +9。" },
-        "relic_pirate_bandana":     { n: "海賊骷髏的陳年頭巾", type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, wis: 2, resWater: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏刀手陳年的頭巾，浸透海風鹹味。<br>精神 +2、水屬性抗性 +5。" },
-        "relic_pirate_ring":        { n: "海賊的統御之戒",   type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, summonDmg: 10, petDmgAll: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊統御群屍的指環，令召喚物與夥伴為其效死。<br>召喚物額外傷害 +10；所有項圈夥伴額外傷害 +10。" },
-        "relic_giant_toothpick":    { n: "巨人戰士的牙籤",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", ignHardSkin: true, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, dmgS: 20, dmgL: 17, hit: 14, dmgBonus: 17, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨人戰士隨手的牙籤，於常人卻是巨劍。雙手劍。<br>切割（一般限定）；貫穿；攻擊命中 1% 機率使目標暈眩；近距離傷害 +17、近距離命中 +14。" },
-        "relic_giant_throwstone":   { n: "巨人的拋投石",     type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", dr: 3, procStatusSkill: { skId: "sk_relic_broken", rate: 5 }, dmgS: 18, dmgL: 24, hit: 12, dmgBonus: 12, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨人拋投的巨石，砸中即令甲冑碎裂。雙手鈍器。<br>重擊（一般限定）；貫穿；攻擊命中 5% 機率使目標陷入損壞；傷害減免 +3；近距離傷害 +12、近距離命中 +12。" },
-        "relic_redimp_nail":        { n: "紅色妖鬼的詛咒指甲", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 1, atkSpdPct: 35, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】紅色妖鬼詛咒的指甲，纏於指間催動疾速。<br>攻擊速度 +35%。" },
-        "relic_armor_spareblade":   { n: "詛咒鎧甲的備用刀", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 25, unBonus: true, dmgS: 11, dmgL: 8, hit: 14, dmgBonus: 11, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】活鎧甲備用的雙刀，無主自舞、寒光凜冽。雙刀。<br>雙擊 25%；不死／狼人加成；近距離傷害 +11、近距離命中 +14。" },
-        "relic_beholder_gaze":      { n: "眼魔的凝視",       type: "wpn", isWand: true, relic: true, noEnhance: true, eff: "magicstrike", str: 4, procStatusSkill: { skId: "sk_relic_stone", rate: 1 }, dmgS: 9, dmgL: 9, hit: 13, dmgBonus: 16, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】眼魔封存的凝視，杖端仍殘留石化之力。單手魔杖。<br>魔擊（一般限定）；力量 +4；攻擊命中 1% 機率使目標石化；近距離傷害 +16、近距離命中 +13。" },
-        "relic_fly_curse":          { n: "蠅災的詛咒",       type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, auraDmg: { dmg: 50, interval: 20, ele: "none" }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】龍蠅群聚的災禍化為詛咒，環繞使用者嗡鳴不止。<br>每 2 秒對場上所有敵人造成 50 點無屬性魔法傷害。" },
-        "relic_whitetiger_coat":    { n: "純白虎皮大衣",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 11, resWater: 15, immFreeze: true, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】純白虎皮縫製的大衣，禦寒抗凍。<br>水屬性抗性 +15；免疫冰凍。" },
-        "relic_yeti_foot":          { n: "雪怪的大腳",       type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 8, mpR: 3, dr: 2, resWater: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】雪怪碩大的腳掌製成的長靴，踏雪無痕。<br>MP自然恢復量 +3；傷害減免 +2；水屬性抗性 +5。" },
-        "relic_shapeshifter_underwear": { n: "百變的透明內衣", type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 0, mr: 5, highestAttrPlus: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】變形怪擬態而成的透明內衣，隨主人潛能起伏。<br>MR +5；目前最高的屬性 +1（若多項並列最高則皆 +1）。" },
-        "relic_veteran_greatsword": { n: "資深殘兵的重型劍", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", counterBarrierX2: true, dmgS: 17, dmgL: 21, hit: 11, dmgBonus: 15, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】資深殘兵慣用的重型劍，格擋反擊間盡顯老練。雙手劍。<br>切割（一般限定）；反擊屏障觸發的反擊傷害 ×2；近距離傷害 +15、近距離命中 +11。" },
-        "relic_thorn_needle":       { n: "刺針",             type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, unBonus: true, raceBonus: { race: "蜘蛛", mult: 3 }, dmgS: 8, dmgL: 8, hit: 14, dmgBonus: 16, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】名為「刺針」的匕首，專為獵殺蛛類而鑄。匕首。<br>出血（一般限定）；貫穿；不死／狼人加成；一般攻擊對蜘蛛類造成傷害 ×3；近距離傷害 +16、近距離命中 +14。" },
-        "relic_thorn_curse":        { n: "荊棘纏身的詛咒",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 2, thorns: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】荊棘纏身的詛咒附於脛甲，觸之者反受其傷。<br>受到一般攻擊時，對攻擊者造成 30 點固定傷害。" },
-        "relic_cockatrice_gaze":    { n: "石化雞蛇的凝視",   type: "wpn", w2h: true, chainsword: true, relic: true, noEnhance: true, weakExpose: true, procStatusSkill: { skId: "sk_mummy_curse", rate: 5 }, int: 1, wis: 2, dmgS: 23, dmgL: 20, hit: 15, dmgBonus: 14, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】石化雞蛇凝望的視線封入鎖鏈劍，斬擊間石化敵軀。鎖鏈劍（雙手・近距離）。<br>弱點曝光；貫穿；攻擊時 5% 機率施放木乃伊的詛咒；智力 +1、精神 +2；近距離傷害 +14、近距離命中 +15。" },
+        "relic_griffin_claw":       { n: "獅鷲的鋒利鷹爪",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 50, mcritDmg: 10, dmgS: 20, dmgL: 18, hit: 13, dmgBonus: 14, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】格利芬鋒利的巨爪，撕裂空氣的速度快得肉眼難辨。雙手鋼爪。" },
+        "relic_wither_amulet":      { n: "凋零法師的護身符", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, int: 3, mpR: 5, con: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】凋零法師貼身的護身符，以生命為代價換取深邃魔力。" },
+        "relic_stalker_chest":      { n: "潛行者的祕密箱子", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 9, dr: 15, mr: 15, moveSpeedPct: -100, req: "royal,elf,knight,dark,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】潛行者藏身其中的沉重箱子，堅不可摧卻寸步難行。" },
+        "relic_giantant_eye":       { n: "巨大螞蟻的複眼",   type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 3, showMobEle: true, weakHitBonus: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】巨大螞蟻的複眼，能洞悉敵人的屬性弱點。" },
+        "relic_croc_fang":          { n: "巨大鱷魚的狩獵牙", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", ignHardSkin: true, hardSkinMult: 1.5, dmgS: 17, dmgL: 21, hit: 13, dmgBonus: 16, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨大鱷魚的狩獵利牙，專破厚甲硬皮。雙手劍。" },
+        "relic_icestone_maul":      { n: "冰石的強襲鎚",     type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", ele: "water", onHitEleDmg: { dmg: 10, ele: "water" }, procStatusSkill: { skId: "sk_relic_freeze", rate: 1 }, dmgS: 18, dmgL: 24, hit: 10, dmgBonus: 10, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】冰石高崙揮舞的強襲鎚，每一擊都帶著徹骨寒意。雙手鈍器。" },
+        "relic_scarab_nest":        { n: "聖甲蟲的孵育巢",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 1, cha: -3, aggroHide: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】聖甲蟲守護幼蟲的孵育巢，散發使敵人本能迴避的氣味。" },
+        "relic_blackmage_pants":    { n: "黑法師的修身褲",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 0, dex: 2, int: 1, wis: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑法師合身的修身褲，輕巧靈活。" },
+        "relic_mutant_lamia_scale": { n: "變種蛇女的詭異鱗片", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, unBonus: true, dmgS: 7, dmgL: 7, hit: 9, dmgBonus: 11, procStatusSkill: { skId: "sk_relic_paralyze", rate: 1 }, procPoison: { rate: 100, dmg: [10, 1], dur: 10, tick: 1 }, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】變種蛇女詭異的鱗片，鋒利如刃、淬滿劇毒。匕首。" },
+        "relic_pirate_bandana":     { n: "海賊骷髏的陳年頭巾", type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 5, wis: 2, resWater: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏刀手陳年的頭巾，浸透海風鹹味。" },
+        "relic_pirate_ring":        { n: "海賊的統御之戒",   type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, summonDmg: 10, petDmgAll: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊統御群屍的指環，令召喚物與寵物為其效死。" },
+        "relic_giant_toothpick":    { n: "巨人戰士的牙籤",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", ignHardSkin: true, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, dmgS: 20, dmgL: 17, hit: 14, dmgBonus: 17, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨人戰士隨手的牙籤，於常人卻是巨劍。雙手劍。" },
+        "relic_giant_throwstone":   { n: "巨人的拋投石",     type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", dr: 3, procStatusSkill: { skId: "sk_relic_broken", rate: 5 }, dmgS: 18, dmgL: 24, hit: 12, dmgBonus: 12, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】巨人拋投的巨石，砸中即令甲冑碎裂。雙手鈍器。" },
+        "relic_redimp_nail":        { n: "紅色妖鬼的詛咒指甲", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 1, atkSpdPct: 35, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】紅色妖鬼詛咒的指甲，纏於指間催動疾速。" },
+        "relic_armor_spareblade":   { n: "詛咒鎧甲的備用刀", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 25, unBonus: true, dmgS: 11, dmgL: 8, hit: 14, dmgBonus: 11, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】活鎧甲備用的雙刀，無主自舞、寒光凜冽。雙刀。" },
+        "relic_beholder_gaze":      { n: "眼魔的凝視",       type: "wpn", isWand: true, relic: true, noEnhance: true, eff: "magicstrike", str: 4, procStatusSkill: { skId: "sk_relic_stone", rate: 1 }, dmgS: 9, dmgL: 9, hit: 13, dmgBonus: 16, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】眼魔封存的凝視，杖端仍殘留石化之力。單手魔杖。" },
+        "relic_fly_curse":          { n: "蠅災的詛咒",       type: "acc", slot: "ear", relic: true, noEnhance: true, ac: 0, auraDmg: { dmg: 50, interval: 20, ele: "none" }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】龍蠅群聚的災禍化為詛咒，環繞使用者嗡鳴不止。" },
+        "relic_whitetiger_coat":    { n: "純白虎皮大衣",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 11, resWater: 15, immFreeze: true, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】純白虎皮縫製的大衣，禦寒抗凍。" },
+        "relic_yeti_foot":          { n: "雪怪的大腳",       type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 8, mpR: 3, dr: 2, resWater: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】雪怪碩大的腳掌製成的長靴，踏雪無痕。" },
+        "relic_shapeshifter_underwear": { n: "百變的透明內衣", type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 0, mr: 5, highestAttrPlus: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】變形怪擬態而成的透明內衣，隨主人潛能起伏。" },
+        "relic_veteran_greatsword": { n: "資深殘兵的重型劍", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", counterBarrierX2: true, dmgS: 17, dmgL: 21, hit: 11, dmgBonus: 15, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】資深殘兵慣用的重型劍，格擋反擊間盡顯老練。雙手劍。" },
+        "relic_thorn_needle":       { n: "刺針",             type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, unBonus: true, raceBonus: { race: "蜘蛛", mult: 3 }, dmgS: 8, dmgL: 8, hit: 14, dmgBonus: 16, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】名為「刺針」的匕首，專為獵殺蛛類而鑄。匕首。" },
+        "relic_thorn_curse":        { n: "荊棘纏身的詛咒",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 2, thorns: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】荊棘纏身的詛咒附於脛甲，觸之者反受其傷。" },
+        "relic_cockatrice_gaze":    { n: "石化雞蛇的凝視",   type: "wpn", w2h: true, chainsword: true, relic: true, noEnhance: true, weakExpose: true, procStatusSkill: { skId: "sk_mummy_curse", rate: 5 }, int: 1, wis: 2, dmgS: 23, dmgL: 20, hit: 15, dmgBonus: 14, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】石化雞蛇凝望的視線封入鎖鏈劍，斬擊間石化敵軀。鎖鏈劍（雙手・近距離）。" },
         // 🏺 遺物 第八批（v3.1.21·3 件）
-        "relic_moonhowl_helm":      { n: "月下狂嘯",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, str: 1, meleeHit: 5, req: "royal,knight,dragon,elf,dark,warrior", p: 10000, gachaWeight: 0, d: "【遺物】狼人於月下狂嘯凝成的頭盔，激發持有者的近戰狩獵本能。<br>力量 +1、近距離命中 +5。" },
-        "relic_poison_vial":        { n: "施毒者的實驗瓶",   type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, immPoison: true, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】施毒者珍藏的實驗瓶，內盛抗性血清使百毒不侵。臂甲（裝於副手，可與雙手武器並用）。<br>免疫中毒、免疫麻痺。" },
-        "relic_ant_incubessence":   { n: "孵育螞蟻精華",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 0, onDmgHeal: "sk_heal_mid", onDmgHealCd: 8, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】強化白螞蟻群孵育用的濃縮精華，受創時湧現豐沛的療癒之力。<br>受到傷害時，對自身施展不消耗 MP 的中級治癒術（每 8 秒最多 1 次）。" },
+        "relic_moonhowl_helm":      { n: "月下狂嘯",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, str: 1, meleeHit: 5, req: "royal,knight,dragon,elf,dark,warrior", p: 10000, gachaWeight: 0, d: "【遺物】狼人於月下狂嘯凝成的頭盔，激發持有者的近戰狩獵本能。" },
+        "relic_poison_vial":        { n: "施毒者的實驗瓶",   type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, immPoison: true, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】施毒者珍藏的實驗瓶，內盛抗性血清使百毒不侵。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_ant_incubessence":   { n: "孵育螞蟻精華",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 0, onDmgHeal: "sk_heal_mid", onDmgHealCd: 8, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】強化白螞蟻群孵育用的濃縮精華，受創時湧現豐沛的療癒之力。" },
         // 🏺 遺物 第九批（v3.1.28·10 件）
-        "relic_aruba_haste":        { n: "阿魯巴的加速棍棒", type: "wpn", relic: true, noEnhance: true, eff: "crush", atkSpdPct: 20, dmgS: 4, dmgL: 4, hit: 17, dmgBonus: 15, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】阿魯巴揮舞的加速棍棒，看似笨重卻快得殘影四起。單手鈍器。<br>鈍擊（一般限定）；貫穿；攻擊速度 +20%；近距離傷害 +15、近距離命中 +17。" },
-        "relic_ashwarrior_flamesword": { n: "灰燼戰士的火焰長劍", type: "wpn", relic: true, noEnhance: true, ele: "fire", onHitEleDmg: { ele: "fire", dmg: 50, rate: 3 }, dmgS: 8, dmgL: 12, hit: 12, dmgBonus: 12, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】灰燼戰士至死緊握的火焰長劍，餘燼未熄。單手劍。<br>反擊（一般限定）；一般攻擊變為火屬性；一般攻擊命中 3% 機率額外造成 50 點火屬性固定傷害；近距離傷害 +12、近距離命中 +12。" },
-        "relic_deadgeneral_greatsword": { n: "不死將軍的珍愛巨劍", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", softMult: 1.3, dmgS: 20, dmgL: 17, hit: 12, dmgBonus: 15, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】不死將軍生前珍愛的雙手巨劍，專斬血肉之軀。雙手劍。<br>切割（一般限定）；一般攻擊對「沒有硬皮值」的敵人造成傷害 ×1.3；近距離傷害 +15、近距離命中 +12。" },
-        "relic_steel_bulwark":      { n: "不動的鋼鐵堅壁",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 13, hitstunReduce: 5, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鋼鐵高崙的軀殼鍛成的盔甲，穩如不動的堅壁。<br>受到傷害時的硬直時間減少 0.5 秒。" },
-        "relic_raider_belt":        { n: "掠奪者的染血腰帶", type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 200, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】強盜頭目染血的腰帶，掛滿掠奪來的戰利品仍游刃有餘。<br>負重上限 +200、體質 +1。" },
-        "relic_darkscorpion_pincers": { n: "暗黑蠍的雙鉗",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 30, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, ele: "earth", poisonMult: 1.2, dmgS: 16, dmgL: 11, hit: 12, dmgBonus: 13, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】暗黑蠍撕裂而下的一對毒鉗，滴著大地的劇毒。雙刀。<br>雙擊 30%；攻擊時 4% 機率發動惡魔之吻；一般攻擊變為地屬性；觸發的附加劇毒傷害 ×1.2；近距離傷害 +13、近距離命中 +12。" },
-        "relic_forgotten_sniperbow": { n: "遺忘者的狙擊弓",  type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 80, fullHpMult: 3, fullHpMultTriple: 2, dmgS: 3, dmgL: 3, hit: 13, dmgBonus: 14, req: "elf", p: 10000, gachaWeight: 0, d: "【遺物】遺忘者遺留的單手狙擊弓，專取滿血敵人的要害。<br>連射 80%（一般限定）；三重矢對滿血敵人傷害 ×2；一般攻擊對滿血敵人傷害 ×3；可同時裝備盾牌或臂甲；遠距離傷害 +14、遠距離命中 +13。" },
-        "relic_arrowfur_cloak":     { n: "佈滿箭矢的毛皮",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, dr: 8, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島歐熊插滿斷箭的厚毛皮，箭簇反成護身之甲。<br>傷害減免 +8。" },
-        "relic_evillizard_eye":     { n: "邪惡蜥蜴的眼瞳",   type: "wpn", isWand: true, relic: true, noEnhance: true, mpOnHit: true, mpOnHitAmt: 6, procStatusSkill: { skId: "sk_mummy_curse", rate: 3 }, extraMp: 3, dmgS: 3, dmgL: 3, hit: 11, dmgBonus: 11, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】邪惡蜥蜴凝固的眼瞳鑲成的魔杖，凝視間魔力湧動。單手魔杖。<br>共鳴（一般限定）；一般攻擊命中恢復 6 MP；攻擊時 3% 機率施放木乃伊的詛咒；額外魔法點數 +3；近距離傷害 +11、近距離命中 +11。" },
-        "relic_flamearcher_bracer": { n: "烈焰射手的護腕",   type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 3, rangedDmg: 4, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】烈焰射手綁縛拉弦之臂的護腕，穩住每一次瞄準。<br>遠距離傷害 +4。" },
+        "relic_aruba_haste":        { n: "阿魯巴的加速棍棒", type: "wpn", relic: true, noEnhance: true, eff: "crush", atkSpdPct: 20, dmgS: 4, dmgL: 4, hit: 17, dmgBonus: 15, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】阿魯巴揮舞的加速棍棒，看似笨重卻快得殘影四起。單手鈍器。" },
+        "relic_ashwarrior_flamesword": { n: "灰燼戰士的火焰長劍", type: "wpn", relic: true, noEnhance: true, ele: "fire", onHitEleDmg: { ele: "fire", dmg: 50, rate: 3 }, dmgS: 8, dmgL: 12, hit: 12, dmgBonus: 12, req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】灰燼戰士至死緊握的火焰長劍，餘燼未熄。單手劍。" },
+        "relic_deadgeneral_greatsword": { n: "不死將軍的珍愛巨劍", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "cleave", softMult: 1.3, dmgS: 20, dmgL: 17, hit: 12, dmgBonus: 15, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】不死將軍生前珍愛的雙手巨劍，專斬血肉之軀。雙手劍。" },
+        "relic_steel_bulwark":      { n: "不動的鋼鐵堅壁",   type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 13, hitstunReduce: 5, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鋼鐵高崙的軀殼鍛成的盔甲，穩如不動的堅壁。" },
+        "relic_raider_belt":        { n: "掠奪者的染血腰帶", type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 200, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】強盜頭目染血的腰帶，掛滿掠奪來的戰利品仍游刃有餘。" },
+        "relic_darkscorpion_pincers": { n: "暗黑蠍的雙鉗",   type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "combo", comboRate: 30, procSkill: "sk_demon_kiss", procRateBase: 4, procRatePerEn: 0, ele: "earth", poisonMult: 1.2, dmgS: 16, dmgL: 11, hit: 12, dmgBonus: 13, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】暗黑蠍撕裂而下的一對毒鉗，滴著大地的劇毒。雙刀。" },
+        "relic_forgotten_sniperbow": { n: "遺忘者的狙擊弓",  type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 80, fullHpMult: 3, fullHpMultTriple: 2, dmgS: 3, dmgL: 3, hit: 13, dmgBonus: 14, req: "elf", p: 10000, gachaWeight: 0, d: "【遺物】遺忘者遺留的單手狙擊弓，專取滿血敵人的要害。" },
+        "relic_arrowfur_cloak":     { n: "佈滿箭矢的毛皮",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 5, dr: 8, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】遺忘之島歐熊插滿斷箭的厚毛皮，箭簇反成護身之甲。" },
+        "relic_evillizard_eye":     { n: "邪惡蜥蜴的眼瞳",   type: "wpn", isWand: true, relic: true, noEnhance: true, mpOnHit: true, mpOnHitAmt: 6, procStatusSkill: { skId: "sk_mummy_curse", rate: 3 }, extraMp: 3, dmgS: 3, dmgL: 3, hit: 11, dmgBonus: 11, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】邪惡蜥蜴凝固的眼瞳鑲成的魔杖，凝視間魔力湧動。單手魔杖。" },
+        "relic_flamearcher_bracer": { n: "烈焰射手的護腕",   type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 3, rangedDmg: 4, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】烈焰射手綁縛拉弦之臂的護腕，穩住每一次瞄準。" },
         // 🏺 遺物 第十批（v3.1.32·5 件）
-        "relic_modded_crossbow":    { n: "擅自改造的十字弓", type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 100, dex: 2, dmgS: 3, dmgL: 3, hit: 11, dmgBonus: 12, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】被人擅自改造過的單手十字弓，扳機輕觸即傾瀉箭雨。<br>連射 100%（一般限定）；敏捷 +2；可同時裝備盾牌或臂甲；遠距離傷害 +12、遠距離命中 +11。" },
-        "relic_medusa_stinger":     { n: "蛇妖的無慈悲尾刺", type: "wpn", relic: true, noEnhance: true, eff: "crush", stoneInstakill: true, dmgS: 9, dmgL: 10, hit: 9, dmgBonus: 9, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】蛇妖斷落的尾刺，凝望與尖刺同樣致命。單手鈍器。<br>鈍擊（一般限定）；貫穿；一般攻擊命中「石化」狀態的敵人必定觸發即死（頭目除外）；近距離傷害 +9、近距離命中 +9。" },
-        "relic_silent_venom":       { n: "沉默的毒液",       type: "wpn", relic: true, noEnhance: true, procStatusSkill: { skId: "sk_relic_silence", rate: 3 }, silencedBonusDmg: 20, dmgS: 8, dmgL: 8, hit: 13, dmgBonus: 13, req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】滴淌著沉默毒液的單手矛，刺中者噤聲難言。單手矛。<br>出血（一般限定）；一般攻擊命中 3% 機率使目標沉默；一般攻擊對「沉默」狀態的敵人額外造成 20 點固定傷害；近距離傷害 +13、近距離命中 +13。" },
-        "relic_charm_heart":        { n: "魅惑之心",         type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 4, cha: 2, wis: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】思克巴摘下的魅惑之心，教人神魂顛倒卻也迷失心神。<br>魅力 +2、精神 -1。" },
-        "relic_swordsman_underwear": { n: "劍客的輕便內衣",  type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 3, dex: 2, meleeDmg: 3, meleeHit: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】劍客貼身的輕便內衣，不著痕跡地輔佐每一次揮劍。<br>敏捷 +2、近距離傷害 +3、近距離命中 +3。" },
+        "relic_modded_crossbow":    { n: "擅自改造的十字弓", type: "wpn", isBow: true, ranged: true, oneHand: true, relic: true, noEnhance: true, rapidfire: 100, dex: 2, dmgS: 3, dmgL: 3, hit: 11, dmgBonus: 12, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】被人擅自改造過的單手十字弓，扳機輕觸即傾瀉箭雨。" },
+        "relic_medusa_stinger":     { n: "蛇妖的無慈悲尾刺", type: "wpn", relic: true, noEnhance: true, eff: "crush", stoneInstakill: true, dmgS: 9, dmgL: 10, hit: 9, dmgBonus: 9, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】蛇妖斷落的尾刺，凝望與尖刺同樣致命。單手鈍器。" },
+        "relic_silent_venom":       { n: "沉默的毒液",       type: "wpn", relic: true, noEnhance: true, procStatusSkill: { skId: "sk_relic_silence", rate: 3 }, silencedBonusDmg: 20, dmgS: 8, dmgL: 8, hit: 13, dmgBonus: 13, req: "royal,knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】滴淌著沉默毒液的單手矛，刺中者噤聲難言。單手矛。" },
+        "relic_charm_heart":        { n: "魅惑之心",         type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 4, cha: 2, wis: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】思克巴摘下的魅惑之心，教人神魂顛倒卻也迷失心神。" },
+        "relic_swordsman_underwear": { n: "劍客的輕便內衣",  type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 3, dex: 2, meleeDmg: 3, meleeHit: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】劍客貼身的輕便內衣，不著痕跡地輔佐每一次揮劍。" },
         // 🏺 遺物 第十一批（v3.1.33·5 件）
-        "relic_fireegg_orb":        { n: "纏繞炎球",         type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mr: 5, resFire: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】恐怖的火炎蛋纏繞不散的炎球，環伺臂間燒退邪法與烈焰。臂甲（裝於副手，可與雙手武器並用）。<br>MR +5、火屬性抗性 +10。" },
-        "relic_venom_avatar":       { n: "毒液化身",         type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 5, poisonHealMult: 1.5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蛇女蛻下的毒液化身，穿上便與毒共生。<br>受到毒性來源的持續傷害時，恢復所受傷害 ×1.5 的HP。" },
-        "relic_lycan_swiftlegs":    { n: "黑夜狼人的駿腿",   type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 9, er: 10, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑夜狼人矯健的駿腿，步伐輕捷難以捕捉。<br>ER +10、敏捷 +1。" },
-        "relic_axetaurus_brutalaxe": { n: "牛頭怪的殘暴巨斧", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", atkSpdPct: 25, dmgS: 22, dmgL: 24, hit: 11, dmgBonus: 11, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】巨斧牛人揮舞的殘暴巨斧，勢大力沉卻快得不合常理。雙手鈍器。<br>重擊（一般限定）；貫穿；攻擊速度 +25%；近距離傷害 +11、近距離命中 +11。" },
-        "relic_troll_belly":        { n: "食人妖精的緩衝肚", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 0, dr: 20, mr: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精厚實的緩衝肚皮，再重的打擊都陷入其中消弭無形。<br>傷害減免 +20、MR +20。" },
+        "relic_fireegg_orb":        { n: "纏繞炎球",         type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mr: 5, resFire: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】恐怖的火炎蛋纏繞不散的炎球，環伺臂間燒退邪法與烈焰。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_venom_avatar":       { n: "毒液化身",         type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 5, poisonHealMult: 1.5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】蛇女蛻下的毒液化身，穿上便與毒共生。" },
+        "relic_lycan_swiftlegs":    { n: "黑夜狼人的駿腿",   type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 9, er: 10, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑夜狼人矯健的駿腿，步伐輕捷難以捕捉。" },
+        "relic_axetaurus_brutalaxe": { n: "牛頭怪的殘暴巨斧", type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", atkSpdPct: 25, dmgS: 22, dmgL: 24, hit: 11, dmgBonus: 11, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】巨斧牛人揮舞的殘暴巨斧，勢大力沉卻快得不合常理。雙手鈍器。" },
+        "relic_troll_belly":        { n: "食人妖精的緩衝肚", type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 0, dr: 20, mr: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】食人妖精厚實的緩衝肚皮，再重的打擊都陷入其中消弭無形。" },
         // ===== 🏺 遺物 第五批（v3.1.52·19 件·單一怪物專屬掉落 0.0001%）=====
-        "relic_burning_love":       { n: "火熱愛意",           type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 0, fireNullify: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】熱戀般滾燙的貼身衣物，將撲面而來的火焰溫柔擋下。<br>免疫火屬性怪物的一般攻擊與火屬性魔法（每 10 秒最多觸發 1 次；灼燒等持續傷害不受影響）。" },
-        "relic_fearless_charge":    { n: "無所畏懼的突擊",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 16, hit: 15, dmgBonus: 19, str: 2, hpR: 5, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】無畏衝鋒者緊握的鎖鏈劍，纏擊之間撕開敵人的破綻。<br>弱點曝光；貫穿；攻擊命中時 1% 機率使目標暈眩；力量 +2、HP自然恢復量 +5。" },
-        "relic_lizard_tongue":      { n: "灼熱蜥蜴長舌",       type: "wpn", relic: true, noEnhance: true, dmgS: 10, dmgL: 10, hit: 12, dmgBonus: 12, ele: "fire", onHitEleVuln: "fire", req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】灼熱蜥蜴吐出的長舌鍛成的矛，舔舐之處灼痕遍佈。<br>出血（矛）；一般攻擊轉為火屬性；一般攻擊命中使目標獲得火屬性弱點（3 秒）。" },
-        "relic_flame_avatar":       { n: "火焰化身的外皮",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, wearerEle: "fire", req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火焰化身剝落的外皮，披上者的軀體化為烈焰之姿。<br>裝備者化為火屬性：受到水屬性傷害增加、受到地屬性傷害減少。" },
-        "relic_killerbee_sting":    { n: "殺人蜂的尾刺",       type: "wpn", relic: true, noEnhance: true, dmgS: 7, dmgL: 7, hit: 9, dmgBonus: 9, hasteStrike: true, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】殺人蜂的致命尾刺，唯有疾風般的身法方能發揮其真髓。<br>出血（匕首）；加速狀態時額外傷害 +30、額外命中 +30；一般攻擊命中時失去加速狀態。" },
-        "relic_runaway_carrot":     { n: "暴走兔最愛的胡蘿蔔", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, skillDmgMult: { "sk_ice_spike": 1.5 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】暴走兔珍藏的胡蘿蔔，咬一口便寒氣大盛。<br>施放或觸發的冰錐造成傷害 ×1.5。" },
-        "relic_frost_avatar":       { n: "寒冷化身的堅軀",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, wearerEle: "water", req: "all", p: 10000, gachaWeight: 0, d: "【遺物】寒冷化身凝結的堅軀，披上者的軀體化為寒冰之姿。<br>裝備者化為水屬性：受到風屬性傷害增加、受到火屬性傷害減少。" },
-        "relic_handy_quiver":       { n: "改造便利箭筒",       type: "wpn", isArrow: true, noConsume: true, relic: true, noEnhance: true, dmgS: 10, dmgL: 10, req: "royal,knight,elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】改裝過的便利箭筒，箭矢取之不盡、用之不竭。<br>裝備於箭矢欄，視同箭矢但不會被消耗。" },
-        "relic_soldier_medal":      { n: "士兵的榮譽勳章",     type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 150, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】士兵用生命換來的榮譽勳章，佩於臂間護體驅邪。臂甲（裝於副手，可與雙手武器並用）。<br>HP +150、全屬性抗性 +5。" },
-        "relic_evilchest_relic":    { n: "邪惡寶箱內的遺物",   type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, str: -1, dex: -1, int: -1, wis: -1, con: -1, cha: -1, mpR: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】邪惡寶箱最深處的遺物，汲取佩戴者的生命力回饋為魔力。<br>全屬性 -1；MP自然恢復量 +20。" },
-        "relic_ancient_spider_claw":{ n: "上古蜘蛛之爪",       type: "wpn", relic: true, noEnhance: true, dmgS: 16, dmgL: 10, hit: 15, dmgBonus: 14, raceFlat: { race: "動物", add: 10 }, req: "knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】上古巨蜘蛛蛻下的尖爪，磨作單手劍鋒利無匹。<br>反擊；居合；對動物額外傷害 +10。" },
-        "relic_flame_belt":         { n: "火焰環繞的腰帶",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, resFire: 20, resWater: -10, thorns: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火焰環繞不息的腰帶，膽敢近身者反遭烈焰灼身。<br>火屬性抗性 +20、水屬性抗性 -10；受到一般攻擊時反擊 30 點固定傷害。" },
-        "relic_thunder_crown":      { n: "雷光加護的頭飾",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resWind: 10, mpR: 3, extraMp: 5, req: "royal,mage,elf,illusion", p: 10000, gachaWeight: 0, d: "【遺物】受雷光加護的頭飾，戴上者思緒如電、靈識通明。<br>風屬性抗性 +10、MP自然恢復量 +3、額外魔法點數 +5。" },
-        "relic_guardian_greatsword":{ n: "鎧甲守衛的笨重巨劍", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 40, dmgL: 40, hit: 3, dmgBonus: 3, eff: "cleave", str: 3, atkSpdPct: -50, heavyMult: 1.5, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】鎧甲守衛揮舞的笨重巨劍，一擊千鈞卻遲緩無比。<br>切割；力量 +3；攻擊速度 -50%；觸發重擊時造成傷害 ×1.5。" },
-        "relic_dream_flamesoul":    { n: "幻夢的火炎靈魂",     type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 24, hit: 0, int: 2, extraMp: 23, procSkill: "sk_fireball", procRateBase: 10, procRatePerEn: 0, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】幻夢中的火炎靈魂，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。<br>智力 +2、額外魔法點數 +23；攻擊時 10% 機率觸發火球。" },
-        "relic_frost_stone_shield": { n: "剝落的厚重冰石",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 12, mr: 10, req: "royal,knight", p: 10000, gachaWeight: 0, d: "【遺物】從冰石高崙剝落的厚重冰石，堅硬如盾、寒氣護身。<br>MR +10。" },
-        "relic_redscorpion_ring":   { n: "紅蠍尾環戒",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, dex: 1, wis: 2, mhp: -30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以紅蠍尾節製成的環戒，敏銳靈動卻略損元氣。<br>敏捷 +1、精神 +2、HP -30。" },
-        "relic_cerberus_horn":      { n: "詛咒三頭獸的犄角",   type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 0, immStone: true, immPoison: true, immBurn: true, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】詛咒三頭獸的犄角，佩戴者百邪不侵。<br>免疫石化、免疫中毒、免疫灼燒、免疫麻痺。" },
-        "relic_lightbeam_wand":     { n: "光束強化魔杖",       type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 3, hit: 9, dmgBonus: 9, mdmg: 2, skillDmgMult: { "sk_lightarrow": 1.5, "sk_disintegrate": 1.5 }, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】強化光束的魔杖，杖尖迸發的每道光箭都威力倍增。<br>共鳴；光箭、究極光裂術造成傷害 ×1.5；魔法傷害 +2。" },
+        "relic_burning_love":       { n: "火熱愛意",           type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 0, fireNullify: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】熱戀般滾燙的貼身衣物，將撲面而來的火焰溫柔擋下。" },
+        "relic_fearless_charge":    { n: "無所畏懼的突擊",     type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 16, hit: 15, dmgBonus: 19, str: 2, hpR: 5, procStatusSkill: { skId: "sk_relic_stun", rate: 1 }, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】無畏衝鋒者緊握的鎖鏈劍，纏擊之間撕開敵人的破綻。" },
+        "relic_lizard_tongue":      { n: "灼熱蜥蜴長舌",       type: "wpn", relic: true, noEnhance: true, dmgS: 10, dmgL: 10, hit: 12, dmgBonus: 12, ele: "fire", onHitEleVuln: "fire", req: "royal,knight,elf,mage,warrior", p: 10000, gachaWeight: 0, d: "【遺物】灼熱蜥蜴吐出的長舌鍛成的矛，舔舐之處灼痕遍佈。" },
+        "relic_flame_avatar":       { n: "火焰化身的外皮",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, wearerEle: "fire", req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火焰化身剝落的外皮，披上者的軀體化為烈焰之姿。" },
+        "relic_killerbee_sting":    { n: "殺人蜂的尾刺",       type: "wpn", relic: true, noEnhance: true, dmgS: 7, dmgL: 7, hit: 9, dmgBonus: 9, hasteStrike: true, req: "royal,knight,elf,mage,dark", p: 10000, gachaWeight: 0, d: "【遺物】殺人蜂的致命尾刺，唯有疾風般的身法方能發揮其真髓。" },
+        "relic_runaway_carrot":     { n: "暴走兔最愛的胡蘿蔔", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, skillDmgMult: { "sk_ice_spike": 1.5 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】暴走兔珍藏的胡蘿蔔，咬一口便寒氣大盛。" },
+        "relic_frost_avatar":       { n: "寒冷化身的堅軀",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 10, wearerEle: "water", req: "all", p: 10000, gachaWeight: 0, d: "【遺物】寒冷化身凝結的堅軀，披上者的軀體化為寒冰之姿。" },
+        "relic_handy_quiver":       { n: "改造便利箭筒",       type: "wpn", isArrow: true, noConsume: true, relic: true, noEnhance: true, dmgS: 10, dmgL: 10, req: "royal,knight,elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】改裝過的便利箭筒，箭矢取之不盡、用之不竭。" },
+        "relic_soldier_medal":      { n: "士兵的榮譽勳章",     type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 150, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】士兵用生命換來的榮譽勳章，佩於臂間護體驅邪。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_evilchest_relic":    { n: "邪惡寶箱內的遺物",   type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, str: -1, dex: -1, int: -1, wis: -1, con: -1, cha: -1, mpR: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】邪惡寶箱最深處的遺物，汲取佩戴者的生命力回饋為魔力。" },
+        "relic_ancient_spider_claw":{ n: "上古蜘蛛之爪",       type: "wpn", relic: true, noEnhance: true, dmgS: 16, dmgL: 10, hit: 15, dmgBonus: 14, raceFlat: { race: "動物", add: 10 }, req: "knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】上古巨蜘蛛蛻下的尖爪，磨作單手劍鋒利無匹。" },
+        "relic_flame_belt":         { n: "火焰環繞的腰帶",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, resFire: 20, resWater: -10, thorns: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火焰環繞不息的腰帶，膽敢近身者反遭烈焰灼身。" },
+        "relic_thunder_crown":      { n: "雷光加護的頭飾",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resWind: 10, mpR: 3, extraMp: 5, req: "royal,mage,elf,illusion", p: 10000, gachaWeight: 0, d: "【遺物】受雷光加護的頭飾，戴上者思緒如電、靈識通明。" },
+        "relic_guardian_greatsword":{ n: "鎧甲守衛的笨重巨劍", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 40, dmgL: 40, hit: 3, dmgBonus: 3, eff: "cleave", str: 3, atkSpdPct: -50, heavyMult: 1.5, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】鎧甲守衛揮舞的笨重巨劍，一擊千鈞卻遲緩無比。" },
+        "relic_dream_flamesoul":    { n: "幻夢的火炎靈魂",     type: "wpn", qigu: true, relic: true, noEnhance: true, dmgS: 24, dmgL: 24, hit: 0, int: 2, extraMp: 23, procSkill: "sk_fireball", procRateBase: 4, procRatePerEn: 0, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】幻夢中的火炎靈魂，化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。" },
+        "relic_frost_stone_shield": { n: "剝落的厚重冰石",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 12, mr: 10, req: "royal,knight", p: 10000, gachaWeight: 0, d: "【遺物】從冰石高崙剝落的厚重冰石，堅硬如盾、寒氣護身。" },
+        "relic_redscorpion_ring":   { n: "紅蠍尾環戒",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, dex: 1, wis: 2, mhp: -30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以紅蠍尾節製成的環戒，敏銳靈動卻略損元氣。" },
+        "relic_cerberus_horn":      { n: "詛咒三頭獸的犄角",   type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 0, immStone: true, immPoison: true, immBurn: true, immParalyze: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】詛咒三頭獸的犄角，佩戴者百邪不侵。" },
+        "relic_lightbeam_wand":     { n: "光束強化魔杖",       type: "wpn", isWand: true, relic: true, noEnhance: true, dmgS: 3, dmgL: 3, hit: 9, dmgBonus: 9, mdmg: 2, skillDmgMult: { "sk_lightarrow": 1.5, "sk_disintegrate": 1.5 }, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】強化光束的魔杖，杖尖迸發的每道光箭都威力倍增。" },
         // ===== 🐍 蛇神降臨·提卡爾 庫庫爾坎傳說裝備（庫庫爾坎寶箱開出·legend） =====
-        "wpn_kukulkan_spear":    { n: "提卡爾庫庫爾坎之矛", legend: true, type: "wpn", w2h: true, noBleed: true, dmgS: 24, dmgL: 20, hit: 5, dmgBonus: 0, eff: "pierce", pierceChance: 90, ignHardSkin: true, strawCurse: { rate: 4, stacks: 3 }, dex: 2, mr: 5, req: "royal,knight,warrior", safe: 6, p: 235000, gachaWeight: 1, d: "庫庫爾坎神廟守衛執掌的巨矛，槍尖纏繞羽蛇神的詛咒。穿透 90%（一般限定）；貫穿；一般攻擊命中 4% 機率使目標陷入詛咒稻草人；敏捷+2、MR+5。" },
-        "wpn_kukulkan_gauntlet": { n: "提卡爾庫庫爾坎鐵手甲", legend: true, type: "wpn", isBow: true, ranged: true, animFam: "gauntlet", rapidfire: 100, dmgS: 3, dmgL: 3, hit: 0, dmgBonus: 4, strawCurse: { rate: 4, stacks: 3 }, dex: 1, mhp: 30, req: "dark,dragon", safe: 6, p: 235000, gachaWeight: 1, d: "以庫庫爾坎鱗片鍛成的鐵手甲，揮拳如連珠箭雨傾瀉（需裝備箭矢）。連射 100%（一般限定）；一般攻擊命中 4% 機率使目標陷入詛咒稻草人；敏捷+1、HP+30。" },
-        "shd_kukulkan":          { n: "提卡爾庫庫爾坎之盾", legend: true, type: "arm", slot: "shield", ac: 3, dr: 2, hitstunReduce: 2, req: "royal,knight,elf", safe: 6, p: 100000, gachaWeight: 1, d: "刻著羽蛇神圖騰的重盾，卸去衝擊如流水般順暢。傷害減免+2；硬直減少 0.2 秒。" },
-        "hlm_kukulkan":          { n: "提卡爾庫庫爾坎面具", legend: true, type: "arm", slot: "helm", ac: 3, mr: 5, mpR: 2, req: "all", safe: 4, p: 100000, gachaWeight: 1, d: "庫庫爾坎祭司的黃金羽蛇面具，佩戴者思緒澄澈。MR+5、MP自然恢復量+2。" },
+        "wpn_kukulkan_spear":    { n: "提卡爾庫庫爾坎之矛", legend: true, type: "wpn", w2h: true, noBleed: true, dmgS: 24, dmgL: 20, hit: 5, dmgBonus: 0, eff: "pierce", pierceChance: 90, ignHardSkin: true, strawCurse: { rate: 4, stacks: 3 }, dex: 2, mr: 5, req: "royal,knight,warrior", safe: 6, p: 235000, gachaWeight: 1, d: "庫庫爾坎神廟守衛執掌的巨矛，槍尖纏繞羽蛇神的詛咒。" },
+        "wpn_kukulkan_gauntlet": { n: "提卡爾庫庫爾坎鐵手甲", legend: true, type: "wpn", isBow: true, ranged: true, animFam: "gauntlet", rapidfire: 100, dmgS: 3, dmgL: 3, hit: 0, dmgBonus: 4, strawCurse: { rate: 4, stacks: 3 }, dex: 1, mhp: 30, req: "dark,dragon", safe: 6, p: 235000, gachaWeight: 1, d: "以庫庫爾坎鱗片鍛成的鐵手甲，揮拳如連珠箭雨傾瀉（需裝備箭矢）。" },
+        "shd_kukulkan":          { n: "提卡爾庫庫爾坎之盾", legend: true, type: "arm", slot: "shield", ac: 3, dr: 2, hitstunReduce: 2, req: "royal,knight,elf", safe: 6, p: 100000, gachaWeight: 1, d: "刻著羽蛇神圖騰的重盾，卸去衝擊如流水般順暢。" },
+        "hlm_kukulkan":          { n: "提卡爾庫庫爾坎面具", legend: true, type: "arm", slot: "helm", ac: 3, mr: 5, mpR: 2, req: "all", safe: 4, p: 100000, gachaWeight: 1, d: "庫庫爾坎祭司的黃金羽蛇面具，佩戴者思緒澄澈。" },
         // ===== 🐍 蛇神降臨·提卡爾 遺物（18 件·單一怪物專屬掉落 0.0001%） =====
-        "relic_azt_mirror":     { n: "阿茲特的反光石",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, magicDrNonEle: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特體內折射光線的反光石，扭曲無形的法術。<br>受到無屬性魔法傷害減少 20%。" },
-        "relic_azt_prism":      { n: "阿茲特的折射寶石",     type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特凝結的折射寶石，分解四方元素之力。<br>全屬性抗性 +5（地/水/火/風）。" },
-        "relic_yuka_blowdart":  { n: "艾庫尤卡的吹箭",       type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 30, atkSpdPct: 30, dmgS: 2, dmgL: 2, hit: 12, dmgBonus: 9, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡的毒吹箭，快若疾風、連發如雨（需裝備箭矢）。<br>連射 30%（一般限定）；貫穿；攻擊速度 +30%；遠距離傷害 +9、遠距離命中 +12。" },
-        "relic_yuka_quiver":    { n: "艾庫尤卡的永續箭筒",   type: "wpn", isArrow: true, noConsume: true, relic: true, noEnhance: true, dmgS: 15, dmgL: 7, req: "royal,knight,elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡取之不盡的永續箭筒。<br>裝備於箭矢欄，視同箭矢但不會被消耗。" },
-        "relic_kaira_fang":     { n: "艾庫卡伊拉的毒牙",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 13, dmgBonus: 8, procPoison: { rate: 3, dmg: [10, 1], dur: 10, tick: 1 }, poisonedBonusDmg: 15, req: "royal,elf,mage,knight,dark", p: 10000, gachaWeight: 0, d: "【遺物】艾庫卡伊拉的滴毒獠牙，撕咬之處毒咒纏身。<br>出血（匕首）；攻擊時 3% 機率施放毒咒（每秒 10 點固定傷害）；對中毒狀態敵人額外傷害 +15。" },
-        "relic_kaira_hood":     { n: "艾庫卡伊拉的華麗兜帽", type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 7, dr: 5, aggroWeight: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫卡伊拉華麗的鱗紋兜帽，鮮豔奪目引敵注目。<br>傷害減免 +5；被攻擊權重 +5（更容易成為攻擊目標）。" },
-        "relic_bara_wing":      { n: "沾滿鱗粉的飛翼",       type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 3, mr: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫巴拉沾滿鱗粉的薄翼，抖落的粉塵擾亂法術。<br>MR +30。" },
-        "relic_bara_eye":       { n: "毒蛾的赤紅眼球",       type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, immPoison: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫巴拉赤紅的複眼，凝視劇毒亦無動於衷。<br>免疫中毒。" },
-        "relic_eto_whip":       { n: "艾庫艾托的鞭笞藤",     type: "wpn", w2h: true, noBleed: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 17, dmgL: 17, hit: 12, dmgBonus: 12, eff: "pierce", pierceChance: 100, procStatusSkill: { skId: "sk_relic_slow", rate: 5 }, slowedBonusDmg: 10, req: "knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】艾庫艾托的鞭笞藤蔓，抽擊纏繞使敵遲滯。<br>穿透 100%（一般限定）；貫穿；攻擊 5% 機率使目標緩速；對緩速狀態敵人額外傷害 +10。" },
-        "relic_eto_wand":       { n: "艾庫艾托的枯竭魔杖",   type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 9, dmgL: 9, hit: 9, dmgBonus: 9, eff: "magicburst", autoCastMpMult: 2, autoCastDmgMult: 1.5, mdmg: 5, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】艾庫艾托枯竭的魔杖，榨乾魔力換取毀滅之威。<br>魔爆（一般限定）；貫穿；自動施展的傷害技能 消耗MP×2、傷害×1.5；魔法傷害 +5。" },
-        "relic_mud_idol":       { n: "特產易碎泥偶",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 20, hit: 13, dmgBonus: 11, eff: "crush", selfBreakProc: { dur: 5 }, req: "royal,knight,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】提卡爾特產的易碎泥偶，猛擊爆裂卻反噬自身。<br>重擊（一般限定）；貫穿；一般攻擊 3% 機率造成傷害 ×1.5，並使自身陷入壞物術（期間物理傷害 -20%）。" },
-        "relic_mud_jar":        { n: "祭祀儀式陶罐",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 8, physDrGated: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】提卡爾祭祀用的厚重陶罐，卸去衝擊護住頭首。<br>受到一般攻擊傷害減少 10%（此效果每 3 秒最多觸發 1 次）。" },
-        "relic_ska_soul":       { n: "阿茲特獻祭亡靈",       type: "wpn", qigu: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 26, dmgL: 26, hit: 0, int: 3, con: -3, mpR: 10, extraMp: 13, procInstakill: { p: 0.01, tag: null, healPct: 0.05 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】阿茲特獻祭的亡靈化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。<br>貫穿；智力+3、體質-3、MP自然恢復量+10、額外魔法點數+13；攻擊時 1% 機率獻祭：使目標即死並恢復被消滅敵人 5% HP（對頭目無效）。" },
-        "relic_ska_armguard":   { n: "薩德司卡石護臂",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 6, mhp: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】薩德司卡剝落的石護臂，堅厚護體。臂甲（裝於副手，可與雙手武器並用）。<br>HP +20。" },
-        "relic_teo_hammer":     { n: "薩德提歐的玩具鎚",     type: "wpn", relic: true, noEnhance: true, dmgS: 13, dmgL: 12, hit: 11, dmgBonus: 13, ele: "wind", req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】薩德提歐揮舞的笨重玩具鎚，掄起帶起狂風。<br>鈍擊（一般限定）；貫穿；一般攻擊轉為風屬性。" },
+        "relic_azt_mirror":     { n: "阿茲特的反光石",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, magicDrNonEle: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特體內折射光線的反光石，扭曲無形的法術。" },
+        "relic_azt_prism":      { n: "阿茲特的折射寶石",     type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特凝結的折射寶石，分解四方元素之力。" },
+        "relic_yuka_blowdart":  { n: "艾庫尤卡的吹箭",       type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 30, atkSpdPct: 30, dmgS: 2, dmgL: 2, hit: 12, dmgBonus: 9, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡的毒吹箭，快若疾風、連發如雨（需裝備箭矢）。" },
+        "relic_yuka_quiver":    { n: "艾庫尤卡的永續箭筒",   type: "wpn", isArrow: true, noConsume: true, relic: true, noEnhance: true, dmgS: 15, dmgL: 7, req: "royal,knight,elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡取之不盡的永續箭筒。" },
+        "relic_kaira_fang":     { n: "艾庫卡伊拉的毒牙",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 13, dmgBonus: 8, procPoison: { rate: 3, dmg: [10, 1], dur: 10, tick: 1 }, poisonedBonusDmg: 15, req: "royal,elf,mage,knight,dark", p: 10000, gachaWeight: 0, d: "【遺物】艾庫卡伊拉的滴毒獠牙，撕咬之處毒咒纏身。" },
+        "relic_kaira_hood":     { n: "艾庫卡伊拉的華麗兜帽", type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 7, dr: 5, aggroWeight: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫卡伊拉華麗的鱗紋兜帽，鮮豔奪目引敵注目。" },
+        "relic_bara_wing":      { n: "沾滿鱗粉的飛翼",       type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 3, mr: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫巴拉沾滿鱗粉的薄翼，抖落的粉塵擾亂法術。" },
+        "relic_bara_eye":       { n: "毒蛾的赤紅眼球",       type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, immPoison: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫巴拉赤紅的複眼，凝視劇毒亦無動於衷。" },
+        "relic_eto_whip":       { n: "艾庫艾托的鞭笞藤",     type: "wpn", w2h: true, noBleed: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 17, dmgL: 17, hit: 12, dmgBonus: 12, eff: "pierce", pierceChance: 100, procStatusSkill: { skId: "sk_relic_slow", rate: 5 }, slowedBonusDmg: 10, req: "knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】艾庫艾托的鞭笞藤蔓，抽擊纏繞使敵遲滯。" },
+        "relic_eto_wand":       { n: "艾庫艾托的枯竭魔杖",   type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 9, dmgL: 9, hit: 9, dmgBonus: 9, eff: "magicburst", autoCastMpMult: 2, autoCastDmgMult: 1.5, mdmg: 5, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】艾庫艾托枯竭的魔杖，榨乾魔力換取毀滅之威。" },
+        "relic_mud_idol":       { n: "特產易碎泥偶",         type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 20, dmgL: 20, hit: 13, dmgBonus: 11, eff: "crush", selfBreakProc: { dur: 5 }, req: "royal,knight,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】提卡爾特產的易碎泥偶，猛擊爆裂卻反噬自身。" },
+        "relic_mud_jar":        { n: "祭祀儀式陶罐",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 8, physDrGated: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】提卡爾祭祀用的厚重陶罐，卸去衝擊護住頭首。" },
+        "relic_ska_soul":       { n: "阿茲特獻祭亡靈",       type: "wpn", qigu: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 26, dmgL: 26, hit: 0, int: 3, con: -3, mpR: 10, extraMp: 13, procInstakill: { p: 0.01, tag: null, healPct: 0.05 }, req: "illusion", p: 10000, gachaWeight: 0, d: "【遺物】阿茲特獻祭的亡靈化作幻術士的奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。" },
+        "relic_ska_armguard":   { n: "薩德司卡石護臂",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 6, mhp: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】薩德司卡剝落的石護臂，堅厚護體。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_teo_hammer":     { n: "薩德提歐的玩具鎚",     type: "wpn", relic: true, noEnhance: true, dmgS: 13, dmgL: 12, hit: 11, dmgBonus: 13, ele: "wind", req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】薩德提歐揮舞的笨重玩具鎚，掄起帶起狂風。" },
         "relic_teo_footprint":  { n: "薩德提歐的笨重足跡",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 6, req: "royal,knight,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】薩德提歐踏出的笨重足跡凝成的脛甲，沉穩厚實。" },
-        "relic_serpent_fang":   { n: "蛇神的倒勾獠牙",       type: "wpn", w2h: true, noBleed: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 24, dmgL: 20, hit: 28, dmgBonus: 13, eff: "pierce", pierceChance: 90, strawCurse: { rate: 8, stacks: 3 }, dex: 2, mr: 5, req: "knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】羽蛇神杰弗雷庫的倒勾獠牙，纏擊之間種下滅亡的詛咒。<br>穿透 90%（一般限定）；貫穿；一般攻擊命中 8% 機率使目標陷入詛咒稻草人；敏捷+2、MR+5。" },
-        "relic_serpent_gaze":   { n: "蛇神的凝視",           type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, int: 1, con: 1, mmp: 50, lowMpRegenBonus: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】羽蛇神杰弗雷庫凝視的餘光，於力竭時湧現魔力。<br>智力+1、體質+1、MP+50；當 MP 低於 15% 時，MP自然恢復量 +30。" },
+        "relic_serpent_fang":   { n: "蛇神的倒勾獠牙",       type: "wpn", w2h: true, noBleed: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 24, dmgL: 20, hit: 28, dmgBonus: 13, eff: "pierce", pierceChance: 90, strawCurse: { rate: 8, stacks: 3 }, dex: 2, mr: 5, req: "knight,elf,warrior", p: 10000, gachaWeight: 0, d: "【遺物】羽蛇神杰弗雷庫的倒勾獠牙，纏擊之間種下滅亡的詛咒。" },
+        "relic_serpent_gaze":   { n: "蛇神的凝視",           type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, int: 1, con: 1, mmp: 50, lowMpRegenBonus: 30, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】羽蛇神杰弗雷庫凝視的餘光，於力竭時湧現魔力。" },
         // ===== 🏺 遺物 第十三批（v3.1.80·28 件·單一怪物專屬掉落 0.0001%） =====
-        "relic_executor_axe":      { n: "處刑人的護身斧",     type: "wpn", relic: true, noEnhance: true, dmgS: 13, dmgL: 13, hit: 14, dmgBonus: 14, procHealFlat: { rate: 3, hp: 10 }, req: "warrior", p: 10000, gachaWeight: 0, d: "【遺物】處刑人隨身護命的短柄斧，飲血亦能療傷。<br>鈍擊（一般限定）；貫穿；一般攻擊命中時 3% 機率恢復 10 HP。" },
-        "relic_executor_skewer":   { n: "處刑者的串刺刑具",   type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 21, dmgL: 21, hit: 19, dmgBonus: 14, eff: "pierce", pierceChance: 100, unBonus: true, mhp: 80, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】處刑者用以貫穿死囚的長刺，怨魂纏繞不散。<br>穿透 100%（一般限定）；貫穿；出血（矛）；對不死 / 狼人加成；HP +80。" },
-        "relic_jack_sling":        { n: "傑克的彈弓",         type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 80, giantBonus: true, atkSpdPct: 20, dmgS: 2, dmgL: 2, hit: 12, dmgBonus: 16, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】獨眼巨人傑克隨手把玩的巨大彈弓（需裝備箭矢）。<br>連射 80%（一般限定）；貫穿；對巨人加成（+1D20）；攻擊速度 +20%。" },
-        "relic_endless_nightmare": { n: "永不終止的夢魘",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 5, dotCrit: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】夢魘蛻下的皮革手套，讓折磨綿延不絕。<br>我方造成的持續傷害（中毒 / 出血 / 猛爆劇毒）可觸發爆擊（機率＝5%＋裝備者近距離爆擊率）。" },
-        "relic_dullahan_ember":    { n: "無頭騎士的餘火",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 3, mr: 15, mpR: 3, dr: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】無頭騎士頭顱處搖曳的鬼火，凝成頭盔守護新主。<br>MR +15、MP自然恢復量 +3、傷害減免 +3。" },
-        "relic_guard_roughgloves": { n: "歷練的警衛粗布手套", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 7, str: 1, meleeHit: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精警衛久經磨練的粗布手套，握槍沉穩有力。<br>力量 +1、近距離命中 +1。" },
-        "relic_blacktiger_whip":   { n: "黑虎的雙尾鞭",       type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 23, dmgL: 23, hit: 17, dmgBonus: 14, eff: "pierce", pierceChance: 50, dex: 2, ele: "water", req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】黑虎雙尾化成的鎖鏈長鞭，抽擊如浪濤翻湧。龍騎士專屬·鎖鏈劍（雙手・近距離）。<br>弱點曝光；貫穿；穿透 50%（一般限定）；敏捷 +2；一般攻擊轉為水屬性。" },
-        "relic_hellhound_chain":   { n: "束縛犬的控制鎖鏈",   type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 2, mhp: -100, str: 2, dex: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】束縛地獄犬的控制鎖鏈，戴上者力量暴增卻元氣受損。<br>HP -100、力量 +2、敏捷 +2。" },
-        "relic_gatekeeper_boots":  { n: "守門人的破舊履",     type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 10, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】拉斯塔巴德守門人踏破的舊履，千年站崗磨出堅實。<br>傷害減免 +1。" },
-        "relic_dark_manaball":     { n: "漆黑的瑪那水晶球",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, int: 2, mpR: 10, con: -2, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精法師的漆黑水晶球，魔力汩汩卻侵蝕肉身。<br>智力 +2、MP自然恢復量 +10、體質 -2。" },
-        "relic_blackmane_coat":    { n: "漆黑鬃毛長大衣",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 12, er: 5, dex: 1, req: "knight,elf,dark,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】魔狼漆黑鬃毛織成的長大衣，披上者步伐輕捷如狼。<br>ER +5、敏捷 +1。" },
-        "relic_wearying_dream":    { n: "耗弱精神的惡夢",     type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, meleeDmg: 2, meleeHit: 3, wis: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】恐怖夢魘凝成的戒指，以精神換取致命的殺意。<br>近距離傷害 +2、近距離命中 +3、精神 -2。" },
-        "relic_earthfang_core":    { n: "地之牙的殘核",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 30, eleWpnMult: { ele: "earth", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】地之牙碎裂後殘存的地脈之核。臂甲（裝於副手，可與雙手武器並用）。<br>HP +30；裝備地屬性武器時，一般攻擊傷害 ×1.2。" },
-        "relic_windfang_breeze":   { n: "風之牙的微風",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, er: 3, eleWpnMult: { ele: "wind", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】風之牙消散後留下的一縷微風。臂甲（裝於副手，可與雙手武器並用）。<br>ER +3；裝備風屬性武器時，一般攻擊傷害 ×1.2。" },
-        "relic_waterfang_tear":    { n: "水之牙的淚滴",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mpR: 2, eleWpnMult: { ele: "water", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】水之牙凝結的清澈淚滴。臂甲（裝於副手，可與雙手武器並用）。<br>MP自然恢復量 +2；裝備水屬性武器時，一般攻擊傷害 ×1.2。" },
-        "relic_firefang_ember":    { n: "火之牙的餘燼",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 3, eleWpnMult: { ele: "fire", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火之牙熄滅後仍溫熱的餘燼。臂甲（裝於副手，可與雙手武器並用）。<br>裝備火屬性武器時，一般攻擊傷害 ×1.2。" },
-        "relic_tamer_dogclub":     { n: "馴獸師的訓狗棒",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 5, dr: 3, petSkillDmgMult: 1.5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】馴獸師調教猛獸的短棒，號令之下獸性盡出。<br>傷害減免 +3；項圈夥伴的技能傷害 ×1.5（多件不疊加）。" },
-        "relic_healer_wand":       { n: "治癒者的恢復魔棒",   type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 11, dmgBonus: 11, mpR: 20, hotHealMult: 2, req: "mage,elf", p: 10000, gachaWeight: 0, d: "【遺物】巨大強化白螞蟻體液浸潤的魔棒，療癒之力源源不絕。<br>鈍擊（一般限定）；貫穿；MP自然恢復量 +20；施放的體力回復術、生命的祝福恢復量 ×2。" },
-        "relic_succubus_temptation":{ n: "魅魔女皇的誘惑",    type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 7, dmgReflect: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】思克巴女皇的魅惑之衣，使攻擊者反受其害。<br>受到一般攻擊時，10% 機率使攻擊敵人受到相同傷害，自身免疫此次傷害。" },
-        "relic_shadow_stinger":    { n: "來自陰影的刺劍",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 16, dmgBonus: 11, procInstakill: { p: 1, tag: null, hpBelow: 0.10 }, req: "royal,knight,mage,elf,dark", p: 10000, gachaWeight: 0, d: "【遺物】影魔自陰影中遞出的刺劍，專取殘喘者性命。<br>出血（一般限定）；一般攻擊命中 HP 低於 10% 的非頭目怪物時觸發即死。" },
-        "relic_weathered_obelisk": { n: "風化的巨型方尖碑",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 26, dmgL: 26, hit: 12, dmgBonus: 16, eff: "crush", heavyRatePct: 10, ele: "wind", req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】尖碑石奴背負的風化方尖碑，掄起挾帶千年風沙。<br>重擊（一般限定）；貫穿；一般攻擊轉為風屬性；重擊率 +10%（骰 17~19 亦觸發重擊）。" },
-        "relic_soulreaper_dual":   { n: "奪魂者雙刃劍",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 18, dmgL: 14, hit: 18, dmgBonus: 17, eff: "combo", comboRate: 30, onHitCastSkill: { skId: "sk_cold_shiver", cdSec: 5 }, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】魂騎士的奪魂雙刃，斬擊間滲出徹骨寒意。<br>雙擊 30%；貫穿；一般攻擊命中觸發寒冷戰慄（此效果每 5 秒最多觸發 1 次）。" },
-        "relic_griffin_feather":   { n: "格利芬的輕柔羽翼",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 9, dex: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】格利芬輕柔的羽翼織成的披風，身形隨風輕盈。<br>敏捷 +2。" },
-        "relic_minotaur_flail":    { n: "牛頭人的流星鎚",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 10, hit: 15, dmgBonus: 15, procStatusSkill: { skId: "sk_relic_stun", rate: 2 }, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鏈鎚牛人掄轉的流星鎚，砸中要害令人天旋地轉。<br>鈍擊（一般限定）；貫穿；一般攻擊命中 2% 機率使目標暈眩。" },
-        "relic_vigor_belt":        { n: "精氣流動的腰帶",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 100, hpR: 5, mpR: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】哈維精氣流轉的腰帶，繫上者氣血生生不息。<br>負重上限 +100、HP自然恢復量 +5、MP自然恢復量 +3。" },
-        "relic_succubus_wand":     { n: "思克巴女皇的熱情魔杖", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 8, dmgBonus: 8, eff: "magicburst", ele: "fire", procFireSkillRate: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】炎魔思克巴女皇的熱情魔杖，狂熱的火焰隨杖尖迸發。<br>魔爆（一般限定）；貫穿；一般攻擊轉為火屬性；攻擊時 10% 機率隨機觸發一個火屬性傷害法術。" },
-        "relic_wisp_thought":      { n: "幽光的思念",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mr: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】鬼魂殘存的思念凝成的幽光戒指，護持心神不受侵擾。<br>MR +15。" },
-        "relic_warlock_grimoire":  { n: "巫師的黑暗魔導書",   type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 3, dmgL: 3, hit: 7, dmgBonus: 7, mdmg: 3, extraMp: 5, fullHpMpHalf: true, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】巫師畢生鑽研的黑暗魔導書，滿溢的生命力使咒文事半功倍。<br>共鳴（一般限定）；貫穿；魔法傷害 +3、額外魔法點數 +5；滿血時，技能消耗 MP 減半。" },
+        "relic_executor_axe":      { n: "處刑人的護身斧",     type: "wpn", relic: true, noEnhance: true, dmgS: 13, dmgL: 13, hit: 14, dmgBonus: 14, procHealFlat: { rate: 3, hp: 10 }, req: "warrior", p: 10000, gachaWeight: 0, d: "【遺物】處刑人隨身護命的短柄斧，飲血亦能療傷。" },
+        "relic_executor_skewer":   { n: "處刑者的串刺刑具",   type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 21, dmgL: 21, hit: 19, dmgBonus: 14, eff: "pierce", pierceChance: 100, unBonus: true, mhp: 80, req: "royal,knight,warrior", p: 10000, gachaWeight: 0, d: "【遺物】處刑者用以貫穿死囚的長刺，怨魂纏繞不散。" },
+        "relic_jack_sling":        { n: "傑克的彈弓",         type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 80, giantBonus: true, atkSpdPct: 20, dmgS: 2, dmgL: 2, hit: 12, dmgBonus: 16, req: "elf,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】傑克攀上魔豆藤時帶著的彈弓，傳說他曾用它擊退追來的巨人（需裝備箭矢）。" },
+        "relic_endless_nightmare": { n: "永不終止的夢魘",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 5, dotCrit: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】夢魘蛻下的皮革手套，讓折磨綿延不絕。" },
+        "relic_dullahan_ember":    { n: "無頭騎士的餘火",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 3, mr: 15, mpR: 3, dr: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】無頭騎士頭顱處搖曳的鬼火，凝成頭盔守護新主。" },
+        "relic_guard_roughgloves": { n: "歷練的警衛粗布手套", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 7, str: 1, meleeHit: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精警衛久經磨練的粗布手套，握槍沉穩有力。" },
+        "relic_blacktiger_whip":   { n: "黑虎的雙尾鞭",       type: "wpn", w2h: true, chainsword: true, weakExpose: true, relic: true, noEnhance: true, dmgS: 23, dmgL: 23, hit: 17, dmgBonus: 14, eff: "pierce", pierceChance: 50, classicOk: true, dex: 2, ele: "water", req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】黑虎雙尾化成的鎖鏈長鞭，抽擊如浪濤翻湧。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "relic_hellhound_chain":   { n: "束縛犬的控制鎖鏈",   type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 2, mhp: -100, str: 2, dex: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】束縛地獄犬的控制鎖鏈，戴上者力量暴增卻元氣受損。" },
+        "relic_gatekeeper_boots":  { n: "守門人的破舊履",     type: "arm", slot: "boots", relic: true, noEnhance: true, ac: 10, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】拉斯塔巴德守門人踏破的舊履，千年站崗磨出堅實。" },
+        "relic_dark_manaball":     { n: "漆黑的瑪那水晶球",   type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 7, int: 2, mpR: 10, con: -2, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精法師的漆黑水晶球，魔力汩汩卻侵蝕肉身。" },
+        "relic_blackmane_coat":    { n: "漆黑鬃毛長大衣",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 12, er: 5, dex: 1, req: "knight,elf,dark,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】魔狼漆黑鬃毛織成的長大衣，披上者步伐輕捷如狼。" },
+        "relic_wearying_dream":    { n: "耗弱精神的惡夢",     type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, meleeDmg: 2, meleeHit: 3, wis: -2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】恐怖夢魘凝成的戒指，以精神換取致命的殺意。" },
+        "relic_earthfang_core":    { n: "地之牙的殘核",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mhp: 30, eleWpnMult: { ele: "earth", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】地之牙碎裂後殘存的地脈之核。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_windfang_breeze":   { n: "風之牙的微風",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 1, er: 3, eleWpnMult: { ele: "wind", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】風之牙消散後留下的一縷微風。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_waterfang_tear":    { n: "水之牙的淚滴",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, mpR: 2, eleWpnMult: { ele: "water", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】水之牙凝結的清澈淚滴。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_firefang_ember":    { n: "火之牙的餘燼",       type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 3, eleWpnMult: { ele: "fire", mult: 1.2 }, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】火之牙熄滅後仍溫熱的餘燼。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_tamer_dogclub":     { n: "馴獸師的訓狗棒",     type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 5, dr: 3, petSkillDmgMult: 1.5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】馴獸師調教猛獸的短棒，號令之下獸性盡出。" },
+        "relic_healer_wand":       { n: "治癒者的恢復魔棒",   type: "wpn", relic: true, noEnhance: true, dmgS: 8, dmgL: 8, hit: 11, dmgBonus: 11, mpR: 20, hotHealMult: 2, req: "mage,elf", p: 10000, gachaWeight: 0, d: "【遺物】巨大強化白螞蟻體液浸潤的魔棒，療癒之力源源不絕。" },
+        "relic_succubus_temptation":{ n: "魅魔女皇的誘惑",    type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 7, dmgReflect: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】思克巴女皇的魅惑之衣，使攻擊者反受其害。" },
+        "relic_shadow_stinger":    { n: "來自陰影的刺劍",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 16, dmgBonus: 11, procInstakill: { p: 1, tag: null, hpBelow: 0.10 }, req: "royal,knight,mage,elf,dark", p: 10000, gachaWeight: 0, d: "【遺物】影魔自陰影中遞出的刺劍，專取殘喘者性命。" },
+        "relic_weathered_obelisk": { n: "風化的巨型方尖碑",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 26, dmgL: 26, hit: 12, dmgBonus: 16, eff: "crush", heavyRatePct: 10, ele: "wind", req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】尖碑石奴背負的風化方尖碑，掄起挾帶千年風沙。" },
+        "relic_soulreaper_dual":   { n: "奪魂者雙刃劍",       type: "wpn", w2h: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 18, dmgL: 14, hit: 18, dmgBonus: 17, eff: "combo", comboRate: 30, onHitCastSkill: { skId: "sk_cold_shiver", cdSec: 5 }, req: "dark", p: 10000, gachaWeight: 0, d: "【遺物】魂騎士的奪魂雙刃，斬擊間滲出徹骨寒意。" },
+        "relic_griffin_feather":   { n: "格利芬的輕柔羽翼",   type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 9, dex: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】格利芬輕柔的羽翼織成的披風，身形隨風輕盈。" },
+        "relic_minotaur_flail":    { n: "牛頭人的流星鎚",     type: "wpn", relic: true, noEnhance: true, dmgS: 9, dmgL: 10, hit: 15, dmgBonus: 15, procStatusSkill: { skId: "sk_relic_stun", rate: 2 }, req: "royal,knight,elf,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】鏈鎚牛人掄轉的流星鎚，砸中要害令人天旋地轉。" },
+        "relic_vigor_belt":        { n: "精氣流動的腰帶",     type: "acc", slot: "belt", relic: true, noEnhance: true, ac: 0, weightCap: 100, hpR: 5, mpR: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】哈維精氣流轉的腰帶，繫上者氣血生生不息。" },
+        "relic_succubus_wand":     { n: "思克巴女皇的熱情魔杖", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 9, dmgL: 9, hit: 8, dmgBonus: 8, eff: "magicburst", ele: "fire", procFireSkillRate: 10, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】炎魔思克巴女皇的熱情魔杖，狂熱的火焰隨杖尖迸發。" },
+        "relic_wisp_thought":      { n: "幽光的思念",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, mr: 15, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】鬼魂殘存的思念凝成的幽光戒指，護持心神不受侵擾。" },
+        "relic_warlock_grimoire":  { n: "巫師的黑暗魔導書",   type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 3, dmgL: 3, hit: 7, dmgBonus: 7, mdmg: 3, extraMp: 5, fullHpMpHalf: true, req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】巫師畢生鑽研的黑暗魔導書，滿溢的生命力使咒文事半功倍。" },
+        // ===== 🐾 v3.2.17 夥伴更新遺物（第十四批·12 件·新捕捉動物 0.0001% 掉落）=====
+        "relic_tiger_fur":       { n: "虎男的斑紋毛皮",   type: "arm", slot: "cloak",  relic: true, noEnhance: true, ac: 3, resWater: 5, aggroWeight: -1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】猛虎火焰般的斑紋毛皮，披上便隱入草叢的錯覺。" },
+        "relic_cat_paw":         { n: "柔軟的肉球",       type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 0, dr: 6, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】觸感無上柔軟的貓咪肉球手套，卸去千鈞之力。" },
+        "relic_panda_eyes":      { n: "熊貓的黑眼圈",     type: "arm", slot: "helm",   relic: true, noEnhance: true, ac: 4, dr: 3, mr: 8, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】戴上便睡意朦朧的黑眼圈頭飾，以慵懶化解攻勢。" },
+        "relic_pup_fang":        { n: "幼犬的稚嫩犬齒",   type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 1, meleeDmg: 1, rangedDmg: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】高麗幼犬換牙時掉落的小小犬齒，蘊含初生之銳。" },
+        "relic_raccoon_leaf":    { n: "浣熊的變身葉",     type: "arm", slot: "helm",   relic: true, noEnhance: true, ac: 2, polyAtkSpdPct: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】浣熊變身戲法用的神奇樹葉，頂在頭上就能幻化萬千。" },
+        "relic_stbernard_barrel":{ n: "聖伯納的急救酒桶", type: "acc", slot: "neck",   relic: true, noEnhance: true, ac: 0, lowHpPotionX2: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】聖伯納犬掛在頸間的救難小酒桶，危急時刻滴滴救命。" },
+        "relic_fox_scarf":       { n: "貴重狐毛圍巾",     type: "acc", slot: "neck",   relic: true, noEnhance: true, ac: 0, mr: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】以整條狐尾織成的華貴圍巾，軟毛間流轉抗魔的靈氣。" },
+        "relic_rabbit_foot":     { n: "幸運暴走兔腳",     type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 0, relicDropX2: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】傳說中招來厄運之外一切好運的兔腳護符。" },
+        "relic_beagle_nose":     { n: "小獵犬的追蹤鼻",   type: "acc", slot: "ear",    relic: true, noEnhance: true, ac: 0, trackBoost: true, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】小獵犬引以為傲的靈敏鼻子做成的護符，氣味無所遁形。" },
+        "relic_collie_fur":      { n: "柯利的柔毛",       type: "arm", slot: "shin",   relic: true, noEnhance: true, ac: 1, mr: 5, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】柯利牧羊犬蓬鬆柔毛織成的護脛，溫暖而堅韌。" },
+        "relic_kangaroo_gloves": { n: "袋鼠的拳擊套",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 4, meleeDmg: 2, meleeHit: 4, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】袋鼠拳王的專用拳擊套，出拳快狠準。" },
+        "relic_monkey_staff":    { n: "猴子的金箍棒",     type: "wpn", relic: true, noEnhance: true, eff: "crush", ignHardSkin: true, dmgS: 6, dmgL: 3, hit: 6, dmgBonus: 6, lvDmgDiv: 5, lvHitDiv: 5, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】猴王隨心變化的如意金箍棒。單手鈍器。" },
         "clk_elf": { n: "精靈斗篷", type: "arm", slot: "cloak", ac: 1, req: "all", safe: 6, p: 900, gachaWeight: 100 },
         "clk_oasis": { n: "歐西斯斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 15, gachaWeight: 100 },
         "arm_86": { n: "侏儒斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 18, gachaWeight: 100 },
@@ -724,11 +787,11 @@ const DB = {
         "arm_93": { n: "皮長靴", type: "arm", slot: "boots", ac: 2, req: "all", safe: 4, p: 720, gachaWeight: 100 },
         "arm_94": { n: "鋼鐵長靴", type: "arm", slot: "boots", ac: 3, req: "all", safe: 4, p: 16500, gachaWeight: 20 },
         "arm_95": { n: "深水長靴", type: "arm", slot: "boots", ac: 2, req: "all", safe: 4, p: 36500, mpR: 1, gachaWeight: 10 },
-        "bot_dk": { n: "死亡騎士長靴", legend: true, type: "arm", slot: "boots", ac: 3, req: "knight", safe: 4, p: 24000, gachaWeight: 1, d: "死亡騎士的戰靴，所踏之地寸草不生。死亡騎士套裝之一。<br>【死亡騎士套裝】4 件齊：AC-4、變身「真‧死亡騎士」（額外傷害+6、額外命中+6、套用死亡騎士的攻擊速度）。" },
+        "bot_dk": { n: "死亡騎士長靴", legend: true, type: "arm", slot: "boots", ac: 3, req: "knight", safe: 4, p: 24000, gachaWeight: 1, d: "死亡騎士的戰靴，所踏之地寸草不生。死亡騎士套裝之一。" },
         "arm_96": { n: "黑長者涼鞋", legend: true, type: "arm", slot: "boots", ac: 2, req: "mage", safe: 4, p: 21000, mmp: 25, mpR: 5, gachaWeight: 1 },
-        "arm_97": { n: "克特長靴", legend: true, type: "arm", slot: "boots", ac: 3, req: "knight", safe: 4, p: 22000, gachaWeight: 1, d: "克特踏遍沙場的長靴，靴底沾染著無數亡者的塵土。克特套裝之一。<br>【克特套裝】4 件齊：AC-4、變身「真‧克特」（額外傷害+4、額外命中+8、套用克特的攻擊速度）。" },
+        "arm_97": { n: "克特長靴", legend: true, type: "arm", slot: "boots", ac: 3, req: "knight", safe: 4, p: 22000, gachaWeight: 1, d: "克特踏遍沙場的長靴，靴底沾染著無數亡者的塵土。克特套裝之一。" },
         "glv_glove": { n: "手套", type: "arm", slot: "gloves", ac: 0, req: "all", safe: 4, p: 1720, gachaWeight: 100 },
-        "arm_stone_glove": { n: "石製手套", type: "arm", slot: "gloves", ac: 3, dr: 1, req: "all", safe: 4, p: 66000, gachaWeight: 10, d: "以高崙碎石打磨嵌合而成的厚重石造手套，堅硬如岩、刀劍難傷。傷害減免 +1。" },   // 🗿 高崙掉落
+        "arm_stone_glove": { n: "石製手套", type: "arm", slot: "gloves", ac: 3, dr: 1, req: "all", safe: 4, p: 66000, gachaWeight: 10, d: "以高崙碎石打磨嵌合而成的厚重石造手套，堅硬如岩、刀劍難傷。" },   // 🗿 高崙掉落
         "glv_official": { n: "武官手套", type: "arm", slot: "gloves", ac: 1, mhp: 10, req: "knight,dark", safe: 6, p: 5900, gachaWeight: 10 },
         "bot_official": { n: "武官長靴", type: "arm", slot: "boots", ac: 2, mhp: 20, req: "knight,dark", safe: 6, p: 8900, gachaWeight: 10 },
 		"glv_crystal": { n: "水晶手套", type: "arm", slot: "gloves", ac: 3, req: "knight", safe: 4, p: 11500, gachaWeight: 10 },
@@ -736,7 +799,7 @@ const DB = {
         "arm_99": { n: "力量手套", type: "arm", slot: "gloves", ac: 0, req: "all", safe: 4, p: 19800, str: 2, gachaWeight: 5 },
         "glv_reaper": { n: "死神之手", type: "arm", slot: "gloves", ac: 1, mmp: 20, mpR: 3, wis: 1, req: "mage,dark", safe: 0, p: 79000, gachaWeight: 1, d: "死神親手脫下的枯骨之手，攥緊時透出徹骨的寒意。" },
         "arm_100": { n: "鋼鐵手套", type: "arm", slot: "gloves", ac: 1, req: "all", safe: 4, p: 11550, gachaWeight: 20 },
-        "glv_dk": { n: "死亡騎士手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "knight", safe: 4, p: 18500, gachaWeight: 1, d: "死亡騎士的鐵手套，曾握緊過奪命的鋒刃。死亡騎士套裝之一。<br>【死亡騎士套裝】4 件齊：AC-4、變身「真‧死亡騎士」（額外傷害+6、額外命中+6、套用死亡騎士的攻擊速度）。" },
+        "glv_dk": { n: "死亡騎士手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "knight", safe: 4, p: 18500, gachaWeight: 1, d: "死亡騎士的鐵手套，曾握緊過奪命的鋒刃。死亡騎士套裝之一。" },
         "arm_shadowglove": { n: "影子手套", type: "arm", slot: "gloves", ac: 1, con: 1, req: "dark", safe: 6, p: 1720, gachaWeight: 50 },   // 🔧 黑暗妖精：倫得以死亡誓約兌換
         "arm_shadowmask": { n: "影子面具", type: "arm", slot: "helm", ac: 2, req: "dark", safe: 6, p: 1240, gachaWeight: 50 },   // 🔧 黑暗妖精：康以妖魔長老首級兌換
         "arm_shadowboots": { n: "影子長靴", type: "arm", slot: "boots", ac: 2, mhp: 50, hpR: 4, req: "dark", safe: 4, p: 2660, gachaWeight: 50 },   // 🔧 黑暗妖精：布魯迪卡以雪怪首級兌換
@@ -748,14 +811,14 @@ const DB = {
         "amr_darkmage_robe": { n: "黑法師長袍", type: "arm", slot: "armor", ac: 4, mmp: 5, mpR: 5, req: "mage", safe: 4, p: 53100, gachaWeight: 10 },
         "amr_summoner_robe": { n: "喚獸師長袍", type: "arm", slot: "armor", ac: 4, mhp: 5, mpR: 5, req: "mage", safe: 4, p: 53100, gachaWeight: 10 },
         "shd_rasta": { n: "拉斯塔巴德圓盾", type: "arm", slot: "shield", ac: 2, req: "all", safe: 4, p: 500, gachaWeight: 100, block: 35 },
-        "arm_101": { n: "克特手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "knight", safe: 4, p: 17500, gachaWeight: 1, d: "克特的戰手套，指節間還殘留著最後一戰的握痕。克特套裝之一。<br>【克特套裝】4 件齊：AC-4、變身「真‧克特」（額外傷害+4、額外命中+8、套用克特的攻擊速度）。" },
+        "arm_101": { n: "克特手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "knight", safe: 4, p: 17500, gachaWeight: 1, d: "克特的戰手套，指節間還殘留著最後一戰的握痕。克特套裝之一。" },
         "arm_102": { n: "保護者手套", type: "arm", slot: "gloves", ac: 0, req: "elf", safe: 4, p: 4500, mhp: 20, mmp: 20, gachaWeight: 30 },
         "arm_103": { n: "小盾牌", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 84, gachaWeight: 100, block: 20 },
         "shd_elf": { n: "精靈盾牌", type: "arm", slot: "shield", ac: 2, req: "all", safe: 6, p: 3200, gachaWeight: 100, block: 40 },
         "arm_104": { n: "阿克海盾牌", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 28, gachaWeight: 100, block: 30 },
         "arm_105": { n: "大盾牌", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 1680, gachaWeight: 100, block: 50 },
         "shd_gnome": { n: "侏儒圓盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 240, gachaWeight: 100, block: 30 },
-        "arm_106": { n: "反射之盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 28000, immStone: true, magicDrNonEle: 10, d: "盾面如鏡，能將敵人的法術回擲其身。受到無屬性魔法傷害時減少 50%。", gachaWeight: 1, block: 40 },
+        "arm_106": { n: "反射之盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 28000, immStone: true, magicDrNonEle: 10, d: "盾面如鏡，能將敵人的法術回擲其身。", gachaWeight: 1, block: 40 },
         "arm_107": { n: "伊娃之盾", type: "arm", slot: "shield", ac: 3, req: "all", safe: 4, p: 5200, mhp: 20, eff: "haste", gachaWeight: 0, block: 40 },
         "arm_108": { n: "塔盾", type: "arm", slot: "shield", ac: 3, req: "knight", safe: 4, p: 9800, gachaWeight: 50, block: 70 },
         "arm_109": { n: "木盾", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 16, gachaWeight: 100, block: 30 },
@@ -763,12 +826,12 @@ const DB = {
         "arm_111": { n: "皮盾牌", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 32, gachaWeight: 100, block: 20 },
         "arm_112": { n: "銀釘皮盾", type: "arm", slot: "shield", ac: 2, req: "all", safe: 4, p: 255, gachaWeight: 100, block: 30 },
         "shd_bone": { n: "骷髏盾牌", type: "arm", slot: "shield", ac: 3, req: "all", safe: 0, p: 255, gachaWeight: 100, block: 30 },
-		"shd_redknight": { n: "紅騎士盾牌", type: "arm", slot: "shield", ac: 2, req: "knight", safe: 6, p: 9800, immStone: true, magicDrNonEle: 20, d: "紅騎士團傳承的戰盾，染血的盾面磨礪出抗魔的韌性。受到無屬性魔法傷害時減少 20%。", gachaWeight: 20, block: 50 },
+		"shd_redknight": { n: "紅騎士盾牌", type: "arm", slot: "shield", ac: 2, req: "knight", safe: 6, p: 9800, immStone: true, magicDrNonEle: 20, d: "紅騎士團傳承的戰盾，染血的盾面磨礪出抗魔的韌性。", gachaWeight: 20, block: 50 },
         "arm_113": { n: "鋼鐵盾牌", type: "arm", slot: "shield", ac: 3, req: "knight", safe: 4, p: 16500, gachaWeight: 20, block: 60 },
         "arm_115": { n: "魔法能量之書", type: "arm", slot: "shield", ac: 2, req: "mage", safe: 4, p: 9800, int: 1, gachaWeight: 20, block: 10 },
         "acc_116": { n: "傳送控制戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 150000, gachaWeight: 1, unique: true, d: "刻著古老座標的戒指，撕裂空間之餘總會引來潛伏的強敵。攜帶在背包即可生效（無需裝備）：手動施放傳送術/使用瞬移卷軸時必定遭遇 BOSS。" },
         "acc_117": { n: "變形控制戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 150000, gachaWeight: 1, unique: true, d: "嵌著變幻紋路的戒指，讓施術者得以主宰自身形貌的流轉。攜帶在背包即可生效（無需裝備）：使用變形卷軸時可指定變身型態。" },
-        "acc_summon_ctrl": { n: "召喚控制戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 50000, gachaWeight: 1, unique: true, d: "召喚師夢寐以求的戒指，能讓喚出的眷屬更聽從號令、更難失手。裝備後，召喚物命中 +5，且擲骰 19 視為命中。" },
+        "acc_summon_ctrl": { n: "召喚控制戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 50000, gachaWeight: 1, unique: true, d: "召喚師夢寐以求的戒指，能讓喚出的眷屬完全聽從號令。裝備後可在技能清單的「召喚術」挑選要召喚的怪物（含各階稀有種），且 28~48 級階段的召喚數量上限由 5 隻提升為 6 隻。" },
         "rng_earth": { n: "地靈戒指", type: "acc", slot: "ring", ac: 0, resEarth: 10, req: "all", safe: 0, p: 50000, gachaWeight: 1, d: "封存著厚土脈動的戒指，握之如握住一方大地。蘊含大地之力的戒指。" },
         "rng_water": { n: "水靈戒指", type: "acc", slot: "ring", ac: 0, resWater: 10, req: "all", safe: 0, p: 50000, gachaWeight: 1, d: "封存著潺潺水靈的戒指，指尖彷彿淌過清泉。蘊含流水之力的戒指。" },
         "rng_wind": { n: "風靈戒指", type: "acc", slot: "ring", ac: 0, resWind: 10, req: "all", safe: 0, p: 50000, gachaWeight: 1, d: "封存著疾風精魄的戒指，戴上便覺步履輕盈。蘊含疾風之力的戒指。" },
@@ -782,7 +845,7 @@ const DB = {
         "item_orc_elder_head": { n: "妖魔長老首級", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "妖魔法師頂禮膜拜、供奉於暗壇的妖魔長老首級。可在沉默洞穴交給「康」交換影子面具。（無法使用）" },   // 🔧 任務道具：妖魔法師 1% 掉落
         "item_yeti_head": { n: "雪怪首級", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "自暴雪中的雪怪斬下、猶帶寒霜的巨大首級。可在沉默洞穴交給「布魯迪卡」交換影子長靴。（無法使用）" },   // 🔧 任務道具：雪怪 1% 掉落
         "item_mastery_proof": { n: "精通之證", p: 0, c: "text-blue-300", noUse: true, noSell: true, gachaWeight: 0, d: "證明你已踏碎自身極限的徽記，灼灼生輝。帶回威頓村交給「漢」，便能開啟職業精通之路。（唯一・無法存入倉庫・無法販售）" },   // 🏅 精通任務道具
-        "item_dragon_egg": { n: "幼龍蛋", type: "etc", req: "all", p: 0, c: "text-amber-300", noUse: true, maxHold: 1, gachaWeight: 0, d: "一顆尚在沉睡的幼龍蛋，蛋殼下彷彿有風在流動。擊敗安塔瑞斯／法利昂／巴拉卡斯必得。持有時於任何野外地圖有極微小機率引來傳說中的風龍「林德拜爾」；售價 0，但可隨時賣出以中止這份危險的緣分。（唯一・無法存入倉庫）" },   // 🐉 林德拜爾遭遇觸發道具
+        "item_dragon_egg": { n: "頑皮幼龍蛋", type: "etc", req: "all", p: 0, c: "text-amber-300", eff: "dragonegg", maxHold: 1, gachaWeight: 0, d: "一顆尚在沉睡的幼龍蛋，蛋殼下彷彿有風在流動。擊敗安塔瑞斯／法利昂／巴拉卡斯必得。持有時於任何野外地圖有極微小機率引來傳說中的風龍「林德拜爾」；也可以直接使用——若寵物保管未滿，將消耗蛋並隨機孵出 淘氣龍 或 頑皮龍 一隻。售價 0，但可隨時賣出以中止這份危險的緣分。（唯一・無法存入倉庫）" },   // 🐉 林德拜爾遭遇觸發道具＋🐾 v3.2.17 可使用孵化（原名 幼龍蛋）
         "item_soul_orb": { n: "靈魂之球", type: "misc", p: 0, c: "text-slate-200", eff: "soulorb", gachaWeight: 0, d: "蘊含微弱靈魂之力的水晶球，貼近耳邊彷彿能聽見低語。據說與某把失去魔力的魔杖共鳴時，能喚回沉睡的傳說。" },   // 🔧 巴列斯任務道具（可使用）
         // ===== 🗼 傲慢之塔：道具／素材／裝備 =====（封印傳送符 item_pride_sealed_* 由 initPrideTalismans 程式化產生）
         "mat_chimera_snake":  { n: "奇美拉之皮(蛇)",   type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "奇美拉身上蛇之部位的堅韌皮革。可在傲慢之塔入口交給巴姆特，製作 詛咒的皮革(地)。（製作材料）" },
@@ -805,14 +868,14 @@ const DB = {
         "shd_phantom_eye": { n: "幻象眼魔的心眼", type: "arm", slot: "shield", ac: 0, int: 1, mmp: 100, mpR: 2, immStone: true, block: 10, req: "mage", safe: 6, p: 127000, gachaWeight: 1, legend: true, d: "挖自幻象眼魔的核心之眼，凝視深處仍翻湧著扭曲的幻象。" },
         "clk_marcus": { n: "馬昆斯斗篷", legend: true, type: "arm", slot: "cloak", ac: 2, mhp: 60, hpR: 4, mr: 3, mrPerEn: 3, req: "mage,dark", safe: 6, p: 123000, gachaWeight: 1 },
         "clk_silver_light": { n: "銀光斗篷", type: "arm", slot: "cloak", ac: 2, mpR: 4, mr: 15, req: "mage,elf,dark", safe: 4, p: 63000, gachaWeight: 1 },
-        "clk_lich": { n: "巫妖斗篷", legend: true, type: "arm", slot: "armor", ac: 7, mmp: 50, mpR: 15, mdmgEnFrom4: true, req: "mage", safe: 4, p: 363000, gachaWeight: 1, d: "巫妖未散的怨念縈繞其上的法袍，愈是浸染暗魔力愈見威能。強化 +4 時魔法傷害 +1，之後每強化 +1 魔法傷害再 +1，最高 +9（魔法傷害 +6）；+10 以上不再額外增加。" },
-        "hlm_demon": { n: "惡魔頭盔", legend: true, type: "arm", slot: "helm",   ac: 2, req: "all", safe: 4, p: 25000, gachaWeight: 1, d: "惡魔套裝之一。<br>【惡魔套裝】頭盔＋盔甲＋手套＋長靴 集齊：AC-2、HP自然恢復+5、變身「惡魔」（額外傷害+4、額外命中+4、魔法傷害+3、額外MP+3、MP自然恢復+3、套用惡魔的攻擊速度，可與加速/勇敢/餅乾疊加）。" },
-        "amr_demon": { n: "惡魔盔甲", legend: true, type: "arm", slot: "armor",  ac: 6, req: "all", safe: 4, p: 33000, gachaWeight: 1, d: "惡魔套裝之一。<br>【惡魔套裝】頭盔＋盔甲＋手套＋長靴 集齊：AC-2、HP自然恢復+5、變身「惡魔」（額外傷害+4、額外命中+4、魔法傷害+3、額外MP+3、MP自然恢復+3、套用惡魔的攻擊速度，可與加速/勇敢/餅乾疊加）。" },
-        "glv_demon": { n: "惡魔手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "all", safe: 4, p: 18000, gachaWeight: 1, d: "惡魔套裝之一。<br>【惡魔套裝】頭盔＋盔甲＋手套＋長靴 集齊：AC-2、HP自然恢復+5、變身「惡魔」（額外傷害+4、額外命中+4、魔法傷害+3、額外MP+3、MP自然恢復+3、套用惡魔的攻擊速度，可與加速/勇敢/餅乾疊加）。" },
-        "bot_demon": { n: "惡魔長靴", legend: true, type: "arm", slot: "boots",  ac: 3, req: "all", safe: 4, p: 18000, gachaWeight: 1, d: "惡魔套裝之一。<br>【惡魔套裝】頭盔＋盔甲＋手套＋長靴 集齊：AC-2、HP自然恢復+5、變身「惡魔」（額外傷害+4、額外命中+4、魔法傷害+3、額外MP+3、MP自然恢復+3、套用惡魔的攻擊速度，可與加速/勇敢/餅乾疊加）。" },
+        "clk_lich": { n: "巫妖斗篷", legend: true, type: "arm", slot: "armor", ac: 7, mmp: 50, mpR: 15, mdmgEnFrom4: true, req: "mage", safe: 4, p: 363000, gachaWeight: 1, d: "巫妖未散的怨念縈繞其上的法袍，愈是浸染暗魔力愈見威能。" },
+        "hlm_demon": { n: "惡魔頭盔", legend: true, type: "arm", slot: "helm",   ac: 2, req: "all", safe: 4, p: 25000, gachaWeight: 1, d: "惡魔套裝之一。" },
+        "amr_demon": { n: "惡魔盔甲", legend: true, type: "arm", slot: "armor",  ac: 6, req: "all", safe: 4, p: 33000, gachaWeight: 1, d: "惡魔套裝之一。" },
+        "glv_demon": { n: "惡魔手套", legend: true, type: "arm", slot: "gloves", ac: 2, req: "all", safe: 4, p: 18000, gachaWeight: 1, d: "惡魔套裝之一。" },
+        "bot_demon": { n: "惡魔長靴", legend: true, type: "arm", slot: "boots",  ac: 3, req: "all", safe: 4, p: 18000, gachaWeight: 1, d: "惡魔套裝之一。" },
         "rng_mr": { n: "抗魔戒指", type: "acc", slot: "ring", ac: 0, mr: 5, req: "all", safe: 0, p: 10000, gachaWeight: 1 },
         "acc_demonbane": { n: "滅魔戒指", type: "acc", slot: "ring", ac: 0, mr: 10, req: "all", safe: 0, p: 100000, gachaWeight: 1, d: "蘊含滅魔之力的戒指。" },
-        "acc_doro": { n: "多羅戒指", type: "acc", slot: "ring", ac: 0, mhp: 5, weightCap: 5, req: "all", safe: 0, p: 20000, gachaWeight: 20, d: "多羅的戒指。HP+5、負重上限 +5。" },
+        "acc_doro": { n: "多羅戒指", type: "acc", slot: "ring", ac: 0, mhp: 5, weightCap: 5, req: "all", safe: 0, p: 20000, gachaWeight: 20, d: "多羅的戒指。" },
         "hlm_mummy_crown": { n: "木乃伊王的王冠", type: "arm", slot: "helm", ac: 2, hpR: 3, dex: 2, req: "elf,dark", safe: 6, p: 163000, legend: true, gachaWeight: 1, d: "自木乃伊王枯朽的頭顱上取下的黃金王冠，千年塵封下金光依舊。" },
         "acc_118": { n: "守護戒指", type: "acc", slot: "ring", ac: 1, req: "all", safe: 0, p: 10000, gachaWeight: 1 },
         "acc_119": { n: "長者戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 10000, mmp: 10, mpR: 1, gachaWeight: 1 },
@@ -840,10 +903,10 @@ const DB = {
         "glv_baranka":    { n: "巴蘭卡手套", type: "arm", slot: "gloves", ac: 3,                        req: "knight,elf,dark", safe: 4, p: 73000,  gachaWeight: 1 },
         "bot_baranka":    { n: "巴蘭卡長靴", type: "arm", slot: "boots", ac: 3,                         req: "all",             safe: 4, p: 63000,  gachaWeight: 1 },
         // ===== 四大軍王套裝（傳統套裝；4 件齊：HP+30/MP+30/HP恢復+10/MP恢復+10/魅力+3） =====
-        "bot_kingbeast":    { n: "魔獸軍王長靴", legend: true, type: "arm", slot: "boots",  ac: 4, req: "all", safe: 6, p: 133000, gachaWeight: 1, d: "四大軍王套裝之一。<br><span class='text-amber-300'>【四大軍王套裝】冥法軍王斗篷／法令軍王長袍／暗殺軍王手套／魔獸軍王長靴 集齊：HP+30、MP+30、HP自然恢復+10、MP自然恢復+10、魅力+3。</span>" },
-        "clk_kingnecro":    { n: "冥法軍王斗篷", legend: true, type: "arm", slot: "cloak",  ac: 5, req: "all", safe: 4, p: 153000, gachaWeight: 1, d: "四大軍王套裝之一。<br><span class='text-amber-300'>【四大軍王套裝】冥法軍王斗篷／法令軍王長袍／暗殺軍王手套／魔獸軍王長靴 集齊：HP+30、MP+30、HP自然恢復+10、MP自然恢復+10、魅力+3。</span>" },
-        "amr_kinglaw":      { n: "法令軍王長袍", legend: true, type: "arm", slot: "armor",  ac: 8, req: "all", safe: 6, p: 178000, gachaWeight: 1, d: "四大軍王套裝之一。<br><span class='text-amber-300'>【四大軍王套裝】冥法軍王斗篷／法令軍王長袍／暗殺軍王手套／魔獸軍王長靴 集齊：HP+30、MP+30、HP自然恢復+10、MP自然恢復+10、魅力+3。</span>" },
-        "glv_kingassassin": { n: "暗殺軍王手套", legend: true, type: "arm", slot: "gloves", ac: 4, req: "all", safe: 6, p: 145000, gachaWeight: 1, d: "四大軍王套裝之一。<br><span class='text-amber-300'>【四大軍王套裝】冥法軍王斗篷／法令軍王長袍／暗殺軍王手套／魔獸軍王長靴 集齊：HP+30、MP+30、HP自然恢復+10、MP自然恢復+10、魅力+3。</span>" },
+        "bot_kingbeast":    { n: "魔獸軍王長靴", legend: true, type: "arm", slot: "boots",  ac: 4, req: "all", safe: 6, p: 133000, gachaWeight: 1, d: "四大軍王套裝之一。" },
+        "clk_kingnecro":    { n: "冥法軍王斗篷", legend: true, type: "arm", slot: "cloak",  ac: 5, req: "all", safe: 4, p: 153000, gachaWeight: 1, d: "四大軍王套裝之一。" },
+        "amr_kinglaw":      { n: "法令軍王長袍", legend: true, type: "arm", slot: "armor",  ac: 8, req: "all", safe: 6, p: 178000, gachaWeight: 1, d: "四大軍王套裝之一。" },
+        "glv_kingassassin": { n: "暗殺軍王手套", legend: true, type: "arm", slot: "gloves", ac: 4, req: "all", safe: 6, p: 145000, gachaWeight: 1, d: "四大軍王套裝之一。" },
         // ===== 冥法軍訓練場：掉落防具（神官系列／黑暗披肩） =====
         "hlm_priest":    { n: "神官頭飾", type: "arm", slot: "helm",   ac: 1, mhp: 10, mpR: 1, req: "mage,elf", safe: 6, p: 15900, gachaWeight: 10 },
         "amr_priest":    { n: "神官法袍", type: "arm", slot: "armor",  ac: 6, mhp: 10, mpR: 5, req: "mage,elf", safe: 6, p: 25900, gachaWeight: 10 },
@@ -864,136 +927,143 @@ const DB = {
         "acc_137": { n: "光明靈魂腰帶", type: "acc", slot: "belt", ac: 0, req: "all", safe: 0, p: 11000, mhp: 20, mmp: 20, hpR: 1, mpR: 1, gachaWeight: 0 },
         "acc_138": { n: "守護皮帶", type: "acc", slot: "belt", ac: 0, req: "all", safe: 0, p: 11000, weightCap: 130, gachaWeight: 1 },   // 🔧 AC改為0，增加負重上限+130
 		"blt_mr": { n: "抗魔皮帶", type: "acc", slot: "belt", ac: 0, req: "all", safe: 0, p: 11000, weightCap: 130, gachaWeight: 1 },   // 🔧 取消MR+5，增加負重上限+130
-        "blt_titan": { n: "泰坦皮帶", type: "acc", slot: "belt", ac: 0, weightCap: 500, req: "all", safe: 0, p: 92000, gachaWeight: 1, d: "傳說中泰坦束於腰間的巨帶，承載著撼動山岳之力。負重上限 +500。" },
-        "blt_giant_ring": { n: "古代巨人戒指", type: "acc", slot: "belt", legend: true, ac: 2, str: 1, req: "all", safe: 0, p: 352000, gachaWeight: 1, d: "雖名為戒指，實為古代巨人腰間的一環，於常人已是一圈鐵帶（部位：腰帶）。力量 +1。" },
-        "potion_heal": { n: "紅色藥水", type: "pot", p: 37, c: "text-red-300", d: "隨機恢復 10~20 HP", val: 15, valMin: 10, valMax: 20, gachaWeight: 0 },
-        "potion_strong": { n: "橙色藥水", type: "pot", req: "all", p: 200, c: "text-orange-300", d: "隨機恢復 30~50 HP", val: 40, valMin: 30, valMax: 50, gachaWeight: 0 },
-        "potion_ult": { n: "白色藥水", type: "pot", req: "all", p: 600, c: "text-white", d: "隨機恢復 60~80 HP", val: 70, valMin: 60, valMax: 80, gachaWeight: 0 },
-        "potion_haste": { n: "自我加速藥水", type: "pot", req: "all", p: 200, c: "text-green-300", d: "玩家攻擊速度加快33%，持續300秒", eff: "haste", dur: 300, gachaWeight: 0 },
-        "potion_blue": { n: "藍色藥水", type: "pot", req: "all", p: 1046, c: "text-blue-300", d: "精神10以下MP恢復+1，11以上大幅增加，持續600秒", eff: "blue", dur: 600, gachaWeight: 0 },
-        "potion_brave": { n: "勇敢藥水", type: "pot", req: "knight,dragon,warrior,royal", p: 880, c: "text-purple-300", d: "騎士／龍騎士／戰士／王族限定，玩家攻擊速度加快33%（可與加速／覺醒／變身相乘疊加），持續300秒", eff: "brave", dur: 300, gachaWeight: 0 },
-        "new_item_139": { n: "精靈餅乾", type: "pot", req: "elf", p: 1980, c: "text-yellow-200", d: "妖精限定，攻擊速度加快15%，持續300秒", eff: "elfcookie", dur: 300, gachaWeight: 0 },
-        "new_item_140": { n: "慎重藥水", type: "pot", req: "mage,illusion", p: 600, c: "text-purple-300", d: "法師／幻術士限定，魔法傷害+2、MP恢復+2，持續300秒", eff: "cautious", dur: 300, gachaWeight: 0 },
-        "new_item_141": { n: "安特的水果", type: "pot", req: "all", p: 360, c: "text-green-300", d: "恢復 44~107 HP（僅能手動使用）", gachaWeight: 0 },
-        "scroll_poly": { n: "變形卷軸", type: "scroll", req: "all", p: 1300, c: "text-gray-300", d: "根據玩家等級改變外觀與能力，持續1800秒", eff: "poly", dur: 1800, gachaWeight: 0 },
-        "scroll_magicbarrier": { n: "魔法卷軸(魔法屏障)", type: "scroll", req: "all", p: 1500, c: "text-cyan-300", d: "使用後獲得「魔法屏障」狀態，持續16秒；成功抵擋一次技能傷害後3秒內無法再次施放（自然到期或取消則無冷卻）", eff: "magicbarrier", gachaWeight: 0 },
+        "blt_titan": { n: "泰坦皮帶", type: "acc", slot: "belt", ac: 0, weightCap: 500, req: "all", safe: 0, p: 92000, gachaWeight: 1, d: "傳說中泰坦束於腰間的巨帶，承載著撼動山岳之力。" },
+        "blt_giant_ring": { n: "古代巨人戒指", type: "acc", slot: "belt", legend: true, ac: 2, str: 1, req: "all", safe: 0, p: 352000, gachaWeight: 1, d: "雖名為戒指，實為古代巨人腰間的一環，於常人已是一圈鐵帶（部位：腰帶）。" },
+        "potion_heal": { n: "紅色藥水", type: "pot", p: 37, c: "text-red-300", d: "亞丁冒險者最常攜帶的治癒藥水，飲用後能恢復少量體力。", val: 15, valMin: 10, valMax: 20, gachaWeight: 0 },
+        "potion_strong": { n: "橙色藥水", type: "pot", req: "all", p: 200, c: "text-orange-300", d: "以濃縮藥草調製的治癒藥水，能迅速修復較重的傷勢。", val: 40, valMin: 30, valMax: 50, gachaWeight: 0 },
+        "potion_ult": { n: "白色藥水", type: "pot", req: "all", p: 600, c: "text-white", d: "散發柔和白光的高級治癒藥水，能為瀕危的冒險者帶來生機。", val: 70, valMin: 60, valMax: 80, gachaWeight: 0 },
+        "potion_haste": { n: "自我加速藥水", type: "pot", req: "all", p: 200, c: "text-green-300", d: "飲下後身體變得輕盈，戰鬥動作也隨之加快。", eff: "haste", dur: 300, gachaWeight: 0 },
+        "potion_blue": { n: "藍色藥水", type: "pot", req: "all", p: 1046, c: "text-blue-300", d: "以珍稀藍草煉製的藥水，精神越堅定，越能從中汲取充沛魔力。", eff: "blue", dur: 600, gachaWeight: 0 },
+        "potion_brave": { n: "勇敢藥水", type: "pot", req: "knight,dragon,warrior,royal", p: 880, c: "text-purple-300", d: "激起戰士血性的秘藥，使近身作戰者以更勇猛的步調迎敵。", eff: "brave", dur: 300, gachaWeight: 0 },
+        "new_item_139": { n: "精靈餅乾", type: "pot", req: "elf", p: 1980, c: "text-yellow-200", d: "受精靈祝福的餅乾，妖精食用後能與風的律動同步。", eff: "elfcookie", dur: 300, gachaWeight: 0 },
+        "new_item_140": { n: "慎重藥水", type: "pot", req: "mage,illusion", p: 600, c: "text-purple-300", d: "使思緒沉靜澄明的秘藥，能增進施法者的魔力運行與恢復。", eff: "cautious", dur: 300, gachaWeight: 0 },
+        "new_item_141": { n: "安特的水果", type: "pot", req: "all", p: 360, c: "text-green-300", d: "由安特孕育的奇異果實，飽含森林的生命力。", gachaWeight: 0 },
+        "scroll_poly": { n: "變形卷軸", type: "scroll", req: "all", p: 1300, c: "text-gray-300", d: "記載古老變形術的卷軸，能讓使用者暫時化為與自身歷練相稱的姿態。", eff: "poly", dur: 1800, gachaWeight: 0 },
+        "scroll_magicbarrier": { n: "魔法卷軸(魔法屏障)", type: "scroll", req: "all", p: 1500, c: "text-cyan-300", d: "封存魔法屏障的卷軸，展開後能抵擋一次來襲的技能。", eff: "magicbarrier", gachaWeight: 0 },
         "scroll_teleport": { n: "瞬間移動卷軸", type: "scroll", req: "all", p: 82, c: "text-sky-300", d: "使用後發動傳送術", eff: "teleport_scroll", gachaWeight: 0 },
-        "scroll_revive": { n: "復活卷軸", type: "scroll", req: "all", p: 1000, c: "text-yellow-300", d: "持有死亡後可選擇原地復活，冷卻15秒；倒地傭兵於死亡 15 秒後也會自動消耗此卷軸原地復活。", gachaWeight: 0 },
+        "scroll_revive": { n: "復活卷軸", type: "scroll", req: "all", p: 1000, c: "text-yellow-300", d: "蘊藏復甦之力的神聖卷軸，能使倒下的冒險者或傭兵在原地重新站起。", gachaWeight: 0 },
         "item_blueflute": { n: "藍色長笛", p: 1, c: "text-blue-300", d: "試煉所需的材料。", gachaWeight: 0 },   // 🔧 試煉材料統一藍色
         "item_ancientkey": { n: "古代鑰匙", p: 1, c: "text-blue-300", d: "試煉所需的材料。", gachaWeight: 0 },   // 🔧 試煉材料統一藍色
         "item_nightvision": { n: "夜之視野", p: 1, c: "text-blue-300", d: "凝視黑暗也不失方向的祕術之眼，試煉所需的材料。", gachaWeight: 0 },
-        "candle": { n: "回憶蠟燭", type: "misc", req: "all", p: 100000, c: "text-red-500", d: "點擊使用：六大屬性回到 Lv1，於資訊面板以 +／- 重新分配能力點數，按「確認」才生效（按「取消」則不消耗蠟燭）。同時退還已使用的萬能藥、賣出並解除所有寵物項圈。", eff: "reset", gachaWeight: 0 },
-        "panacea_str": { n: "萬能藥(STR)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "傳說中能重塑筋骨的靈藥。可永久提升力量+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "str", gachaWeight: 10 },
-        "panacea_dex": { n: "萬能藥(DEX)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "飲下後身手如風的靈藥。可永久提升敏捷+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "dex", gachaWeight: 10 },
-        "panacea_con": { n: "萬能藥(CON)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "淬鍊體魄、固本培元的靈藥。可永久提升體質+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "con", gachaWeight: 10 },
-        "panacea_int": { n: "萬能藥(INT)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "啟迪心智、開悟靈光的靈藥。可永久提升智力+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "int", gachaWeight: 10 },
-        "panacea_wis": { n: "萬能藥(WIS)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "沉澱心神、堅定意志的靈藥。可永久提升精神+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "wis", gachaWeight: 10 },
+        "candle": { n: "回憶蠟燭", type: "misc", req: "all", p: 100000, c: "text-red-500", d: "點擊使用：六大屬性回到 Lv1，於資訊面板以 +／- 重新分配能力點數，按「確認」才生效（按「取消」則不消耗蠟燭）。同時退還已使用的萬能藥；若重置後魅力不足，超出上限的出戰寵物會自動返回保管。", eff: "reset", gachaWeight: 0 },
+        "panacea_str": { n: "萬能藥(STR)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "傳說中能重塑筋骨的靈藥。", eff: "panacea", pstat: "str", gachaWeight: 10 },
+        "panacea_dex": { n: "萬能藥(DEX)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "飲下後身手如風的靈藥。", eff: "panacea", pstat: "dex", gachaWeight: 10 },
+        "panacea_con": { n: "萬能藥(CON)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "淬鍊體魄、固本培元的靈藥。", eff: "panacea", pstat: "con", gachaWeight: 10 },
+        "panacea_int": { n: "萬能藥(INT)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "啟迪心智、開悟靈光的靈藥。", eff: "panacea", pstat: "int", gachaWeight: 10 },
+        "panacea_wis": { n: "萬能藥(WIS)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "沉澱心神、堅定意志的靈藥。", eff: "panacea", pstat: "wis", gachaWeight: 10 },
         "panacea_white": { n: "純白的萬能藥", type: "misc", req: "all", p: 5000, c: "text-slate-100", noUse: true, d: "純白無瑕、尚未沾染屬性的萬能藥原料（無法直接使用，僅作製作材料）。使用回憶蠟燭重置配點時，依已使用過的萬能藥瓶數獲得。可在象牙塔的塔斯處，以 3 個製作成任一屬性的萬能藥。", gachaWeight: 0 },
-        "panacea_cha": { n: "萬能藥(CHA)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "令人顧盼生輝、風采動人的靈藥。可永久提升魅力+1，直到使用回憶蠟燭為止（最多60瓶，不可突破屬性上限60）", eff: "panacea", pstat: "cha", gachaWeight: 0 },
+        "panacea_cha": { n: "萬能藥(CHA)", type: "misc", req: "all", p: 10000, c: "text-pink-300", d: "令人顧盼生輝、風采動人的靈藥。", eff: "panacea", pstat: "cha", gachaWeight: 0 },
         
-        "new_item_142": { n: "哨子", type: "pot", req: "all", p: 165, d: "可用於呼叫或解散寵物", eff: "whistle", gachaWeight: 0 },
-        "new_item_collar_husky": { n: "項圈 (哈士奇)", p: 10, gachaWeight: 0 },
-        "new_item_238": { n: "項圈 (牧羊犬)", p: 10, gachaWeight: 0 },
-        // ===== 🐾 寵物進化系統：進化果實（消耗道具，Lv30+且有對應基礎項圈才能使用）=====
-        "new_fruit_rabbit":    { n: "進化果實：暴走兔", type: "pot", req: "all", p: 0, c: "text-green-300", eff: "evolve", evolveFrom: "new_item_collar_husky", evolveTo: "new_collar_rabbit", d: "玩家等級30以上、且持有 項圈 (哈士奇) 時可使用：將一個 項圈 (哈士奇) 進化為 項圈 (暴走兔)。", gachaWeight: 0 },
-        "new_fruit_fox":       { n: "進化果實：狐狸",   type: "pot", req: "all", p: 0, c: "text-green-300", eff: "evolve", evolveFrom: "new_item_184",          evolveTo: "new_collar_fox",    d: "玩家等級30以上、且持有 項圈 (杜賓狗) 時可使用：將一個 項圈 (杜賓狗) 進化為 項圈(狐狸)。", gachaWeight: 0 },
-        "new_fruit_beagle":    { n: "進化果實：小獵犬", type: "pot", req: "all", p: 0, c: "text-green-300", eff: "evolve", evolveFrom: "new_item_238",          evolveTo: "new_collar_beagle", d: "玩家等級30以上、且持有 項圈 (牧羊犬) 時可使用：將一個 項圈 (牧羊犬) 進化為 項圈(小獵犬)。", gachaWeight: 0 },
-        "new_fruit_stbernard": { n: "進化果實：聖伯納", type: "pot", req: "all", p: 0, c: "text-green-300", eff: "evolve", evolveFrom: "new_item_185",          evolveTo: "new_collar_stbernard", d: "玩家等級30以上、且持有 項圈 (狼) 時可使用：將一個 項圈 (狼) 進化為 項圈 (聖伯納)。", gachaWeight: 0 },
-        // 進化項圈（呼叫進化夥伴所需；不可存倉）
-        "new_collar_rabbit":    { n: "項圈 (暴走兔)",  p: 10, c: "text-cyan-300", gachaWeight: 0 },
-        "new_collar_fox":       { n: "項圈 (狐狸)",   p: 10, c: "text-orange-300", gachaWeight: 0 },
-        "new_collar_beagle":    { n: "項圈 (小獵犬)", p: 10, c: "text-amber-300", gachaWeight: 0 },
-        "new_collar_stbernard": { n: "項圈 (聖伯納)",  p: 10, c: "text-emerald-300", gachaWeight: 0 },
+        // ===== 🐾 夥伴系統 v2（v3.2.17）：誘捕道具（使用後獲得對應誘捕狀態 600 秒·期間擊殺對應動物→寵物保管獲得基本等級寵物並失去狀態）=====
+        //   🚫 舊項圈系統（哨子/8種項圈/肉/舊進化果實）已全數移除；舊存檔項圈由 petMigrateLegacy 轉換為寵物。
+        "item_eye_meat":      { n: "漂浮之眼肉",       type: "pot", req: "all", p: 100, c: "text-pink-300",    eff: "petlure", lure: "lure_general",  dur: 600, d: "漂浮之眼身上切下的奇特肉塊，散發野獸無法抗拒的氣味。使用後獲得「一般誘捕」600秒：期間擊殺 狼／牧羊犬／杜賓狗／哈士奇／熊／貓／浣熊／聖伯納犬／狐狸／小獵犬／柯利 時，寵物保管將獲得基本等級的該寵物並失去此狀態。", gachaWeight: 0 },
+        "item_carrot":        { n: "胡蘿蔔",           type: "pot", req: "all", p: 100, c: "text-orange-300",  eff: "petlure", lure: "lure_rabbit",   dur: 600, d: "水靈飽滿的胡蘿蔔，暴走兔見了會不顧一切衝過來。使用後獲得「暴走兔誘捕」600秒：期間擊殺 暴走兔 時，寵物保管將獲得基本等級的暴走兔並失去此狀態。", gachaWeight: 0 },
+        "item_tiger_feed":    { n: "虎男誘食",         type: "pot", req: "all", p: 100, c: "text-amber-300",   eff: "petlure", lure: "lure_tiger",    dur: 600, d: "馴獸師特製的腥香餌食，能喚醒猛虎心中的認主之念。使用後獲得「虎男誘捕」600秒：期間擊殺 老虎 時，寵物保管將獲得基本等級的虎男並失去此狀態。", gachaWeight: 0 },
+        "item_kangaroo_feed": { n: "袋鼠的飼料",       type: "pot", req: "all", p: 100, c: "text-lime-300",    eff: "petlure", lure: "lure_kangaroo", dur: 600, d: "混入香草的特調飼料，袋鼠聞了便會收起拳頭。使用後獲得「袋鼠誘捕」600秒：期間擊殺 袋鼠 時，寵物保管將獲得基本等級的袋鼠並失去此狀態。", gachaWeight: 0 },
+        "item_panda_feed":    { n: "熊貓的飼料",       type: "pot", req: "all", p: 100, c: "text-slate-100",   eff: "petlure", lure: "lure_panda",    dur: 600, d: "以嫩竹筍壓成的飼料磚，是熊貓無法拒絕的美味。使用後獲得「熊貓誘捕」600秒：期間擊殺 熊貓 時，寵物保管將獲得基本等級的熊貓並失去此狀態。", gachaWeight: 0 },
+        "item_monkey_feed":   { n: "猴子的飼料",       type: "pot", req: "all", p: 100, c: "text-yellow-200",  eff: "petlure", lure: "lure_monkey",   dur: 600, d: "塞滿堅果與香蕉乾的飼料袋，猴群為之瘋狂。使用後獲得「猴子誘捕」600秒：期間擊殺 猴子 時，寵物保管將獲得基本等級的猴子並失去此狀態。", gachaWeight: 0 },
+        "item_koreadog_feed": { n: "高麗犬誘食",       type: "pot", req: "all", p: 100, c: "text-cyan-200",    eff: "petlure", lure: "lure_koreadog", dur: 600, d: "熬煮入味的肉乾誘食，幼犬聞香便搖著尾巴跟來。使用後獲得「高麗幼犬誘捕」600秒：期間擊殺 高麗幼犬 時，寵物保管將獲得基本等級的高麗幼犬並失去此狀態。", gachaWeight: 0 },
+        // 🐾 進化材料（於包武的寵物保管介面對 Lv30+ 寵物使用進化按鈕時消耗；諾斯製作）
+        "item_dragon_heart":  { n: "龍之心",   type: "etc", req: "all", p: 5000, c: "text-red-300",    noUse: true, gachaWeight: 0, d: "幼龍胸腔中仍在搏動的緋紅心臟，蘊含純粹的龍之力。製作材料：亞丁「諾斯」可用它製作勝利果實。" },
+        "item_evo_fruit":     { n: "進化果實", type: "etc", req: "all", p: 0,    c: "text-green-300",  noUse: true, gachaWeight: 0, d: "蘊含生命躍遷之力的神祕果實。亞丁「諾斯」可製作：光明的鱗片×100＋綠寶石×20＋金幣20000。", gachaWeight: 0 },
+        "item_victory_fruit": { n: "勝利果實", type: "etc", req: "all", p: 0,    c: "text-yellow-300", noUse: true, gachaWeight: 0, d: "凝聚龍之心力量的黃金果實。亞丁「諾斯」可製作：龍之心×1＋高品質紅寶石×5。", gachaWeight: 0 },
         // 不死鳥之心（製作材料，不死鳥 1% 掉落）
         "new_phoenix_heart": { n: "不死鳥之心", type: "etc", p: 0, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "不死鳥體內不滅的核心。製作材料。" },
-        // ===== 🦴 寵物裝備（之牙）：裝在「寵物裝備」欄，能力只影響項圈夥伴，可用對飾品施法的卷軸強化至+5 =====
-        "pet_fang_hound":   { n: "獵犬之牙", type: "acc", slot: "pet", req: "all", safe: 0, p: 10000,  c: "text-white", petHit: 2,            d: "獵犬的尖牙磨成的護符，喚醒項圈夥伴的野性。寵物裝備（裝在「寵物裝備」欄，只加成所有項圈夥伴、不影響玩家；對飾品施法的卷軸可強化，上限+5）。", gachaWeight: 10 },
-        "pet_fang_steel":   { n: "鋼鐵之牙", type: "acc", slot: "pet", req: "all", safe: 0, p: 10000,  c: "text-white", petDmg: 2,            d: "以鋼鐵鑄成的森冷利齒，使項圈夥伴撕咬更為兇猛。寵物裝備（裝在「寵物裝備」欄，只加成所有項圈夥伴、不影響玩家；對飾品施法的卷軸可強化，上限+5）。", gachaWeight: 10 },
-        "pet_fang_ruin":    { n: "破滅之牙", type: "acc", slot: "pet", req: "all", safe: 0, p: 100000, c: "text-white", petDmg: 2, petHit: 3, d: "沾染破滅氣息的獠牙，令項圈夥伴的撕咬帶來毀滅。寵物裝備（裝在「寵物裝備」欄，只加成所有項圈夥伴、不影響玩家；對飾品施法的卷軸可強化，上限+5）。", gachaWeight: 0 },
-        "pet_fang_victory": { n: "勝利之牙", type: "acc", slot: "pet", req: "all", safe: 0, p: 100000, c: "text-white", petDmg: 3, petHit: 1, d: "銘刻無數勝戰的榮耀之牙，激起項圈夥伴的鬥志。寵物裝備（裝在「寵物裝備」欄，只加成所有項圈夥伴、不影響玩家；對飾品施法的卷軸可強化，上限+5）。", gachaWeight: 0 },
+        // ===== 🦴 寵物裝備（之牙）：裝在「寵物裝備」欄，能力只影響寵物，可用對飾品施法的卷軸強化至+5 =====
+        "pet_fang_hound":   { n: "獵犬之牙", type: "acc", slot: "petwpn", req: "all", safe: 0, p: 10000,  c: "text-white", petHit: 2,            d: "獵犬的尖牙磨成的護符，喚醒寵物的野性。", gachaWeight: 10 },
+        "pet_fang_steel":   { n: "鋼鐵之牙", type: "acc", slot: "petwpn", req: "all", safe: 0, p: 10000,  c: "text-white", petDmg: 2,            d: "以鋼鐵鑄成的森冷利齒，使寵物撕咬更為兇猛。", gachaWeight: 10 },
+        "pet_fang_ruin":    { n: "破滅之牙", type: "acc", slot: "petwpn", req: "all", safe: 0, p: 100000, c: "text-white", petDmg: 2, petHit: 3, d: "沾染破滅氣息的獠牙，令寵物的撕咬帶來毀滅。", gachaWeight: 0 },
+        "pet_fang_victory": { n: "勝利之牙", type: "acc", slot: "petwpn", req: "all", safe: 0, p: 100000, c: "text-white", petDmg: 3, petHit: 1, d: "銘刻無數勝戰的榮耀之牙，激起寵物的鬥志。", gachaWeight: 0 },
+        // ===== 🛡️ 寵物防具（v3.2.37）：type:arm·slot:petarm·於包武的寵物保管為單一寵物裝上；防具卷軸強化規則·安定值0·上限+5·每+1 防禦再-1（petAc/petMr/petInt/petWis 只作用於該寵物）=====
+        "pet_arm_leather":  { n: "寵物皮盔甲",     type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 3800,  c: "text-white", petAc: 4,                                     d: "以高級皮革縫製的輕便護甲。", gachaWeight: 0 },
+        "pet_arm_bone":     { n: "寵物骷髏盔甲",   type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 6000,  c: "text-white", petAc: 7,                                     d: "綴滿骨片的猙獰護甲，令寵物氣勢懾人。", gachaWeight: 0 },
+        "pet_arm_steel":    { n: "寵物鋼鐵盔甲",   type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 12000, c: "text-white", petAc: 8,                                     d: "鋼鐵鍛成的堅實護甲。", gachaWeight: 0 },
+        "pet_arm_cross":    { n: "寵物十字盔甲",   type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 25000, c: "text-white", petAc: 13,                                    d: "胸口鑄有十字徽記的重護甲。", gachaWeight: 0 },
+        "pet_arm_chain":    { n: "寵物鏈甲",       type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 45000, c: "text-white", petAc: 20,                                    d: "細密鎖環編成的全身鏈甲。", gachaWeight: 0 },
+        "pet_arm_mithril":  { n: "寵物米索莉盔甲", type: "arm", slot: "petarm", req: "all", safe: 0, maxEn: 5, p: 75000, c: "text-white", petAc: 12, petMr: 10, petInt: 1, petWis: 1, d: "米索莉鍛造的名匠護甲，輕盈而蘊含魔力。", gachaWeight: 0 },
         // 🪆 魔法娃娃（slot:doll·全職業·裝備後滑鼠游標變成 assets/doll/<物品名稱>.png；亦帶屬性加成）。dollTier=階級(1~6)；袋子開出/合成取得（價格0·無法強化·不可賣）。
         // 特殊效果引擎欄位：procBonusDmg{rate,dmg}=攻擊機率額外傷害、procPoisonRate=攻擊機率中毒、procSkill+procRateBase=攻擊機率觸發技能、procDmgReduce{rate,amount}=受傷機率減免、abnormalResist=機率抵抗異常、freezeResist/stunResist=抵抗(100=免疫)、immParalyze/immSlow/immPoison=免疫、expBonus/goldBonus=經驗/金錢%、potionBonus=藥水恢復%、weightCap=負重、er/magicHit/extraMp/mdmg=ER/魔法命中/額外魔點/固定魔傷。
         // ===== 🦴 席琳遺骸（v3.1.68）：套裝效果新載體 =====
         // 8 部位遺骸（視為飾品·noEnhance·不可賦予屬性·潘朵拉權重0·重量0）。每件必附一種席琳詞綴(seteff·由掉落/伊奧/菈克希絲附加)，
         // 顯示名＝「組名+部位」（如 魔女之爪·getItemFullName seteff 前綴機制）。裝於裝備分頁底部 8 格專屬欄（欄位鍵=物品id·浮動裝備視窗不顯示）。
         // 「相同組名的遺骸」達 2/3/5 格 → 發動現行套裝效果（recomputeStats 計件改掃遺骸欄·裝備上的舊詞綴不再計入）。
-        "rem_claw":  { n: "之爪", type: "acc", slot: "rem_claw",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的獸爪遺骸，對應武器部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_eye":   { n: "之眼", type: "acc", slot: "rem_eye",   remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的眼珠遺骸，對應頭盔部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_blood": { n: "之血", type: "acc", slot: "rem_blood", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的凝血遺骸，對應斗篷部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_flesh": { n: "之肉", type: "acc", slot: "rem_flesh", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的血肉遺骸，對應長靴部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_heart": { n: "之心", type: "acc", slot: "rem_heart", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的心臟遺骸，對應腰帶部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_bone":  { n: "之骨", type: "acc", slot: "rem_bone",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的骨骸遺骸，對應手套部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_fang":  { n: "之牙", type: "acc", slot: "rem_fang",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的利牙遺骸，對應副手部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "rem_scale": { n: "之鱗", type: "acc", slot: "rem_scale", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的鱗片遺骸，對應盔甲部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。<br>無法強化、無法賦予屬性。" },
-        "doll_野狼寶寶":   { n: "魔法娃娃：野狼寶寶", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procBonusDmg: { rate: 3, dmg: 15 }, d: "一階魔法娃娃。一般攻擊時 3% 機率該次攻擊額外傷害 +15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_史巴托":     { n: "魔法娃娃：史巴托", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procDmgReduce: { rate: 4, amount: 3 }, d: "一階魔法娃娃。受到傷害時 4% 機率傷害減免 3。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_奎斯坦修":   { n: "魔法娃娃：奎斯坦修", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procBonusDmg: { rate: 3, dmg: 15 }, d: "一階魔法娃娃。一般攻擊時 3% 機率該次攻擊額外傷害 +15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_稻草人":     { n: "魔法娃娃：稻草人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", mhp: 50, d: "一階魔法娃娃。HP +50。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_蛇女":       { n: "魔法娃娃：蛇女", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", mpR: 4, procPoisonRate: 5, d: "一階魔法娃娃。MP 自然恢復 +4；攻擊時 5% 機率使目標中毒。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_肥肥":       { n: "魔法娃娃：肥肥", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", weightCap: 20, d: "一階魔法娃娃。負重上限 +20。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_希爾黛斯":   { n: "魔法娃娃：希爾黛斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", hpR: 10, d: "一階魔法娃娃。HP 自然恢復量 +10。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_石頭高崙":   { n: "魔法娃娃：石頭高崙", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", dr: 1, d: "一階魔法娃娃。傷害減免 +1。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_長老":       { n: "魔法娃娃：長老", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", mpR: 4, d: "二階魔法娃娃。MP 自然恢復 +4。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_雪怪":       { n: "魔法娃娃：雪怪", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", ac: 3, freezeResist: 5, d: "二階魔法娃娃。防禦力(AC) -3；5% 機率抵抗冰凍。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_亞力安":     { n: "魔法娃娃：亞力安", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", rangedDmg: 1, rangedHit: 1, d: "二階魔法娃娃。遠距離傷害 +1、遠距離命中 +1。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_美人魚":     { n: "魔法娃娃：美人魚", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", expBonus: 3, d: "二階魔法娃娃。獲得經驗值 +3%。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_小思克巴":   { n: "魔法娃娃：小思克巴", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", mpR: 4, d: "二階魔法娃娃。MP 自然恢復 +4。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_巨人":       { n: "魔法娃娃：巨人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", meleeDmg: 1, meleeHit: 1, dr: 1, mhp: 50, d: "二階魔法娃娃。近距離傷害 +1、近距離命中 +1、傷害減免 +1、HP +50。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_王子":       { n: "魔法娃娃：王子", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, weightCap: 15, str: 1, con: 1, d: "三階魔法娃娃。HP自然恢復+15、負重+15、力量+1、體質+1。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_公主":       { n: "魔法娃娃：公主", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, weightCap: 15, str: 1, con: 1, d: "三階魔法娃娃。MP自然恢復+5、負重+15、力量+1、體質+1。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男騎士":     { n: "魔法娃娃：男騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, con: 2, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、體質+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女騎士":     { n: "魔法娃娃：女騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, con: 2, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、體質+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男妖精":     { n: "魔法娃娃：男妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, dex: 2, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、敏捷+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女妖精":     { n: "魔法娃娃：女妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, dex: 2, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、敏捷+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男法師":     { n: "魔法娃娃：男法師", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, int: 2, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、智力+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女法師":     { n: "魔法娃娃：女法師", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, int: 2, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、智力+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男黑暗妖精": { n: "魔法娃娃：男黑暗妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, str: 1, dex: 1, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、力量+1、敏捷+1、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女黑暗妖精": { n: "魔法娃娃：女黑暗妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, str: 1, dex: 1, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、力量+1、敏捷+1、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男龍騎士":   { n: "魔法娃娃：男龍騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, str: 2, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、力量+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女龍騎士":   { n: "魔法娃娃：女龍騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, str: 2, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、力量+2、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_男幻術士":   { n: "魔法娃娃：男幻術士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, int: 1, wis: 1, weightCap: 15, d: "三階魔法娃娃。HP自然恢復+15、智力+1、精神+1、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_女幻術士":   { n: "魔法娃娃：女幻術士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, int: 1, wis: 1, weightCap: 15, d: "三階魔法娃娃。MP自然恢復+5、智力+1、精神+1、負重+15。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_思克巴女皇": { n: "魔法娃娃：思克巴女皇", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, mdmg: 1, extraMp: 1, d: "三階魔法娃娃。MP自然恢復+5、魔法傷害+1、額外魔法點數+1。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_阿魯巴":     { n: "魔法娃娃：阿魯巴", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", rangedHit: 2, rangedDmg: 2, dex: 1, mhp: 25, mmp: 25, d: "四階魔法娃娃。遠距離命中+2、遠距離傷害+2、敏捷+1、HP+25、MP+25。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_墮落":       { n: "魔法娃娃：墮落", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 3, mdmg: 2, magicHit: 5, abnormalResist: 10, d: "四階魔法娃娃。MP自然恢復+3、魔法傷害+2、魔法命中率+5；10% 機率抵抗異常狀態。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_變形怪":     { n: "魔法娃娃：變形怪", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", ac: 1, hpR: 5, mpR: 2, extraDmg: 1, extraHit: 2, weightCap: 20, d: "四階魔法娃娃。AC-1、HP自然恢復+5、MP自然恢復+2、額外傷害+1、額外命中+2、負重+20。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_飛龍":       { n: "魔法娃娃：飛龍", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 5, er: 3, mr: 10, resFire: 3, d: "四階魔法娃娃。MP自然恢復+5、ER+3、MR+10、火屬性抗性+3。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_莫提斯":     { n: "魔法娃娃：莫提斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 2, expBonus: 10, goldBonus: 10, weightCap: 80, d: "四階魔法娃娃。MP自然恢復+2、獲得經驗+10%、獲得金錢+10%、負重+80。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_黑長者":     { n: "魔法娃娃：黑長者", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 10, int: 2, wis: 2, d: "四階魔法娃娃。MP自然恢復+10、智力+2、精神+2。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_獨眼巨人":   { n: "魔法娃娃：獨眼巨人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", hpR: 30, str: 2, con: 2, d: "四階魔法娃娃。HP自然恢復+30、力量+2、體質+2。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_雪人":       { n: "魔法娃娃：雪人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", potionBonus: 10, mhp: 50, mmp: 30, d: "四階魔法娃娃。藥水恢復量+10%、HP+50、MP+30。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_艾莉絲":     { n: "魔法娃娃：艾莉絲", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 5, rangedDmg: 4, rangedHit: 3, d: "五階魔法娃娃。MP自然恢復+5、遠距離傷害+4、遠距離命中+3。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_木乃伊王":   { n: "魔法娃娃：木乃伊王", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 20, mhp: 150, d: "五階魔法娃娃。HP自然恢復+20、HP+150。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_死亡騎士":   { n: "魔法娃娃：死亡騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 15, meleeDmg: 5, procSkill: "sk_blaze", procRateBase: 1, d: "五階魔法娃娃。HP自然恢復+15、近距離傷害+5；一般攻擊命中 1% 機率觸發烈炎術。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_巴風特":     { n: "魔法娃娃：巴風特", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 3, mdmg: 1, magicHit: 1, procSkill: "sk_earthquake", procRateBase: 1, d: "五階魔法娃娃。MP自然恢復+3、魔法傷害+1、魔法命中+1；一般攻擊命中 1% 機率觸發地裂術。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_吸血鬼":     { n: "魔法娃娃：吸血鬼", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 35, potionBonus: 15, er: 5, dr: 3, d: "五階魔法娃娃。HP自然恢復+35、藥水恢復量+15%、ER+5、傷害減免+3。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_克特":       { n: "魔法娃娃：克特", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", extraHit: 3, ac: 2, procSkill: "sk_thunder", procRateBase: 1, d: "五階魔法娃娃。額外命中+3、AC-2；一般攻擊命中 1% 機率觸發極道落雷。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_冰之女王":   { n: "魔法娃娃：冰之女王", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 10, int: 2, wis: 2, resWater: 10, d: "五階魔法娃娃。MP自然恢復+10、智力+2、精神+2、冰屬性抗性+10。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_巴蘭卡":     { n: "魔法娃娃：巴蘭卡", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", meleeDmg: 3, meleeHit: 3, dr: 3, d: "五階魔法娃娃。近距離傷害+3、近距離命中+3、傷害減免+3。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_巫妖":       { n: "魔法娃娃：巫妖", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 5, mdmg: 3, int: 2, mmp: 50, procDmgReduce: { rate: 5, amount: 5 }, d: "五階魔法娃娃。MP自然恢復+5、魔法傷害+3、智力+2、MP+50；受到傷害時 5% 機率傷害減免 5。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_安塔瑞斯":   { n: "魔法娃娃：安塔瑞斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resEarth: 20, ac: 5, mr: 10, mhp: 100, dr: 10, immPoison: true, immParalyze: true, d: "六階魔法娃娃。HP自然恢復+20、MP自然恢復+10、地屬性抗性+20、AC-5、MR+10、HP+100、傷害減免+10；免疫中毒、麻痺。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_法利昂":     { n: "魔法娃娃：法利昂", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resWater: 20, mdmg: 5, int: 2, wis: 2, freezeResist: 100, d: "六階魔法娃娃。HP自然恢復+20、MP自然恢復+10、水屬性抗性+20、魔法傷害+5、智力+2、精神+2；免疫冰凍。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_林德拜爾":   { n: "魔法娃娃：林德拜爾", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resWind: 20, rangedDmg: 4, rangedHit: 8, er: 5, immSlow: true, d: "六階魔法娃娃。HP自然恢復+20、MP自然恢復+10、風屬性抗性+20、遠距離傷害+4、遠距離命中+8、ER+5；免疫緩速。裝於魔法娃娃欄，游標變其模樣。" },
-        "doll_巴拉卡斯":   { n: "魔法娃娃：巴拉卡斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resFire: 20, meleeDmg: 4, meleeHit: 8, dr: 5, stunResist: 100, d: "六階魔法娃娃。HP自然恢復+20、MP自然恢復+10、火屬性抗性+20、近距離傷害+4、近距離命中+8、傷害減免+5；免疫暈眩。裝於魔法娃娃欄，游標變其模樣。" },
+        "rem_claw":  { n: "之爪", type: "acc", slot: "rem_claw",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的獸爪遺骸，對應武器部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_eye":   { n: "之眼", type: "acc", slot: "rem_eye",   remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的眼珠遺骸，對應頭盔部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_blood": { n: "之血", type: "acc", slot: "rem_blood", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的凝血遺骸，對應斗篷部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_flesh": { n: "之肉", type: "acc", slot: "rem_flesh", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的血肉遺骸，對應長靴部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_heart": { n: "之心", type: "acc", slot: "rem_heart", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的心臟遺骸，對應腰帶部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_bone":  { n: "之骨", type: "acc", slot: "rem_bone",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的骨骸遺骸，對應手套部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_fang":  { n: "之牙", type: "acc", slot: "rem_fang",  remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的利牙遺骸，對應副手部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "rem_scale": { n: "之鱗", type: "acc", slot: "rem_scale", remains: true, noEnhance: true, noJunk: true, req: "all", safe: 0, p: 0, gachaWeight: 0, d: "【席琳遺骸】蘊含席琳之力的鱗片遺骸，對應盔甲部位。裝備於遺骸欄；集齊相同套裝名的遺骸即可發動套裝效果。" },
+        "doll_野狼寶寶":   { n: "魔法娃娃：野狼寶寶", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procBonusDmg: { rate: 3, dmg: 15 }, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_史巴托":     { n: "魔法娃娃：史巴托", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procDmgReduce: { rate: 4, amount: 3 }, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_奎斯坦修":   { n: "魔法娃娃：奎斯坦修", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", procBonusDmg: { rate: 3, dmg: 15 }, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_稻草人":     { n: "魔法娃娃：稻草人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", mhp: 50, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_蛇女":       { n: "魔法娃娃：蛇女", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", mpR: 4, procPoisonRate: 5, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_肥肥":       { n: "魔法娃娃：肥肥", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", weightCap: 20, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_希爾黛斯":   { n: "魔法娃娃：希爾黛斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", hpR: 10, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_石頭高崙":   { n: "魔法娃娃：石頭高崙", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 1, noEnhance: true, gachaWeight: 0, c: "text-slate-200", dr: 1, d: "一階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_長老":       { n: "魔法娃娃：長老", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", mpR: 4, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_雪怪":       { n: "魔法娃娃：雪怪", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", ac: 3, freezeResist: 5, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_亞力安":     { n: "魔法娃娃：亞力安", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", rangedDmg: 1, rangedHit: 1, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_美人魚":     { n: "魔法娃娃：美人魚", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", expBonus: 3, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_小思克巴":   { n: "魔法娃娃：小思克巴", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", mpR: 4, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_巨人":       { n: "魔法娃娃：巨人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 2, noEnhance: true, gachaWeight: 0, c: "text-green-300", meleeDmg: 1, meleeHit: 1, dr: 1, mhp: 50, d: "二階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_王子":       { n: "魔法娃娃：王子", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, weightCap: 15, str: 1, con: 1, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_公主":       { n: "魔法娃娃：公主", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, weightCap: 15, str: 1, con: 1, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男騎士":     { n: "魔法娃娃：男騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, con: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女騎士":     { n: "魔法娃娃：女騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, con: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男妖精":     { n: "魔法娃娃：男妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, dex: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女妖精":     { n: "魔法娃娃：女妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, dex: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男法師":     { n: "魔法娃娃：男法師", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, int: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女法師":     { n: "魔法娃娃：女法師", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, int: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男黑暗妖精": { n: "魔法娃娃：男黑暗妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, str: 1, dex: 1, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女黑暗妖精": { n: "魔法娃娃：女黑暗妖精", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, str: 1, dex: 1, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男龍騎士":   { n: "魔法娃娃：男龍騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, str: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女龍騎士":   { n: "魔法娃娃：女龍騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, str: 2, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_男幻術士":   { n: "魔法娃娃：男幻術士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", hpR: 15, int: 1, wis: 1, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_女幻術士":   { n: "魔法娃娃：女幻術士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, int: 1, wis: 1, weightCap: 15, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_思克巴女皇": { n: "魔法娃娃：思克巴女皇", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 3, noEnhance: true, gachaWeight: 0, c: "text-sky-300", mpR: 5, mdmg: 1, extraMp: 1, d: "三階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_阿魯巴":     { n: "魔法娃娃：阿魯巴", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", rangedHit: 2, rangedDmg: 2, dex: 1, mhp: 25, mmp: 25, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_墮落":       { n: "魔法娃娃：墮落", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 3, mdmg: 2, magicHit: 5, abnormalResist: 10, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_變形怪":     { n: "魔法娃娃：變形怪", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", ac: 1, hpR: 5, mpR: 2, extraDmg: 1, extraHit: 2, weightCap: 20, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_飛龍":       { n: "魔法娃娃：飛龍", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 5, er: 3, mr: 10, resFire: 3, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_莫提斯":     { n: "魔法娃娃：莫提斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 2, expBonus: 10, goldBonus: 10, weightCap: 80, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_黑長者":     { n: "魔法娃娃：黑長者", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", mpR: 10, int: 2, wis: 2, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_獨眼巨人":   { n: "魔法娃娃：獨眼巨人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", hpR: 30, str: 2, con: 2, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_雪人":       { n: "魔法娃娃：雪人", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 4, noEnhance: true, gachaWeight: 0, c: "text-purple-300", potionBonus: 10, mhp: 50, mmp: 30, d: "四階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_艾莉絲":     { n: "魔法娃娃：艾莉絲", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 5, rangedDmg: 4, rangedHit: 3, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_木乃伊王":   { n: "魔法娃娃：木乃伊王", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 20, mhp: 150, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_死亡騎士":   { n: "魔法娃娃：死亡騎士", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 15, meleeDmg: 5, procSkill: "sk_blaze", procRateBase: 1, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_巴風特":     { n: "魔法娃娃：巴風特", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 3, mdmg: 1, magicHit: 1, procSkill: "sk_earthquake", procRateBase: 1, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_吸血鬼":     { n: "魔法娃娃：吸血鬼", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", hpR: 35, potionBonus: 15, er: 5, dr: 3, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_克特":       { n: "魔法娃娃：克特", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", extraHit: 3, ac: 2, procSkill: "sk_thunder", procRateBase: 1, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_冰之女王":   { n: "魔法娃娃：冰之女王", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 10, int: 2, wis: 2, resWater: 10, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_巴蘭卡":     { n: "魔法娃娃：巴蘭卡", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", meleeDmg: 3, meleeHit: 3, dr: 3, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_巫妖":       { n: "魔法娃娃：巫妖", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 5, noEnhance: true, gachaWeight: 0, c: "text-orange-300", mpR: 5, mdmg: 3, int: 2, mmp: 50, procDmgReduce: { rate: 5, amount: 5 }, d: "五階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_安塔瑞斯":   { n: "魔法娃娃：安塔瑞斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resEarth: 20, ac: 5, mr: 10, mhp: 100, dr: 10, immPoison: true, immParalyze: true, d: "六階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_法利昂":     { n: "魔法娃娃：法利昂", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resWater: 20, mdmg: 5, int: 2, wis: 2, freezeResist: 100, d: "六階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_林德拜爾":   { n: "魔法娃娃：林德拜爾", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resWind: 20, rangedDmg: 4, rangedHit: 8, er: 5, immSlow: true, d: "六階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
+        "doll_巴拉卡斯":   { n: "魔法娃娃：巴拉卡斯", type: "acc", slot: "doll", req: "all", safe: 0, p: 0, doll: true, dollTier: 6, noEnhance: true, gachaWeight: 0, c: "text-red-400", hpR: 20, mpR: 10, resFire: 20, meleeDmg: 4, meleeHit: 8, dr: 5, stunResist: 100, d: "六階魔法娃娃。裝於魔法娃娃欄，游標變其模樣。" },
         "doll_bag":        { n: "魔法娃娃的袋子", type: "misc", p: 0, c: "text-pink-300", eff: "doll_bag", noSell: true, gachaWeight: 0, d: "打開可隨機獲得一隻魔法娃娃。於威頓村魔法娃娃商人用多餘銀卡兌換取得。" },
         "doll_box_high":   { n: "高級魔法娃娃的盒子", type: "misc", p: 0, c: "text-amber-300", eff: "doll_box_high", noSell: true, gachaWeight: 0, d: "打開可隨機獲得一隻較高階（二～四階）的魔法娃娃。於威頓村魔法娃娃商人用多餘金卡兌換取得。" },
-        "scroll_weapon": { n: "對武器施法的卷軸", p: 22500, c: "text-white", d: "強化武器 (安定值6)。超過安定值後：+9 前 1/3 成功、2/3 爆裝；+9 起 1/6 成功、1/6 無事、4/6 爆裝。", gachaWeight: 100 },
-        "scroll_armor": { n: "對盔甲施法的卷軸", p: 9000, c: "text-white", d: "強化防具 (安定值4/0)。超過安定值後成功率 = 1/目前強化值（例 +7 過 +8 為 1/7）；安定值0者 +0 為 1/2、+1 起 1/(強化值×2)。失敗爆裝。", gachaWeight: 100 },
-        "scroll_weapon_b": { n: "祝福的 對武器施法的卷軸", p: 22500, c: "text-yellow-300", d: "祝福的：成功時 +2 以下(含-1)隨機 +1~+3、+3~+5 隨機 +1~+2、+6 起等同一般卷軸 (強化武器，安定值6)", isB: true, gachaWeight: 0 },
-        "scroll_armor_b": { n: "祝福的 對盔甲施法的卷軸", p: 9000, c: "text-yellow-300", d: "祝福的：成功時 +2 以下(含-1)隨機 +1~+3、+3~+5 隨機 +1~+2、+6 起等同一般卷軸 (強化防具，安定值4/0)", isB: true, gachaWeight: 0 },
-        "scroll_weapon_c": { n: "詛咒的 對武器施法的卷軸", p: 33334, c: "c-cursed", d: "詛咒的：消耗1個使武器強化值-1（100%成功，最低可降至 -1；-1 時衝裝必定成功）", isC: true, gachaWeight: 20 },
-        "scroll_armor_c": { n: "詛咒的 對盔甲施法的卷軸", p: 33334, c: "c-cursed", d: "詛咒的：消耗1個使防具強化值-1（100%成功，最低可降至 -1；-1 時衝裝必定成功）", isC: true, gachaWeight: 20 },
-        "scroll_acc": { n: "對飾品施法的卷軸", p: 50000, c: "text-white", d: "強化飾品 (無安定值)。+0 成功率 1/2；+1 起 1/(強化值×2)（例 +2 過 +3 為 1/4）。失敗爆裝。", gachaWeight: 10 },
+        "scroll_weapon": { n: "對武器施法的卷軸", p: 22500, c: "text-white", d: "刻著強化咒文的卷軸，能將魔力灌入武器；過度追求力量也可能使武器崩毀。", gachaWeight: 100 },
+        "scroll_armor": { n: "對盔甲施法的卷軸", p: 9000, c: "text-white", d: "刻著防護咒文的卷軸，能強化盔甲；越過裝備承受的極限便可能使其崩毀。", gachaWeight: 100 },
+        "scroll_weapon_b": { n: "祝福的 對武器施法的卷軸", p: 22500, c: "text-yellow-300", d: "受到殷海薩祝福的卷軸，較容易喚醒尚未成熟的武器潛能。", isB: true, gachaWeight: 0 },
+        "scroll_armor_b": { n: "祝福的 對盔甲施法的卷軸", p: 9000, c: "text-yellow-300", d: "受到殷海薩祝福的卷軸，較容易喚醒尚未成熟的防具潛能。", isB: true, gachaWeight: 0 },
+        "scroll_weapon_c": { n: "詛咒的 對武器施法的卷軸", p: 33334, c: "c-cursed", d: "纏繞格蘭肯氣息的卷軸，會削弱武器上既有的強化魔力。", isC: true, gachaWeight: 20 },
+        "scroll_armor_c": { n: "詛咒的 對盔甲施法的卷軸", p: 33334, c: "c-cursed", d: "纏繞格蘭肯氣息的卷軸，會削弱防具上既有的強化魔力。", isC: true, gachaWeight: 20 },
+        "scroll_acc": { n: "對飾品施法的卷軸", p: 50000, c: "text-white", d: "專為飾品刻寫的強化卷軸，細小的器物難以承受失控的魔力。", gachaWeight: 10 },
         // ===== 🔥 屬性強化卷軸（v3.0.77 屬性強化系統）：怪物掉落·於象牙塔『碧恩』對裝備中武器使用·7% 獨立事件·失敗僅消耗卷軸 =====
-        "scroll_attr_fire":  { n: "火之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-fr3", noUse: true, gachaWeight: 0, d: "於象牙塔『碧恩』處使用：7% 機率為裝備中武器賦予火屬性或提升火屬性階級（不同屬性成功時變為該屬性第1階；衝第4階需武器+10、第5階需+11；失敗僅消耗卷軸）。" },
-        "scroll_attr_water": { n: "水之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-wa3", noUse: true, gachaWeight: 0, d: "於象牙塔『碧恩』處使用：7% 機率為裝備中武器賦予水屬性或提升水屬性階級（不同屬性成功時變為該屬性第1階；衝第4階需武器+10、第5階需+11；失敗僅消耗卷軸）。" },
-        "scroll_attr_wind":  { n: "風之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-wi3", noUse: true, gachaWeight: 0, d: "於象牙塔『碧恩』處使用：7% 機率為裝備中武器賦予風屬性或提升風屬性階級（不同屬性成功時變為該屬性第1階；衝第4階需武器+10、第5階需+11；失敗僅消耗卷軸）。" },
-        "scroll_attr_earth": { n: "地之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-ea3", noUse: true, gachaWeight: 0, d: "於象牙塔『碧恩』處使用：7% 機率為裝備中武器賦予地屬性或提升地屬性階級（不同屬性成功時變為該屬性第1階；衝第4階需武器+10、第5階需+11；失敗僅消耗卷軸）。" },
+        "scroll_attr_fire":  { n: "火之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-fr3", noUse: true, gachaWeight: 0, d: "封存帕格里奧烈焰的卷軸，可交由象牙塔的碧恩嘗試將火之力灌入武器。" },
+        "scroll_attr_water": { n: "水之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-wa3", noUse: true, gachaWeight: 0, d: "封存伊娃潮汐的卷軸，可交由象牙塔的碧恩嘗試將水之力灌入武器。" },
+        "scroll_attr_wind":  { n: "風之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-wi3", noUse: true, gachaWeight: 0, d: "封存沙哈疾風的卷軸，可交由象牙塔的碧恩嘗試將風之力灌入武器。" },
+        "scroll_attr_earth": { n: "地之武器強化卷軸", type: "misc", p: 100000, c: "c-attr-ea3", noUse: true, gachaWeight: 0, d: "封存馬普勒大地之力的卷軸，可交由象牙塔的碧恩嘗試將地之力灌入武器。" },
         "new_item_bless_wpn": { n: "賦予武器祝福卷軸", type: "misc", p: 0, c: "text-purple-300", d: "舊時代的祝福卷軸（祝福裝備功能已由『賦予屬性』取代，此卷軸已無用途）。", isAnc: true, noUse: true, gachaWeight: 0 },   // 🔥 v3.0.77 停用（碧恩改賦予屬性·克里斯特移除）
         "new_item_bless_arm": { n: "賦予盔甲祝福卷軸", type: "misc", p: 0, c: "text-purple-300", d: "舊時代的祝福卷軸（祝福裝備功能已由『賦予屬性』取代，此卷軸已無用途）。", isAnc: true, noUse: true, gachaWeight: 0 },
         "new_item_bless_acc": { n: "賦予飾品祝福卷軸", type: "misc", p: 0, c: "text-purple-300", d: "舊時代的祝福卷軸（祝福裝備功能已由『賦予屬性』取代，此卷軸已無用途）。", isAnc: true, noUse: true, gachaWeight: 0 },
         "new_item_uncurse": { n: "解除詛咒的卷軸", type: "misc", p: 0, c: "text-cyan-200", d: "於象牙塔『碧恩』處用來移除裝備的詛咒（無法直接使用；沒有卷軸時碧恩也可收費 100 萬金幣解除）。", noUse: true, gachaWeight: 0 },
-        "new_item_143": { n: "肉", type: "pot", req: "all", p: 1, d: "食用後獲得『誘捕』狀態300秒", eff: "meat", gachaWeight: 0 },
+        // 🚫 v3.2.17「肉 new_item_143」已隨舊項圈夥伴系統移除（誘捕改用 漂浮之眼肉 等專屬誘捕道具）
         "new_item_144": { n: "夏洛伯之爪", p: 1, c: "text-blue-300", gachaWeight: 0 },   // 🔧 試煉材料統一藍色
         "new_item_145": { n: "阿吐巴圖騰", p: 667, gachaWeight: 0 },
         "new_item_146": { n: "那魯加圖騰", p: 334, gachaWeight: 0 },
@@ -1030,12 +1100,12 @@ const DB = {
         "new_item_160": { n: "藍寶石", p: 200, gachaWeight: 0 },
         "new_item_161": { n: "品質藍寶石", p: 650, gachaWeight: 0 },
         "new_item_162": { n: "高品質藍寶石", p: 2000, gachaWeight: 0 },
-        "mat_unicorn_horn":   { n: "神聖獨角獸之角", p: 5000, gachaWeight: 0, d: "獨角獸頭上的神聖之角，蘊含純淨之力。製作熾炎天使弓的核心材料。（獨角獸 0.1% 掉落）" },
+        "mat_unicorn_horn":   { n: "神聖獨角獸之角", p: 5000, gachaWeight: 0, d: "獨角獸頭上的神聖之角，蘊含純淨之力。製作熾炎天使弓的核心材料。" },
         "mat_wind_breath":    { n: "風之氣息", p: 1500, gachaWeight: 0, d: "風精靈呼出的一縷靈息，於掌心仍微微鼓動著看不見的氣流。凝聚自風精靈的元素氣息。" },
         "mat_water_breath":   { n: "水之氣息", p: 1500, gachaWeight: 0, d: "水精靈吐納的一抹清涼，似有潺潺水聲在其中流轉不息。凝聚自水精靈的元素氣息。" },
         "mat_fire_breath":    { n: "火之氣息", p: 1500, gachaWeight: 0, d: "火精靈呵出的一息餘溫，貼近時仍能感到躍動的炙熱。凝聚自火精靈的元素氣息。" },
         "mat_earth_breath":   { n: "土之氣息", p: 1500, gachaWeight: 0, d: "地精靈沉吐的一口厚實氣息，蘊著大地深處的沉穩重量。凝聚自地精靈的元素氣息。" },
-        "mat_griffon_feather":{ n: "格利芬羽毛", p: 1000, gachaWeight: 0, d: "自翱翔天際的格利芬身上取下的羽毛，輕盈似風卻韌如鋼。（格利芬 1% 掉落）" },
+        "mat_griffon_feather":{ n: "格利芬羽毛", p: 1000, gachaWeight: 0, d: "自翱翔天際的格利芬身上取下的羽毛，輕盈似風卻韌如鋼。" },
         "new_item_163": { n: "潘的鬃毛", p: 10, gachaWeight: 0 },
         "new_item_164": { n: "粗糙的米索莉塊", p: 20, gachaWeight: 0 },
         "new_item_165": { n: "元素石", p: 20, gachaWeight: 0 },
@@ -1062,8 +1132,7 @@ const DB = {
         "mat_silverore":   { n: "銀礦石",     p: 100,  gachaWeight: 0, d: "夾雜著銀脈的粗礦，於爐火中提煉方能顯露其皎潔本色。於庫普處以 10 個＋500 金幣可精煉成『銀』。" },
         "mat_silver":      { n: "銀",         p: 500,  gachaWeight: 0, d: "提煉至純的皎潔白銀，自古便是邪祟畏懼之物。可用於打造銀光系武器（對不死/狼人有效）。" },
         "new_item_183": { n: "骨頭碎片", p: 10, gachaWeight: 0 },
-        "new_item_184": { n: "項圈 (杜賓狗)", p: 10, gachaWeight: 0 },
-        "new_item_185": { n: "項圈 (狼)", p: 10, gachaWeight: 0 },
+        // 🚫 v3.2.17 new_item_184「項圈 (杜賓狗)」／new_item_185「項圈 (狼)」已隨舊項圈夥伴系統移除
         "new_item_186": { n: "糖果", p: 10, gachaWeight: 0 },
         "new_item_187": { n: "藍色布料", p: 220, gachaWeight: 0 },
         "new_item_188": { n: "紅色布料", p: 220, gachaWeight: 0 },
@@ -1143,6 +1212,7 @@ const DB = {
         "mat_flame_heart":        { n: "炎魔之心",       type: "etc", p: 1, c: "text-red-300", noUse: true, gachaWeight: 0, d: "炎魔之力的結晶，可作為試煉交付物。" },
         "mat_flame_eye":          { n: "炎魔之眼",       type: "etc", p: 1, c: "text-red-300", noUse: true, gachaWeight: 0, d: "炎魔之力的結晶，可作為試煉交付物。" },
         "mat_dragon_heart":       { n: "飛龍之心",       type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "飛龍體內不滅的核心。王族聖器製作材料。" },
+        "mat_steel_chunk":        { n: "鋼鐵塊",         type: "etc", p: 10, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "沉甸甸的粗鍛鋼鐵。寵物防具製作材料。" },
         "mat_golem_heart":        { n: "高崙之心",       type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "高崙體內的核心。王族聖器製作材料。" },
         "mat_icequeen_heart":     { n: "冰之女王之心",   type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "冰之女王的寒冰核心。王族聖器製作材料。" },
         // ===== 🔥 50級試煉任務道具 =====
@@ -1159,7 +1229,7 @@ const DB = {
         "glv_wind_spirit":  { n: "風靈手套", type: "arm", slot: "gloves", ac: 0, str: 1, resWind: 4,  mpR: 1, req: "all", safe: 4, p: 120000, gachaWeight: 1 },
         "glv_water_spirit": { n: "水靈手套", type: "arm", slot: "gloves", ac: 0, str: 1, resWater: 4, mpR: 1, req: "all", safe: 4, p: 120000, gachaWeight: 1 },
         "glv_fire_spirit":  { n: "火靈手套", type: "arm", slot: "gloves", ac: 0, str: 1, resFire: 4,  mpR: 1, req: "all", safe: 4, p: 120000, gachaWeight: 1 },
-        "hlm_mambo": { n: "曼波帽子", type: "arm", slot: "helm", ac: -1, cha: 1, sleepResist: 10, freezeResist: 10, req: "all", safe: 4, p: 59600, gachaWeight: 10, d: "綴著奇異羽飾的輕巧帽子，戴上時心神格外清明安定。額外 10% 機率抵抗沉睡、冰凍。" },
+        "hlm_mambo": { n: "曼波帽子", type: "arm", slot: "helm", ac: -1, cha: 1, sleepResist: 10, freezeResist: 10, req: "all", safe: 4, p: 59600, gachaWeight: 10, d: "綴著奇異羽飾的輕巧帽子，戴上時心神格外清明安定。" },
         "amr_mambo": { n: "曼波外套", type: "arm", slot: "armor", ac: 3, resWater: 10, resFire: -10, str: -1, cha: 2, req: "all", safe: 4, p: 89600, gachaWeight: 10 },
         "amr_centipede": { n: "金屬蜈蚣皮盔甲", type: "arm", slot: "armor", ac: 8, req: "knight,dark", safe: 4, p: 39600, gachaWeight: 30 },
         "amr_darkdweller": { n: "黑暗棲林者盔甲", type: "arm", slot: "armor", ac: 4, mmp: 10, req: "all", safe: 4, p: 2300, gachaWeight: 100 },
@@ -1167,95 +1237,95 @@ const DB = {
         "clk_blacktiger": { n: "黑虎皮斗篷", type: "arm", slot: "cloak", ac: 3, hpR: 2, req: "all", safe: 4, p: 12000, gachaWeight: 20 },
         "clk_wolf": { n: "狼皮斗篷", type: "arm", slot: "cloak", ac: 3, req: "all", safe: 4, p: 4000, gachaWeight: 50 },
         "acc_bear_ring": { n: "熊戒指", type: "acc", slot: "ring", ac: 0, hpR: 3, resEarth: 10, req: "all", safe: 0, p: 100000, gachaWeight: 1, d: "鑲著熊牙的厚實戒指，蘊含猛獸般堅韌的生命力。" },
-        "acc_abyss_ring": { n: "深淵戒指", type: "acc", slot: "ring", ac: 0, mpR: 1, sleepResist: 10, freezeResist: 10, req: "all", safe: 0, p: 100000, gachaWeight: 10, d: "凝望深淵時，深淵也凝望著你；戴上它，神智便不再為寒冷與睡意所惑。額外 10% 機率抵抗沉睡、冰凍。" },
+        "acc_abyss_ring": { n: "深淵戒指", type: "acc", slot: "ring", ac: 0, mpR: 1, sleepResist: 10, freezeResist: 10, req: "all", safe: 0, p: 100000, gachaWeight: 10, d: "凝望深淵時，深淵也凝望著你；戴上它，神智便不再為寒冷與睡意所惑。" },
         // ===== 🔥 50級試煉擴充：武器與傳說裝備 =====
         "wpn_mithril_dagger": { n: "米索莉短劍", type: "wpn", dmgS: 6, dmgL: 5, hit: 0, dmgBonus: 0, spd: 0.6, req: "all", safe: 6, p: 70000, gachaWeight: 20, unBonus: true, mpR: 3, mdmg: 1, d: "以稀有米索莉鍛成的鋒銳匕首，寒光所及邪物退避。帶出血、對不死 / 狼人加成。" },
         "wpn_ori_dagger": { n: "奧里哈魯根短劍", type: "wpn", dmgS: 7, dmgL: 7, hit: 0, dmgBonus: 2, spd: 0.6, req: "all", safe: 6, p: 80000, gachaWeight: 10, unBonus: true, d: "以傳說金屬奧里哈魯根鍛成的匕首，刃身流轉著聖潔的微光。帶出血、對不死 / 狼人加成。" },
-        "wpn_crimson_spear": { n: "深紅長矛", type: "wpn", w2h: true, dmgS: 21, dmgL: 21, hit: 1, dmgBonus: 0, spd: 1.1, req: "knight", safe: 6, p: 89000, gachaWeight: 1, eff: "pierce", pierceChance: 80, unBonus: true, mhp: 50, d: "矛身被無數鮮血浸透成暗紅，貫穿之勢如奔流不可阻擋。穿透 80%、對不死 / 狼人加成、HP+50。" },
-        "wpn_frost_spear": { n: "酷寒之矛", type: "wpn", dmgS: 15, dmgL: 15, hit: 0, dmgBonus: 1, spd: 1.1, req: "royal,knight,elf,warrior", safe: 6, p: 185000, gachaWeight: 1, spellProc: { skn: "寒冰追擊", dice: [4, 30], ele: "water" }, procRateBase: 1, procRatePerEn: 1, d: "矛身凝著永不消融的寒霜，刺出時帶起徹骨冰風。單手矛。攻擊時 1%（每強化 +1%）機率發動寒冰追擊：對目標單體造成強力水屬性魔法傷害（受魔法傷害加成影響）。" },   // 🧊 單手矛（矛 tag→出血・一般限定）；v3.2.1 用戶：移除 noMagicDmg → 觸發傷害吃魔法傷害加成
-        "wpn_thunder_sword": { n: "雷雨之劍", type: "wpn", dmgS: 13, dmgL: 12, hit: 1, dmgBonus: 1, spd: 0.9, req: "royal,knight,elf,dark,dragon", safe: 6, p: 185000, gachaWeight: 1, spellProc: { skn: "雷擊", dice: [4, 30], ele: "wind" }, procRateBase: 1, procRatePerEn: 1, d: "劍身間遊走著被封入的雷霆，揮砍時炸開刺目的電光。單手劍。攻擊時 1%（每強化 +1%）機率發動雷擊：對目標單體造成強力風屬性魔法傷害（受魔法傷害加成影響）。" },   // ⚡ 單手劍（單手劍 tag→反擊・一般限定）；v3.2.1 用戶：移除 noMagicDmg → 觸發傷害吃魔法傷害加成
+        "wpn_crimson_spear": { n: "深紅長矛", type: "wpn", w2h: true, dmgS: 21, dmgL: 21, hit: 1, dmgBonus: 0, spd: 1.1, req: "knight", safe: 6, p: 89000, gachaWeight: 1, eff: "pierce", pierceChance: 80, unBonus: true, mhp: 50, d: "矛身被無數鮮血浸透成暗紅，貫穿之勢如奔流不可阻擋。" },
+        "wpn_frost_spear": { n: "酷寒之矛", type: "wpn", dmgS: 15, dmgL: 15, hit: 0, dmgBonus: 1, spd: 1.1, req: "royal,knight,elf,warrior", safe: 6, p: 185000, gachaWeight: 1, spellProc: { skn: "寒冰追擊", dice: [4, 30], ele: "water" }, procRateBase: 1, procRatePerEn: 1, d: "矛身凝著永不消融的寒霜，刺出時帶起徹骨冰風。單手矛。" },   // 🧊 單手矛（矛 tag→出血・一般限定）；v3.2.1 用戶：移除 noMagicDmg → 觸發傷害吃魔法傷害加成
+        "wpn_thunder_sword": { n: "雷雨之劍", type: "wpn", dmgS: 13, dmgL: 12, hit: 1, dmgBonus: 1, spd: 0.9, req: "royal,knight,elf,dark,dragon", safe: 6, p: 185000, gachaWeight: 1, spellProc: { skn: "雷擊", dice: [4, 30], ele: "wind" }, procRateBase: 1, procRatePerEn: 1, d: "劍身間遊走著被封入的雷霆，揮砍時炸開刺目的電光。單手劍。" },   // ⚡ 單手劍（單手劍 tag→反擊・一般限定）；v3.2.1 用戶：移除 noMagicDmg → 觸發傷害吃魔法傷害加成
         "wpn_demon_axe": { n: "惡魔斧頭", type: "wpn", w2h: true, dmgS: 30, dmgL: 30, hit: -2, dmgBonus: 0, spd: 1.1, req: "knight", safe: 0, p: 9000, gachaWeight: 30, eff: "crush", d: "惡魔揮舞過的猙獰巨斧，每一擊都帶著地獄的沉重。重擊。" },
         "wpn_vengeance": { n: "復仇之劍", type: "wpn", w2h: true, dmgS: 4, dmgL: 36, hit: 3, dmgBonus: 0, spd: 1.2, req: "knight", safe: 0, p: 10000, gachaWeight: 20, eff: "cleave", d: "凝結著不散怨念的雙手劍，劍鋒所向皆為宿仇而斬。切割。" },
         "wpn_hate_claw": { n: "恨之鋼爪", type: "wpn", w2h: true, dmgS: 26, dmgL: 15, hit: 2, dmgBonus: 5, spd: 0.9, req: "dark", safe: 0, p: 10000, gachaWeight: 20, eff: "combo", comboRate: 50, d: "由純粹恨意鍛成的鋼爪，撕裂時彷彿能聽見亡者的嘶吼。雙擊。" },
         "wpn_demon_sword": { n: "惡魔之劍", type: "wpn", dmgS: 17, dmgL: 9, hit: 4, dmgBonus: 0, spd: 0.9, req: "knight,elf", safe: 6, p: 50000, gachaWeight: 1, eff: "haste", d: "惡魔親手淬煉的單手劍，揮舞間迅疾如魔影掠過。反擊、加速（與自我加速藥水/加速術無法重疊）。" },
         "wpn_demon_dual": { n: "惡魔雙刀", type: "wpn", w2h: true, dmgS: 18, dmgL: 13, hit: 4, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 50000, gachaWeight: 1, eff: "combo", equipHaste: true, d: "自惡魔利爪幻化而成的一對雙刀，揮舞間殺意如影隨形。雙擊、加速（與自我加速藥水/加速術無法重疊）。" },
         "wpn_demon_claw": { n: "惡魔鋼爪", type: "wpn", w2h: true, dmgS: 20, dmgL: 18, hit: 0, dmgBonus: 3, spd: 0.9, req: "dark", safe: 6, p: 50000, gachaWeight: 1, eff: "combo", equipHaste: true, d: "惡魔指骨淬煉的鋼爪，撕裂血肉只在彈指之間。雙擊、加速（與自我加速藥水/加速術無法重疊）。" },
-        "wpn_dual_destroy": { n: "破壞雙刀", type: "wpn", w2h: true, dmgS: 16, dmgL: 10, hit: 6, dmgBonus: 1, str: 1, wis: 2, spd: 0.8, req: "dark", safe: 6, p: 150000, legend: true, gachaWeight: 1, eff: "combo", comboRate: 30, procBurstPoison: { rateBase: 1, ratePerEn: 1 }, d: "蘊含猛爆毒性的漆黑雙刃，揮舞間散逸出腐蝕一切的劇毒。黑暗妖精專屬・雙刀（雙手・近距離）。雙擊 30%；力量+1、精神+2；近距離傷害+1、近距離命中+6。攻擊時 1%（每強化+1%）機率發動猛爆劇毒（每秒 100 固定傷害，持續 5 秒，最多 1 層）。" },
-        "wpn_claw_destroy": { n: "破壞鋼爪", type: "wpn", w2h: true, dmgS: 19, dmgL: 18, hit: 6, dmgBonus: 1, str: 1, wis: 2, spd: 0.9, req: "dark", safe: 6, p: 150000, legend: true, gachaWeight: 1, eff: "combo", comboRate: 30, procBurstPoison: { rateBase: 1, ratePerEn: 1 }, d: "凝聚猛爆毒性的漆黑利爪，每一抓都將致命劇毒灌入血肉。黑暗妖精專屬・鋼爪（雙手・近距離）。雙擊 30%；力量+1、精神+2；近距離傷害+1、近距離命中+6。攻擊時 1%（每強化+1%）機率發動猛爆劇毒（每秒 100 固定傷害，持續 5 秒，最多 1 層）。" },
-        "wpn_demon_xbow": { n: "惡魔十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 60, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 4, spd: 1.0, req: "elf", safe: 6, p: 47300, gachaWeight: 1, equipHaste: true, d: "以惡魔之骨為弦的十字弓，箭雨傾瀉如墮入煉獄。連射 60%、加速（與自我加速藥水/加速術無法重疊）。" },
+        "wpn_dual_destroy": { n: "破壞雙刀", type: "wpn", w2h: true, dmgS: 16, dmgL: 10, hit: 6, dmgBonus: 1, str: 1, wis: 2, spd: 0.8, req: "dark", safe: 6, p: 150000, legend: true, gachaWeight: 1, eff: "combo", comboRate: 30, procBurstPoison: { rateBase: 1, ratePerEn: 1 }, d: "蘊含猛爆毒性的漆黑雙刃，揮舞間散逸出腐蝕一切的劇毒。黑暗妖精專屬・雙刀（雙手・近距離）。" },
+        "wpn_claw_destroy": { n: "破壞鋼爪", type: "wpn", w2h: true, dmgS: 19, dmgL: 18, hit: 6, dmgBonus: 1, str: 1, wis: 2, spd: 0.9, req: "dark", safe: 6, p: 150000, legend: true, gachaWeight: 1, eff: "combo", comboRate: 30, procBurstPoison: { rateBase: 1, ratePerEn: 1 }, d: "凝聚猛爆毒性的漆黑利爪，每一抓都將致命劇毒灌入血肉。黑暗妖精專屬・鋼爪（雙手・近距離）。" },
+        "wpn_demon_xbow": { n: "惡魔十字弓", type: "wpn", isBow: true, ranged: true, rapidfire: 60, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 4, spd: 1.0, req: "elf", safe: 6, p: 47300, gachaWeight: 1, equipHaste: true, d: "以惡魔之骨為弦的十字弓，箭雨傾瀉如墮入煉獄。" },
         "wpn_powerless_baphomet": { n: "失去魔力的巴風特魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, dmgBonus: 0, spd: 1.0, req: "all", safe: 6, p: 0, gachaWeight: 0, noEnhance: true, d: "曾屬於魔神巴風特的魔杖，如今魔力枯竭、沉默不語。對靈魂之球使用可恢復為巴風特魔杖。（封印狀態無法強化；傳統模式下解封印才附加隨機強化值。可販售，售價 0）" },   // 🏛️ noEnhance＝封印恆 +0（傳統模式自帶強化值延後到靈魂之球解封印時附加）
-        "wpn_baphomet_wand": { n: "巴風特魔杖", type: "wpn", dmgS: 7, dmgL: 6, hit: 8, dmgBonus: 5, spd: 1.0, req: "mage", safe: 0, p: 210000, legend: true, gachaWeight: 1, procSkill: "sk_earthquake", procRateBase: 8, procRatePerEn: 2, mdmgEnFrom7Max3: true, d: "魔神巴風特之力重新甦醒，杖身迴盪著大地撕裂的共鳴。攻擊時 8% 機率發動地裂術（每強化 +1 機率 +2%）；強化 +7 起魔法傷害 +1，最高 +3。" },
-        "wpn_qigu_obsidian": { n: "黑曜石奇古獸", type: "wpn", qigu: true, dmgS: 24, dmgL: 24, hit: 0, spd: 0.8, mdmg: 1, wis: 1, req: "illusion", safe: 6, p: 100000, gachaWeight: 10, d: "幻術士豢養的奇古獸，化作以心念支配的兵器。幻術士專屬·奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。魔法傷害+1、精神+1。" },
-        "wpn_qigu_meditate": { n: "冥想奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, wis: 1, mpR: 5, mpRPerEn: 1, req: "illusion", safe: 6, p: 100000, gachaWeight: 10, d: "沉入冥想的奇古獸，靜默中源源汲取魔力。幻術士專屬·奇古獸。精神+1、MP自然恢復量+5（每強化+1再+1）。" },
-        "wpn_qigu_resonance": { n: "共鳴奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, mdmg: 1, wis: 3, qiguProc: "phantom", req: "illusion", safe: 6, p: 300000, gachaWeight: 1, d: "與持有者心神共鳴的奇古獸，偶爾爆發出虛幻的衝擊。幻術士專屬·奇古獸。魔法傷害+1、精神+3。攻擊時 1% 機率施展幻影衝擊（每強化+1機率+1%），造成 80~160 無屬性固定傷害。" },
-        "wpn_qigu_frost": { n: "寒冰奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, mdmg: 1, int: 1, qiguProc: "mindbreak", req: "illusion", safe: 6, p: 300000, gachaWeight: 1, d: "凝著寒霜的奇古獸，能撬開敵人最脆弱的心防。幻術士專屬·奇古獸。魔法傷害+1、智力+1。攻擊時 1% 機率施展心靈破壞（每強化+1機率+1%），不消耗MP、造成玩家最大MP 5% 的傷害，再依魔法傷害加成（1＋魔法傷害/16）放大、受目標魔抗減免。" },
-        "wpn_qigu_sapphire": { n: "藍寶石奇古獸", type: "wpn", qigu: true, dmgS: 26, dmgL: 26, hit: 0, spd: 0.8, mpR: 10, req: "illusion", safe: 6, p: 10000, gachaWeight: 20, d: "通體湛藍如海的奇古獸，魔力在其中緩緩流轉不息。幻術士專屬·奇古獸。MP自然恢復量+10。" },
-        "wpn_illu_wand": { n: "幻術士魔杖", type: "wpn", dmgS: 10, dmgL: 10, hit: 3, dmgBonus: 0, spd: 1.0, mpR: 5, req: "illusion", safe: 6, p: 6000, gachaWeight: 30, d: "幻術士入門的法杖，杖頭水晶迴盪著淡淡共鳴之音。幻術士專屬魔杖。蘊含共鳴之力、MP自然恢復量+5、近距離命中+3。" },
-        "shd_illu_book": { n: "幻術士法書", type: "arm", slot: "shield", ac: 2, block: 10, mhp: 20, mmp: 20, wis: 1, mpR: 1, req: "illusion", safe: 6, p: 6000, gachaWeight: 10, d: "記載幻術奧義的副手法書，翻動間護住持書者周身。幻術士專屬副手法書。格檔10%、HP+20、MP+20、精神+1、MP自然恢復量+1。" },
-        "clk_illu": { n: "幻術士斗篷", type: "arm", slot: "cloak", ac: 1, mmp: 20, mpR: 4, req: "illusion", safe: 6, p: 6000, gachaWeight: 10, d: "織入幻術絲線的斗篷，披上便覺魔力綿綿不絕。幻術士專屬斗篷。MP+20、MP自然恢復量+4。" },
+        "wpn_baphomet_wand": { n: "巴風特魔杖", type: "wpn", dmgS: 7, dmgL: 6, hit: 8, dmgBonus: 5, spd: 1.0, req: "mage", safe: 0, p: 210000, legend: true, gachaWeight: 1, procSkill: "sk_earthquake", procRateBase: 8, procRatePerEn: 2, mdmgEnFrom7Max3: true, d: "魔神巴風特之力重新甦醒，杖身迴盪著大地撕裂的共鳴。" },
+        "wpn_qigu_obsidian": { n: "黑曜石奇古獸", type: "wpn", qigu: true, dmgS: 24, dmgL: 24, hit: 0, spd: 0.8, mdmg: 1, wis: 1, req: "illusion", safe: 6, p: 100000, gachaWeight: 10, d: "幻術士豢養的奇古獸，化作以心念支配的兵器。幻術士專屬·奇古獸。一般攻擊化為必中的魔法傷害（受魔抗減免）。" },
+        "wpn_qigu_meditate": { n: "冥想奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, wis: 1, mpR: 5, mpRPerEn: 1, req: "illusion", safe: 6, p: 100000, gachaWeight: 10, d: "沉入冥想的奇古獸，靜默中源源汲取魔力。幻術士專屬·奇古獸。" },
+        "wpn_qigu_resonance": { n: "共鳴奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, mdmg: 1, wis: 3, qiguProc: "phantom", req: "illusion", safe: 6, p: 300000, gachaWeight: 1, d: "與持有者心神共鳴的奇古獸，偶爾爆發出虛幻的衝擊。幻術士專屬·奇古獸。" },
+        "wpn_qigu_frost": { n: "寒冰奇古獸", type: "wpn", qigu: true, dmgS: 25, dmgL: 25, hit: 0, spd: 0.8, mdmg: 1, int: 1, qiguProc: "mindbreak", req: "illusion", safe: 6, p: 300000, gachaWeight: 1, d: "凝著寒霜的奇古獸，能撬開敵人最脆弱的心防。幻術士專屬·奇古獸。" },
+        "wpn_qigu_sapphire": { n: "藍寶石奇古獸", type: "wpn", qigu: true, dmgS: 26, dmgL: 26, hit: 0, spd: 0.8, mpR: 10, req: "illusion", safe: 6, p: 10000, gachaWeight: 20, d: "通體湛藍如海的奇古獸，魔力在其中緩緩流轉不息。幻術士專屬·奇古獸。" },
+        "wpn_illu_wand": { n: "幻術士魔杖", type: "wpn", dmgS: 10, dmgL: 10, hit: 3, dmgBonus: 0, spd: 1.0, mpR: 5, req: "illusion", safe: 6, p: 6000, gachaWeight: 30, d: "幻術士入門的法杖，杖頭水晶迴盪著淡淡共鳴之音。幻術士專屬魔杖。" },
+        "shd_illu_book": { n: "幻術士法書", type: "arm", slot: "shield", ac: 2, block: 10, mhp: 20, mmp: 20, wis: 1, mpR: 1, req: "illusion", safe: 6, p: 6000, gachaWeight: 10, d: "記載幻術奧義的副手法書，翻動間護住持書者周身。幻術士專屬副手法書。" },
+        "clk_illu": { n: "幻術士斗篷", type: "arm", slot: "cloak", ac: 1, mmp: 20, mpR: 4, req: "illusion", safe: 6, p: 6000, gachaWeight: 10, d: "織入幻術絲線的斗篷，披上便覺魔力綿綿不絕。幻術士專屬斗篷。" },
         // ===== 🐉 龍騎士武器 / 防具 =====
-        "wpn_dragon_2h": { n: "龍騎士雙手劍", type: "wpn", w2h: true, dmgS: 19, dmgL: 17, hit: 4, dmgBonus: 2, spd: 1, eff: "cleave", req: "dragon", safe: 6, p: 10000, gachaWeight: 20, d: "龍騎士所執的雙手巨劍，劍鋒可斬碎龍鱗。龍騎士的雙手巨劍。切割；近距離傷害+2、近距離命中+4。" },
-        "wpn_chain_annihilator": { n: "消滅者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, unBonus: true, dmgS: 17, dmgL: 13, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 10000, gachaWeight: 20, d: "龍騎士的鎖鏈巨劍，劍刃如蛇竄出、撕開敵人的破綻。龍騎士專屬·鎖鏈劍（雙手・近距離）。對不死 / 狼人加成；弱點曝光（一般攻擊命中 12% 附加，最多 3 層，配合屠宰者爆發）。近距離傷害+3、近距離命中+5。" },
-        "wpn_chain_destroyer": { n: "破滅者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, str: 1, dmgS: 21, dmgL: 17, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 88000, gachaWeight: 30, d: "以毀滅為名的鎖鏈劍，每一擊都逼出敵人的致命弱點。龍騎士專屬·鎖鏈劍（雙手・近距離）。力量+1；弱點曝光。近距離傷害+3、近距離命中+5。" },
-        "wpn_chain_bloodthirst": { n: "嗜血者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, vampPct: 0.05, dmgS: 21, dmgL: 20, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 138000, gachaWeight: 1, d: "渴飲鮮血的鎖鏈劍，斬擊之餘將敵人的生命據為己有。龍騎士專屬·鎖鏈劍（雙手・近距離）。吸取HP（恢復一般攻擊造成傷害的 5% HP）；弱點曝光。近距離傷害+3、近距離命中+5。" },
-        "wpn_chain_resonance": { n: "共鳴鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, str: 1, wis: 2, dmgS: 21, dmgL: 20, hit: 6, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 164000, gachaWeight: 1, spellProc: { skn: "共鳴衝擊", dice: [4, 8], ele: "water" }, procRateBase: 1, procRatePerEn: 1, d: "鎖鏈之中迴盪著水之共鳴，揮舞時偶有冰瀾炸裂。龍騎士專屬·鎖鏈劍（雙手・近距離）。力量+1、精神+2；弱點曝光；1% 機率施放共鳴衝擊（每強化+1機率+1%），造成 4D8 單體水屬性魔法傷害（受魔法傷害影響）。近距離傷害+3、近距離命中+6。" },
-        "wpn_chain_frost": { n: "寒冰鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, dmgS: 24, dmgL: 20, hit: 4, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 324000, gachaWeight: 1, spellProc: { skn: "冰之地裂術", dice: [8, 4], ele: "water", heal: 0.2 }, procRateBase: 1, procRatePerEn: 1, d: "凍結寒氣纏繞的鎖鏈劍，破地之餘為持劍者奪回生機。龍騎士專屬·鎖鏈劍（雙手・近距離）。弱點曝光；1% 機率施放冰之地裂術（每強化+1機率+1%），造成 8D4 單體水屬性魔法傷害並恢復造成傷害 20% 的 HP（受魔法傷害影響）。近距離傷害+3、近距離命中+4。" },
-        "armguard_dragonscale": { n: "龍鱗臂甲", type: "arm", slot: "shield", ac: 0, armguard: { stat: "none", base: 0, th: [0, 0, 0] }, extraDmg: 1, extraHit: 2, req: "dragon", safe: 0, p: 8000, gachaWeight: 30, d: "以龍鱗鍛成的臂甲，越是淬鍊越堅不可摧。龍騎士的臂甲（裝於副手，可與雙手武器並用）。額外傷害+1、額外命中+2；每強化+1，HP+10。" },
-        "clk_dragon": { n: "龍騎士斗篷", type: "arm", slot: "cloak", ac: 1, mhp: 30, hpR: 1, req: "dragon", safe: 6, p: 9000, gachaWeight: 20, d: "繡有龍紋的斗篷，披於肩上生機隱隱回流。龍騎士的斗篷。HP+30、HP自然恢復量+1。" },
-        "wpn_golden_scepter": { n: "黃金權杖", type: "wpn", dmgS: 14, dmgL: 20, hit: 0, dmgBonus: 5, spd: 0.9, req: "royal", safe: 6, p: 10000, gachaWeight: 20, d: "👑 王族世代相傳的黃金權杖，象徵君臨天下的威儀。單手劍（反擊／居合）、近距離傷害+5。" },
-        "clk_royal_red": { n: "紅色斗篷", type: "arm", slot: "cloak", ac: 2, cha: 1, req: "royal", safe: 4, p: 3000, gachaWeight: 100, d: "👑 王族披掛的緋紅斗篷，襯出與生俱來的高貴氣度。魅力+1。" },
-        "clk_royal_majesty": { n: "君主的威嚴", type: "arm", slot: "cloak", ac: 2, str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1, req: "royal", safe: 4, p: 6000, gachaWeight: 50, d: "👑 凝聚一身君主威嚴的華服，舉手投足皆是王者風範。力量／敏捷／體質／智力／精神／魅力 各+1。" },
-        "acc_royal_guard": { n: "守護者的戒指", type: "acc", slot: "ring", ac: 0, mhp: 30, mmp: 20, req: "royal", safe: 0, p: 5000, gachaWeight: 70, d: "👑 賜予近身守護者的戒指，注入守護王室的堅毅之力。HP+30、MP+20。" },
+        "wpn_dragon_2h": { n: "龍騎士雙手劍", type: "wpn", w2h: true, dmgS: 19, dmgL: 17, hit: 4, dmgBonus: 2, spd: 1, eff: "cleave", req: "dragon", safe: 6, p: 10000, gachaWeight: 20, d: "龍騎士所執的雙手巨劍，劍鋒可斬碎龍鱗。龍騎士的雙手巨劍。" },
+        "wpn_chain_annihilator": { n: "消滅者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, unBonus: true, dmgS: 17, dmgL: 13, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 10000, gachaWeight: 20, d: "龍騎士的鎖鏈巨劍，劍刃如蛇竄出、撕開敵人的破綻。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "wpn_chain_destroyer": { n: "破滅者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, str: 1, dmgS: 21, dmgL: 17, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 88000, gachaWeight: 30, d: "以毀滅為名的鎖鏈劍，每一擊都逼出敵人的致命弱點。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "wpn_chain_bloodthirst": { n: "嗜血者鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, vampPct: 0.05, dmgS: 21, dmgL: 20, hit: 5, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 138000, gachaWeight: 1, d: "渴飲鮮血的鎖鏈劍，斬擊之餘將敵人的生命據為己有。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "wpn_chain_resonance": { n: "共鳴鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, str: 1, wis: 2, dmgS: 21, dmgL: 20, hit: 6, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 164000, gachaWeight: 1, spellProc: { skn: "共鳴衝擊", dice: [4, 8], ele: "water" }, procRateBase: 1, procRatePerEn: 1, d: "鎖鏈之中迴盪著水之共鳴，揮舞時偶有冰瀾炸裂。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "wpn_chain_frost": { n: "寒冰鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, dmgS: 24, dmgL: 20, hit: 4, dmgBonus: 3, spd: 0.9, req: "dragon", safe: 6, p: 324000, gachaWeight: 1, spellProc: { skn: "冰之地裂術", dice: [8, 4], ele: "water", heal: 0.2 }, procRateBase: 1, procRatePerEn: 1, d: "凍結寒氣纏繞的鎖鏈劍，破地之餘為持劍者奪回生機。龍騎士專屬·鎖鏈劍（雙手・近距離）。" },
+        "armguard_dragonscale": { n: "龍鱗臂甲", type: "arm", slot: "shield", ac: 0, armguard: { stat: "none", base: 0, th: [0, 0, 0] }, extraDmg: 1, extraHit: 2, req: "dragon", safe: 0, p: 8000, gachaWeight: 30, d: "以龍鱗鍛成的臂甲，越是淬鍊越堅不可摧。龍騎士的臂甲（裝於副手，可與雙手武器並用）。" },
+        "clk_dragon": { n: "龍騎士斗篷", type: "arm", slot: "cloak", ac: 1, mhp: 30, hpR: 1, req: "dragon", safe: 6, p: 9000, gachaWeight: 20, d: "繡有龍紋的斗篷，披於肩上生機隱隱回流。龍騎士的斗篷。" },
+        "wpn_golden_scepter": { n: "黃金權杖", type: "wpn", dmgS: 14, dmgL: 20, hit: 0, dmgBonus: 5, spd: 0.9, req: "royal", safe: 6, p: 10000, gachaWeight: 20, d: "👑 王族世代相傳的黃金權杖，象徵君臨天下的威儀。" },
+        "clk_royal_red": { n: "紅色斗篷", type: "arm", slot: "cloak", ac: 2, cha: 1, req: "royal", safe: 4, p: 3000, gachaWeight: 100, d: "👑 王族披掛的緋紅斗篷，襯出與生俱來的高貴氣度。" },
+        "clk_royal_majesty": { n: "君主的威嚴", type: "arm", slot: "cloak", ac: 2, str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1, req: "royal", safe: 4, p: 6000, gachaWeight: 50, d: "👑 凝聚一身君主威嚴的華服，舉手投足皆是王者風範。" },
+        "acc_royal_guard": { n: "守護者的戒指", type: "acc", slot: "ring", ac: 0, mhp: 30, mmp: 20, req: "royal", safe: 0, p: 5000, gachaWeight: 70, d: "👑 賜予近身守護者的戒指，注入守護王室的堅毅之力。" },
         // ===== ⚔️ 戰士裝備（多文試煉兌換／琉米埃爾製作）=====
         "wpn_warrior_trial_axe": { n: "試煉斧頭", type: "wpn", dmgS: 13, dmgL: 13, hit: 0, dmgBonus: 0, spd: 0.9, req: "warrior", safe: 6, p: 5000, gachaWeight: 100, d: "戰士試煉所授的斧頭，沉甸甸地考驗著揮斧者的臂力。單手鈍器（鈍擊）。" },
-        "wpn_master_axe": { n: "大匠的斧頭", type: "wpn", dmgS: 13, dmgL: 13, hit: 0, dmgBonus: 1, spd: 0.9, req: "warrior", safe: 6, p: 10000, gachaWeight: 20, unBonus: true, d: "出自大匠之手的斧頭，刃口閃著銀輝專剋暗夜之物。單手鈍器（鈍擊）、對不死／狼人加成。近距離傷害+1。" },
-        "wpn_demon_axehead": { n: "魔物的斧頭", type: "wpn", dmgS: 18, dmgL: 18, hit: -1, dmgBonus: 0, spd: 0.9, req: "warrior", safe: 0, p: 55000, gachaWeight: 10, d: "由魔物殘骸之力凝鑄的斧頭，揮砍間透著一股戾氣。單手鈍器（鈍擊）。近距離命中-1。" },
-        "wpn_iron_axehead": { n: "鐵斧頭", type: "wpn", dmgS: 19, dmgL: 23, hit: 1, dmgBonus: 1, spd: 0.9, req: "warrior", safe: 6, p: 155000, gachaWeight: 1, d: "精鐵反覆鍛打而成的斧頭，紮實順手、無懈可擊。單手鈍器（鈍擊）。近距離傷害+1、近距離命中+1。" },
-        "wpn_giant_axehead": { n: "巨人的斧頭", type: "wpn", legend: true, dmgS: 28, dmgL: 36, hit: 2, dmgBonus: 5, spd: 0.9, req: "warrior", safe: 6, p: 355000, gachaWeight: 1, d: "昔日巨人揮舞的巨大斧頭，一斧落下足以撼動大地。單手鈍器（鈍擊）。近距離傷害+5、近距離命中+2。" },
-        "hlm_warrior_corps": { n: "戰士團頭盔", type: "arm", slot: "helm", ac: 2, mhp: 20, mrPerEn: 1, req: "warrior", safe: 4, p: 3000, gachaWeight: 50, d: "戰士團精銳所配發的鋼盔，內襯著無數場惡戰的痕跡。HP+20、每強化+1 MR+1。" },
-        "clk_warrior_corps": { n: "戰士團斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 20, req: "warrior", safe: 4, p: 3000, gachaWeight: 50, d: "披在戰士團肩上的厚實斗篷，曾為衝鋒者擋下風霜與箭雨。HP+20。" },
-        "hlm_holy_corps": { n: "神聖執行團的頭盔", type: "arm", slot: "helm", ac: 3, mhp: 20, hpR: 4, mr: 11, req: "warrior", safe: 4, p: 7000, gachaWeight: 20, d: "神聖執行團的聖盔，鍍金的紋章映照著討伐邪惡的誓言。HP+20、HP自然恢復量+4、MR+11。" },
-        "clk_holy_corps": { n: "神聖執行團的斗篷", type: "arm", slot: "cloak", ac: 4, mhp: 30, hpR: 2, mr: 20, req: "warrior", safe: 4, p: 9000, gachaWeight: 20, d: "神聖執行團的聖潔斗篷，受過祝福的織紋能彈開暗影的侵蝕。HP+30、HP自然恢復量+2、MR+20。" },
+        "wpn_master_axe": { n: "大匠的斧頭", type: "wpn", dmgS: 13, dmgL: 13, hit: 0, dmgBonus: 1, spd: 0.9, req: "warrior", safe: 6, p: 10000, gachaWeight: 20, unBonus: true, d: "出自大匠之手的斧頭，刃口閃著銀輝專剋暗夜之物。單手鈍器（鈍擊）、對不死／狼人加成。" },
+        "wpn_demon_axehead": { n: "魔物的斧頭", type: "wpn", dmgS: 18, dmgL: 18, hit: -1, dmgBonus: 0, spd: 0.9, req: "warrior", safe: 0, p: 55000, gachaWeight: 10, d: "由魔物殘骸之力凝鑄的斧頭，揮砍間透著一股戾氣。單手鈍器（鈍擊）。" },
+        "wpn_iron_axehead": { n: "鐵斧頭", type: "wpn", dmgS: 19, dmgL: 23, hit: 1, dmgBonus: 1, spd: 0.9, req: "warrior", safe: 6, p: 155000, gachaWeight: 1, d: "精鐵反覆鍛打而成的斧頭，紮實順手、無懈可擊。單手鈍器（鈍擊）。" },
+        "wpn_giant_axehead": { n: "巨人的斧頭", type: "wpn", legend: true, dmgS: 28, dmgL: 36, hit: 2, dmgBonus: 5, spd: 0.9, req: "warrior", safe: 6, p: 355000, gachaWeight: 1, d: "昔日巨人揮舞的巨大斧頭，一斧落下足以撼動大地。單手鈍器（鈍擊）。" },
+        "hlm_warrior_corps": { n: "戰士團頭盔", type: "arm", slot: "helm", ac: 2, mhp: 20, mrPerEn: 1, req: "warrior", safe: 4, p: 3000, gachaWeight: 50, d: "戰士團精銳所配發的鋼盔，內襯著無數場惡戰的痕跡。" },
+        "clk_warrior_corps": { n: "戰士團斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 20, req: "warrior", safe: 4, p: 3000, gachaWeight: 50, d: "披在戰士團肩上的厚實斗篷，曾為衝鋒者擋下風霜與箭雨。" },
+        "hlm_holy_corps": { n: "神聖執行團的頭盔", type: "arm", slot: "helm", ac: 3, mhp: 20, hpR: 4, mr: 11, req: "warrior", safe: 4, p: 7000, gachaWeight: 20, d: "神聖執行團的聖盔，鍍金的紋章映照著討伐邪惡的誓言。" },
+        "clk_holy_corps": { n: "神聖執行團的斗篷", type: "arm", slot: "cloak", ac: 4, mhp: 30, hpR: 2, mr: 20, req: "warrior", safe: 4, p: 9000, gachaWeight: 20, d: "神聖執行團的聖潔斗篷，受過祝福的織紋能彈開暗影的侵蝕。" },
         "item_cyclops_blood": { n: "獨眼巨人的血", p: 1, gachaWeight: 0, noSell: true, d: "自獨眼巨人胸膛湧出、猶帶餘溫的暗紅鮮血，是勇者試煉的鐵證。戰士試煉任務道具。可向海音的多文兌換戰士團頭盔。" },
         // ===== ⚔️ 戰士技能印記（多文試煉兌換；技能效果於技能階段補完）=====
-        "bk_warrior_dualaxe": { type: "skillbk", n: "戰士的印記(迅猛雙斧)", p: 2400, sk: "sk_warrior_dualaxe", gachaWeight: 30, d: "習得「迅猛雙斧」（熱血・被動・常駐）。裝備單手鈍器時副手也可裝單手鈍器，一般攻擊同時判定兩個攻擊來源。可學等級 15。" },
-        "bk_warrior_roar": { type: "skillbk", n: "戰士的印記(咆哮)", p: 7200, sk: "sk_warrior_roar", gachaWeight: 30, d: "習得「咆哮」（憤怒・攻擊・全體無屬性）。對所有敵人造成 50+(等級-30) 的固定傷害。可學等級 30。消耗 MP 5。" },
-        "bk_warrior_crush": { type: "skillbk", n: "戰士的印記(粉碎)", p: 7200, sk: "sk_warrior_crush", gachaWeight: 10, d: "習得「粉碎」（熱血・被動・常駐）。近距離傷害+2，玩家等級45時額外+1，之後每升一級+1。可學等級 30。" },
-        "bk_warrior_armorbody": { type: "skillbk", n: "戰士的印記(護甲身軀)", p: 21600, sk: "sk_warrior_armorbody", gachaWeight: 1, d: "習得「護甲身軀」（熱血・被動・常駐）。傷害減免 +[(10-AC)/10]。可學等級 45。" },
-        "bk_warrior_berserk": { type: "skillbk", n: "戰士的印記(狂暴)", p: 43200, sk: "sk_warrior_berserk", gachaWeight: 1, d: "習得「狂暴」（熱血・被動・常駐）。一般攻擊5%機率傷害x2。可學等級 50。" },
-        "bk_warrior_titan_rock": { type: "skillbk", n: "戰士的印記(泰坦：岩石)", p: 43200, sk: "sk_warrior_titan_rock", gachaWeight: 1, d: "習得「泰坦：岩石」（忍耐・被動・常駐）。HP低於40%時，受到一般攻擊對攻擊目標造成相同傷害。可學等級 50。" },
-        "bk_warrior_titan_magic": { type: "skillbk", n: "戰士的印記(泰坦：魔法)", p: 43200, sk: "sk_warrior_titan_magic", gachaWeight: 1, d: "習得「泰坦：魔法」（忍耐・被動・常駐）。HP低於40%時，受到技能攻擊對攻擊目標造成相同傷害。可學等級 50。" },
-        "bk_warrior_titan_bullet": { type: "skillbk", n: "戰士的印記(泰坦：子彈)", p: 43200, sk: "sk_warrior_titan_bullet", gachaWeight: 1, d: "習得「泰坦：子彈」（忍耐・被動・常駐）。HP低於40%時，ER+50。可學等級 60。" },
-        "bk_warrior_throwaxe": { type: "skillbk", n: "戰士的印記(戰斧投擲)", p: 2400, sk: "sk_warrior_throwaxe", gachaWeight: 50, d: "習得「戰斧投擲」（憤怒・輔助・狀態）。須裝備單手鈍器或雙手鈍器；持續期間內，近距離一般攻擊皆附加出血。持續64秒。可學等級 15。消耗 MP 5。" },
-        "bk_warrior_endurance": { type: "skillbk", n: "戰士的印記(體能強化)", p: 43200, sk: "sk_warrior_endurance", gachaWeight: 1, d: "習得「體能強化」（憤怒・輔助・狀態）。HP上限增加+(等級/2)%。持續300秒。可學等級 50。消耗 MP 10。" },
-        "bk_warrior_outlaw": { type: "skillbk", n: "戰士的印記(亡命之徒)", p: 43200, sk: "sk_warrior_outlaw", gachaWeight: 1, d: "習得「亡命之徒」（憤怒・輔助・狀態）。一般攻擊最低命中率變成50%。持續6秒。可學等級 60。消耗 MP 10。" },
-        "bk_royal_precise":    { type: "skillbk", n: "魔法書(精準目標)", p: 4800,  sk: "sk_royal_precise",    gachaWeight: 30, d: "習得「精準目標」（一階王族魔法・輔助・狀態・消耗 MP 2）。場上所有敵人受到的傷害增加 [1+(玩家等級/15)]%，持續 16 秒（結束才再施放）。可學等級 15。" },
-        "bk_royal_callally":   { type: "skillbk", n: "魔法書(呼喚盟友)", p: 12400, sk: "sk_royal_callally",   gachaWeight: 30, d: "習得「呼喚盟友」（二階王族魔法・攻擊・特殊・消耗 MP 30）。所有傭兵立即發動一次額外攻擊。可學等級 30。" },
-        "bk_royal_burnweapon": { type: "skillbk", n: "魔法書(灼熱武器)", p: 12400, sk: "sk_royal_burnweapon", gachaWeight: 0,  d: "習得「灼熱武器」（特殊級王族魔法・輔助・狀態・消耗 MP 25）。額外傷害+5、額外命中+5，持續 640 秒（結束才再施放）。可學等級 40。" },
-        "bk_royal_bravewill":  { type: "skillbk", n: "魔法書(勇猛意志)", p: 12400, sk: "sk_royal_bravewill",  gachaWeight: 0,  d: "習得「勇猛意志」（特殊級王族魔法・輔助・狀態・消耗 MP 25）。10%機率一般攻擊傷害 ×1.5，持續 640 秒（結束才再施放）。可學等級 50。" },
-        "bk_royal_shield":     { type: "skillbk", n: "魔法書(閃亮之盾)", p: 12400, sk: "sk_royal_shield",     gachaWeight: 0,  d: "習得「閃亮之盾」（特殊級王族魔法・輔助・狀態・消耗 MP 25）。AC-8，持續 640 秒（結束才再施放）。可學等級 50。" },
-        "bk_royal_kingguard":  { type: "skillbk", n: "魔法書(王者加護)", p: 12400, sk: "sk_royal_kingguard",  gachaWeight: 0,  d: "習得「王者加護」（特殊級王族魔法・被動・常駐）。MR+10、20%機率抵抗暈眩。可學等級 50。" },
+        "bk_warrior_dualaxe": { type: "skillbk", n: "戰士的印記(迅猛雙斧)", p: 2400, sk: "sk_warrior_dualaxe", gachaWeight: 30, d: "記載著「迅猛雙斧」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_roar": { type: "skillbk", n: "戰士的印記(咆哮)", p: 7200, sk: "sk_warrior_roar", gachaWeight: 30, d: "記載著「咆哮」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_crush": { type: "skillbk", n: "戰士的印記(粉碎)", p: 7200, sk: "sk_warrior_crush", gachaWeight: 10, d: "記載著「粉碎」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_armorbody": { type: "skillbk", n: "戰士的印記(護甲身軀)", p: 21600, sk: "sk_warrior_armorbody", gachaWeight: 1, d: "記載著「護甲身軀」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_berserk": { type: "skillbk", n: "戰士的印記(狂暴)", p: 43200, sk: "sk_warrior_berserk", gachaWeight: 1, d: "記載著「狂暴」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_titan_rock": { type: "skillbk", n: "戰士的印記(泰坦：岩石)", p: 43200, sk: "sk_warrior_titan_rock", gachaWeight: 1, d: "記載著「泰坦：岩石」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_titan_magic": { type: "skillbk", n: "戰士的印記(泰坦：魔法)", p: 43200, sk: "sk_warrior_titan_magic", gachaWeight: 1, d: "記載著「泰坦：魔法」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_titan_bullet": { type: "skillbk", n: "戰士的印記(泰坦：子彈)", p: 43200, sk: "sk_warrior_titan_bullet", gachaWeight: 1, d: "記載著「泰坦：子彈」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_throwaxe": { type: "skillbk", n: "戰士的印記(戰斧投擲)", p: 2400, sk: "sk_warrior_throwaxe", gachaWeight: 50, d: "記載著「戰斧投擲」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_endurance": { type: "skillbk", n: "戰士的印記(體能強化)", p: 43200, sk: "sk_warrior_endurance", gachaWeight: 1, d: "記載著「體能強化」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_warrior_outlaw": { type: "skillbk", n: "戰士的印記(亡命之徒)", p: 43200, sk: "sk_warrior_outlaw", gachaWeight: 1, d: "記載著「亡命之徒」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_royal_precise":    { type: "skillbk", n: "魔法書(精準目標)", p: 4800,  sk: "sk_royal_precise",    gachaWeight: 30, d: "場上所有敵人受到的傷害增加 [1+(玩家等級/15)]%，持續 16 秒（結束才再施放）。可學等級 15。" },
+        "bk_royal_callally":   { type: "skillbk", n: "魔法書(呼喚盟友)", p: 12400, sk: "sk_royal_callally",   gachaWeight: 30, d: "所有傭兵立即發動一次額外攻擊。可學等級 30。" },
+        "bk_royal_burnweapon": { type: "skillbk", n: "魔法書(灼熱武器)", p: 12400, sk: "sk_royal_burnweapon", gachaWeight: 0,  d: "可學等級 40。" },
+        "bk_royal_bravewill":  { type: "skillbk", n: "魔法書(勇猛意志)", p: 12400, sk: "sk_royal_bravewill",  gachaWeight: 0,  d: "可學等級 50。" },
+        "bk_royal_shield":     { type: "skillbk", n: "魔法書(閃亮之盾)", p: 12400, sk: "sk_royal_shield",     gachaWeight: 0,  d: "可學等級 50。" },
+        "bk_royal_kingguard":  { type: "skillbk", n: "魔法書(王者加護)", p: 12400, sk: "sk_royal_kingguard",  gachaWeight: 0,  d: "記載著「王者加護」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
         // 🐉 龍騎士任務道具（普洛凱爾試煉用）
         "item_demon_search": { n: "妖魔搜索文件", type: "etc", p: 1, c: "text-amber-300", noUse: true, noSell: true, gachaWeight: 0, d: "龍騎士任務道具。可向普洛凱爾兌換龍騎士雙手劍或龍之護鎧書板（3 個）。" },
         "item_demon_spy":    { n: "妖魔密使首領間諜書", type: "etc", p: 1, c: "text-amber-300", noUse: true, noSell: true, gachaWeight: 0, d: "龍騎士任務道具。可向普洛凱爾兌換龍鱗臂甲或血之渴望書板（1 個）。" },
         "item_yeti_heart":   { n: "雪怪之心", type: "etc", p: 1, c: "text-cyan-300", noUse: true, noSell: true, gachaWeight: 0, d: "龍騎士任務道具。可向普洛凱爾兌換龍騎士斗篷（10 個）。" },
         "item_soulfire_ash": { n: "靈魂之火灰燼", type: "etc", p: 1, c: "text-orange-300", noUse: true, noSell: true, gachaWeight: 0, d: "龍騎士任務道具。50 級試煉第二階段，可向普洛凱爾兌換消滅者鎖鏈劍（1 個）。" },
-        "amr_baphomet": { n: "巴風特盔甲", type: "arm", slot: "armor", ac: 8, immPoison: true, dr: 2, mrPerEn: 1, req: "knight,dragon", safe: 4, p: 225300, legend: true, gachaWeight: 1, d: "自惡魔巴風特身上剝下的傳說重甲，魔氣使穿戴者百毒不侵。免疫中毒、傷害減免 +2；每強化 +1 MR +1。" },
+        "amr_baphomet": { n: "巴風特盔甲", type: "arm", slot: "armor", ac: 8, immPoison: true, dr: 2, mrPerEn: 1, req: "knight,dragon", safe: 4, p: 225300, legend: true, gachaWeight: 1, d: "自惡魔巴風特身上剝下的傳說重甲，魔氣使穿戴者百毒不侵。" },
         "clk_flame_blood": { n: "炎魔的血光斗篷", type: "arm", slot: "cloak", ac: 5, stealth: true, req: "all", safe: 4, p: 150000, legend: true, gachaWeight: 0, d: "以炎魔鮮血浸染而成的斗篷，纏身時身影隱沒於灼熱的暗影裡。穿戴時等同維持隱身（卸下即失效）。" },
-        "clk_fallen": { n: "墮落斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 100, con: 1, req: "dark", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者遺落的傳說斗篷，腐朽中仍透出不滅的生命力。HP+100、體質+1。" },
-        "amr_fallen": { n: "墮落長袍", type: "arm", slot: "armor", ac: 13, mmp: 100, mpR: 5, req: "mage", safe: 0, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說長袍，衣襟間流淌著源源不絕的魔力暗潮。MP+100、MP自然恢復+5。" },
-        "glv_fallen": { n: "墮落手套", type: "arm", slot: "gloves", ac: 2, mhp: 100, con: 1, req: "knight", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說手套，握緊時彷彿能感受到墮落前殘存的氣力。HP+100、體質+1。" },
-        "bot_fallen": { n: "墮落長靴", type: "arm", slot: "boots", ac: 2, mhp: 100, req: "elf", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說長靴，踏過深淵也不曾停下的步伐凝結其上。HP+100。" },
+        "clk_fallen": { n: "墮落斗篷", type: "arm", slot: "cloak", ac: 2, mhp: 100, con: 1, req: "dark", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者遺落的傳說斗篷，腐朽中仍透出不滅的生命力。" },
+        "amr_fallen": { n: "墮落長袍", type: "arm", slot: "armor", ac: 13, mmp: 100, mpR: 5, req: "mage", safe: 0, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說長袍，衣襟間流淌著源源不絕的魔力暗潮。" },
+        "glv_fallen": { n: "墮落手套", type: "arm", slot: "gloves", ac: 2, mhp: 100, con: 1, req: "knight", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說手套，握緊時彷彿能感受到墮落前殘存的氣力。" },
+        "bot_fallen": { n: "墮落長靴", type: "arm", slot: "boots", ac: 2, mhp: 100, req: "elf", safe: 4, p: 150000, legend: true, gachaWeight: 1, d: "墮落者的傳說長靴，踏過深淵也不曾停下的步伐凝結其上。" },
         "wpn_blackflame_sword": { n: "黑燄之劍", type: "wpn", dmgS: 16, dmgL: 10, hit: 2, dmgBonus: 0, spd: 0.9, req: "knight", safe: 6, p: 10000, gachaWeight: 20, unBonus: true, d: "以炎魔之力鍛成的漆黑長劍，劍刃燃著看不見的黑色火焰。反擊、居合、對不死 / 狼人加成。" },
-        "wpn_redflame_bow": { n: "赤焰之弓", type: "wpn", isBow: true, ranged: true, rapidfire: 70, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 4, spd: 1.0, req: "elf", safe: 6, p: 10000, gachaWeight: 20, d: "灌注炎魔之力的長弓，拉滿弦時箭尖泛起赤紅的熱浪。連射 70%。" },
+        "wpn_redflame_bow": { n: "赤焰之弓", type: "wpn", isBow: true, ranged: true, rapidfire: 70, w2h: true, dmgS: 3, dmgL: 3, hit: 2, dmgBonus: 4, spd: 1.0, req: "elf", safe: 6, p: 10000, gachaWeight: 20, d: "灌注炎魔之力的長弓，拉滿弦時箭尖泛起赤紅的熱浪。" },
         "wpn_redflame_sword": { n: "赤焰之劍", type: "wpn", dmgS: 14, dmgL: 6, hit: 4, dmgBonus: 0, spd: 0.9, req: "elf", safe: 6, p: 10000, gachaWeight: 20, unBonus: true, d: "灌注炎魔之力的烈焰之劍，揮砍時帶起灼人的赤光。反擊、居合、對不死 / 狼人加成。" },
-        "wpn_mana_orb": { n: "瑪那水晶球", type: "arm", slot: "shield", ac: 2, block: 10, mmp: 100, int: 1, req: "mage", safe: 4, p: 10000, gachaWeight: 20, d: "凝聚瑪那之力的水晶球盾，澄澈的核心中緩緩流轉著無盡魔力。格檔 10%、MP+100、智力+1。" },
+        "wpn_mana_orb": { n: "瑪那水晶球", type: "arm", slot: "shield", ac: 2, block: 10, mmp: 100, int: 1, req: "mage", safe: 4, p: 10000, gachaWeight: 20, d: "凝聚瑪那之力的水晶球盾，澄澈的核心中緩緩流轉著無盡魔力。" },
         // 🔥 50 級試煉長靴（迪嘉勒廷·交付炎魔素材兌換；各職業專屬·AC-3·安定4·重量15·席琳可兌換）
-        "bot_divine_will": { n: "神意長靴", type: "arm", slot: "boots", ac: 3, cha: 1, req: "royal", safe: 4, p: 12000, gachaWeight: 10, d: "👑 承載王族神聖意志的長靴，每一步都散發君臨天下的威儀。AC-3、魅力+1。" },
-        "bot_courage":     { n: "勇氣長靴", type: "arm", slot: "boots", ac: 3, meleeHit: 1, req: "knight", safe: 4, p: 12000, gachaWeight: 10, d: "鼓舞騎士勇往直前的長靴，踏出無畏的步伐。AC-3、近距離命中+1。" },
-        "bot_sephia":      { n: "賽菲亞長靴", type: "arm", slot: "boots", ac: 3, rangedHit: 1, req: "elf", safe: 4, p: 12000, gachaWeight: 10, d: "賽菲亞祝福的輕盈長靴，使妖精的步伐如風、箭矢更準。AC-3、遠距離命中+1。" },
-        "bot_mana":        { n: "瑪那長靴", type: "arm", slot: "boots", ac: 3, mpR: 2, req: "mage", safe: 4, p: 12000, gachaWeight: 10, d: "蘊含瑪那之力的長靴，行走間不斷牽引魔力回流。AC-3、MP自然恢復量+2。" },
-        "wpn_death_finger": { n: "死亡之指", type: "wpn", w2h: true, dmgS: 17, dmgL: 15, hit: 3, dmgBonus: 2, spd: 0.9, req: "dark", safe: 6, p: 10000, gachaWeight: 20, eff: "combo", comboRate: 20, procPoison: { rate: 2, dur: 15, tick: 3, dmg: [1, 8] }, d: "墮落之力凝成的枯瘦指爪，觸及之物無不沾染腐毒。雙擊；攻擊時 2% 機率對目標觸發毒咒。" },
+        "bot_divine_will": { n: "神意長靴", type: "arm", slot: "boots", ac: 3, cha: 1, req: "royal", safe: 4, p: 12000, gachaWeight: 10, d: "👑 承載王族神聖意志的長靴，每一步都散發君臨天下的威儀。" },
+        "bot_courage":     { n: "勇氣長靴", type: "arm", slot: "boots", ac: 3, meleeHit: 1, req: "knight", safe: 4, p: 12000, gachaWeight: 10, d: "鼓舞騎士勇往直前的長靴，踏出無畏的步伐。" },
+        "bot_sephia":      { n: "賽菲亞長靴", type: "arm", slot: "boots", ac: 3, rangedHit: 1, req: "elf", safe: 4, p: 12000, gachaWeight: 10, d: "賽菲亞祝福的輕盈長靴，使妖精的步伐如風、箭矢更準。" },
+        "bot_mana":        { n: "瑪那長靴", type: "arm", slot: "boots", ac: 3, mpR: 2, req: "mage", safe: 4, p: 12000, gachaWeight: 10, d: "蘊含瑪那之力的長靴，行走間不斷牽引魔力回流。" },
+        "wpn_death_finger": { n: "死亡之指", type: "wpn", w2h: true, dmgS: 17, dmgL: 15, hit: 3, dmgBonus: 2, spd: 0.9, req: "dark", safe: 6, p: 10000, gachaWeight: 20, eff: "combo", comboRate: 20, procPoison: { rate: 2, dur: 15, tick: 3, dmg: [1, 8] }, d: "墮落之力凝成的枯瘦指爪，觸及之物無不沾染腐毒。" },
         // ===== 🌑 暗影神殿：材料 / 鑰匙 =====
         "mat_chaos_head": { n: "混沌首級", type: "etc", p: 1, c: "text-purple-300", noUse: true, gachaWeight: 0, d: "製作材料。" },
         "mat_death_head": { n: "死亡首級", type: "etc", p: 1, c: "text-purple-300", noUse: true, gachaWeight: 0, d: "製作材料。" },
@@ -1263,37 +1333,37 @@ const DB = {
         // ===== 🌑 暗影神殿：混沌系列（混沌 掉落） =====
         "wpn_chaos_thorn": { n: "混沌之刺", type: "wpn", dmgS: 18, dmgL: 2, hit: 0, dmgBonus: 2, spd: 0.6, req: "all", safe: 0, p: 21000, gachaWeight: 10, d: "自混沌中誕生的匕首，刃身扭曲難辨、所傷必裂血不止。攻擊帶有出血。" },
         "hlm_chaos": { n: "混沌頭盔", type: "arm", slot: "helm", ac: 1, stunResist: 100, req: "all", safe: 0, p: 15000, gachaWeight: 10, d: "由混沌之力塑成的頭盔，戴上後心神再不為昏聵所動。免疫暈眩。" },
-        "clk_chaos": { n: "混沌斗篷", type: "arm", slot: "cloak", ac: 3, mr: 10, mrPerEn: 3, req: "all", safe: 0, p: 15000, gachaWeight: 10, d: "以混沌織就的斗篷，愈是強化，抵禦魔力的力場便愈深沉。MR+10，每強化額外 MR+3。" },
-        "amr_chaos": { n: "混沌法袍", type: "arm", slot: "armor", ac: 6, mpR: 12, req: "mage", safe: 0, p: 25000, gachaWeight: 10, d: "混沌之力編成的法袍，吸納四散的魔力源源回灌。MP自然恢復+12。" },
-        "glv_chaos": { n: "混沌手套", type: "arm", slot: "gloves", ac: 3, str: 1, req: "all", safe: 0, p: 25000, gachaWeight: 10, d: "沾染混沌氣息的手套，握拳間湧出原始的蠻力。力量+1。" },
+        "clk_chaos": { n: "混沌斗篷", type: "arm", slot: "cloak", ac: 3, mr: 10, mrPerEn: 3, req: "all", safe: 0, p: 15000, gachaWeight: 10, d: "以混沌織就的斗篷，愈是強化，抵禦魔力的力場便愈深沉。" },
+        "amr_chaos": { n: "混沌法袍", type: "arm", slot: "armor", ac: 6, mpR: 12, req: "mage", safe: 0, p: 25000, gachaWeight: 10, d: "混沌之力編成的法袍，吸納四散的魔力源源回灌。" },
+        "glv_chaos": { n: "混沌手套", type: "arm", slot: "gloves", ac: 3, str: 1, req: "all", safe: 0, p: 25000, gachaWeight: 10, d: "沾染混沌氣息的手套，握拳間湧出原始的蠻力。" },
         // ===== 🌑 暗影神殿：死亡系列（死亡 掉落・傳說） =====
-        "clk_death": { n: "死亡斗篷", type: "arm", slot: "cloak", ac: 3, str: 1, mhp: 100, mmp: 50, hpR: -10, req: "all", safe: 0, p: 55000, legend: true, gachaWeight: 1, d: "散發死亡氣息的傳說斗篷，以生機為代價換來磅礴之力。力量+1、HP+100、MP+50、HP自然恢復-10。" },
-        "amr_death": { n: "死亡盔甲", type: "arm", slot: "armor", ac: 8, str: 2, dex: 2, wis: -2, cha: -2, hpR: 5, req: "knight", safe: 0, p: 85000, legend: true, gachaWeight: 1, d: "亡者之魂縈繞的傳說盔甲，賜予力量與敏捷，卻奪去心神與光采。力量+2、敏捷+2、精神-2、魅力-2、HP自然恢復+5。" },
-        "glv_death": { n: "死亡手套", type: "arm", slot: "gloves", ac: 3, str: 1, dex: 1, cha: -2, req: "all", safe: 0, p: 75000, legend: true, gachaWeight: 1, d: "死亡所淬鍊的傳說手套，握者得其力與巧，卻為旁人所畏。力量+1、敏捷+1、魅力-2。" },
-        "shd_death": { n: "死亡之盾", type: "arm", slot: "shield", ac: 1, block: 100, stunResist: 100, req: "knight,elf,dark", safe: 0, p: 45000, legend: true, gachaWeight: 1, d: "由死亡本身鑄成的傳說之盾，任何打擊都被它無聲吞沒。格檔100%、免疫暈眩。" },
+        "clk_death": { n: "死亡斗篷", type: "arm", slot: "cloak", ac: 3, str: 1, mhp: 100, mmp: 50, hpR: -10, req: "all", safe: 0, p: 55000, legend: true, gachaWeight: 1, d: "散發死亡氣息的傳說斗篷，以生機為代價換來磅礴之力。" },
+        "amr_death": { n: "死亡盔甲", type: "arm", slot: "armor", ac: 8, str: 2, dex: 2, wis: -2, cha: -2, hpR: 5, req: "knight", safe: 0, p: 85000, legend: true, gachaWeight: 1, d: "亡者之魂縈繞的傳說盔甲，賜予力量與敏捷，卻奪去心神與光采。" },
+        "glv_death": { n: "死亡手套", type: "arm", slot: "gloves", ac: 3, str: 1, dex: 1, cha: -2, req: "all", safe: 0, p: 75000, legend: true, gachaWeight: 1, d: "死亡所淬鍊的傳說手套，握者得其力與巧，卻為旁人所畏。" },
+        "shd_death": { n: "死亡之盾", type: "arm", slot: "shield", ac: 1, block: 100, stunResist: 100, req: "knight,elf,dark", safe: 0, p: 45000, legend: true, gachaWeight: 1, d: "由死亡本身鑄成的傳說之盾，任何打擊都被它無聲吞沒。" },
         // ===== 🛡️ 臂甲（裝於「副手/盾牌」欄，可與雙手武器並用；type:arm 沿用盾牌的祝福/詞綴/上限+15；強化每+1 HP+10；門檻特效達標套用、取最高階非累加）=====
-        "armguard_guardian": { n: "守護者臂甲", type: "arm", slot: "shield", ac: 1, req: "knight,elf,dark", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "dr", base: 1, th: [1, 2, 3] }, d: "守護者代代相傳的臂甲（裝於副手，可與雙手武器並用），堅實的護面為持有者擋下重擊。額外減傷+1；強化達 +5/+7/+9 時額外減傷改為 +2/+3/+4（取最高階、非累加）。每強化+1，HP+10。" },
-        "armguard_mage": { n: "法師臂甲", type: "arm", slot: "shield", ac: 2, int: 2, req: "mage", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "magicDmg", base: 0, th: [1, 2, 3] }, d: "刻滿符文的法師臂甲（裝於副手，可與雙手武器並用），引導魔力流轉於指尖。智力+2；強化達 +5/+7/+9 時魔法傷害 +1/+2/+3（取最高階、非累加）。每強化+1，HP+10。" },
-        "armguard_con": { n: "體力臂甲", type: "arm", slot: "shield", ac: 0, req: "knight,elf,dark", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "mhp", base: 50, th: [25, 50, 75] }, d: "厚重結實的體力臂甲（裝於副手，可與雙手武器並用），承載著千錘百鍊的強韌體魄。HP+50；強化達 +5/+7/+9 時HP再 +25/+50/+75（取最高階、非累加）。每強化+1，HP+10。" },
+        "armguard_guardian": { n: "守護者臂甲", type: "arm", slot: "shield", ac: 1, req: "knight,elf,dark", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "dr", base: 1, th: [1, 2, 3] }, d: "守護者代代相傳的臂甲（裝於副手，可與雙手武器並用），堅實的護面為持有者擋下重擊。" },
+        "armguard_mage": { n: "法師臂甲", type: "arm", slot: "shield", ac: 2, int: 2, req: "mage", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "magicDmg", base: 0, th: [1, 2, 3] }, d: "刻滿符文的法師臂甲（裝於副手，可與雙手武器並用），引導魔力流轉於指尖。" },
+        "armguard_con": { n: "體力臂甲", type: "arm", slot: "shield", ac: 0, req: "knight,elf,dark", safe: 0, p: 52000, gachaWeight: 10, armguard: { stat: "mhp", base: 50, th: [25, 50, 75] }, d: "厚重結實的體力臂甲（裝於副手，可與雙手武器並用），承載著千錘百鍊的強韌體魄。" },
         "item_olin_diary": { n: "歐林的日記本", type: "etc", p: 0, c: "text-amber-300", gachaWeight: 0, d: "歐林留下的日記本。可交給說話之島的尤麗婭，換取一件臂甲（三選一）。" },
         // ===== 👑 惡魔王武器（炎魔之影 客製製作；強化值/詞綴/席琳套裝由被消耗的惡魔武器繼承） =====
-        "wpn_demonking_spear": { n: "惡魔王矛", type: "wpn", w2h: true, dmgS: 25, dmgL: 25, hit: 2, dmgBonus: 3, spd: 1.1, req: "knight", safe: 6, p: 380000, legend: true, gachaWeight: 1, eff: "pierce", pierceChance: 90, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王執掌的雙手長矛，矛尖所向皆化作瘟疫橫行之地。穿透90%；攻擊時10%機率施放疾病術。" },
-        "wpn_demonking_dual": { n: "惡魔王雙刀", type: "wpn", w2h: true, dmgS: 18, dmgL: 16, hit: 5, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 420000, legend: true, gachaWeight: 1, eff: "combo", procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王手中的雙刀，交錯的刃光帶來病厄與死亡。雙擊；攻擊時10%機率施放疾病術。" },
-        "wpn_demonking_2hsword": { n: "惡魔王雙手劍", type: "wpn", w2h: true, dmgS: 23, dmgL: 24, hit: 1, dmgBonus: 5, spd: 0.9, req: "knight", safe: 6, p: 354510, legend: true, gachaWeight: 1, eff: "cleave", procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王曾以此巨劍劈開無數生靈，劍鋒至今仍滲著腐敗的氣息。切割；攻擊時10%機率施放疾病術。" },
-        "wpn_demonking_wand": { n: "惡魔王魔杖", type: "wpn", w2h: true, dmgS: 12, dmgL: 12, hit: 6, dmgBonus: 2, spd: 1.0, req: "mage", safe: 6, p: 494510, legend: true, gachaWeight: 1, eff: "magicburst", mdmg: 2, mpR: 10, mpOnHit: true, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王施法用的魔杖，杖端凝著不散的瘴癘之力。魔爆；魔法傷害+2、MP自然恢復+10；一般攻擊命中恢復MP（+7起每強化額外+1）；攻擊時10%機率施放疾病術。" },
-        "wpn_demonking_bow": { n: "惡魔王弓", type: "wpn", isBow: true, ranged: true, rapidfire: 90, w2h: true, dmgS: 5, dmgL: 5, hit: 4, dmgBonus: 6, spd: 1.0, req: "elf", safe: 6, p: 547300, legend: true, gachaWeight: 1, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王的長弓，射出的每一箭都帶著瘟疫的詛咒。連射90%；攻擊時10%機率施放疾病術。" },
+        "wpn_demonking_spear": { n: "惡魔王矛", type: "wpn", w2h: true, dmgS: 25, dmgL: 25, hit: 2, dmgBonus: 3, spd: 1.1, req: "knight", safe: 6, p: 380000, legend: true, gachaWeight: 1, eff: "pierce", pierceChance: 90, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王執掌的雙手長矛，矛尖所向皆化作瘟疫橫行之地。" },
+        "wpn_demonking_dual": { n: "惡魔王雙刀", type: "wpn", w2h: true, dmgS: 18, dmgL: 16, hit: 5, dmgBonus: 3, spd: 0.8, req: "dark", safe: 6, p: 420000, legend: true, gachaWeight: 1, eff: "combo", procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王手中的雙刀，交錯的刃光帶來病厄與死亡。" },
+        "wpn_demonking_2hsword": { n: "惡魔王雙手劍", type: "wpn", w2h: true, dmgS: 23, dmgL: 24, hit: 1, dmgBonus: 5, spd: 0.9, req: "knight", safe: 6, p: 354510, legend: true, gachaWeight: 1, eff: "cleave", procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王曾以此巨劍劈開無數生靈，劍鋒至今仍滲著腐敗的氣息。" },
+        "wpn_demonking_wand": { n: "惡魔王魔杖", type: "wpn", w2h: true, dmgS: 12, dmgL: 12, hit: 6, dmgBonus: 2, spd: 1.0, req: "mage", safe: 6, p: 494510, legend: true, gachaWeight: 1, eff: "magicburst", mdmg: 2, mpR: 10, mpOnHit: true, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王施法用的魔杖，杖端凝著不散的瘴癘之力。" },
+        "wpn_demonking_bow": { n: "惡魔王弓", type: "wpn", isBow: true, ranged: true, rapidfire: 90, w2h: true, dmgS: 5, dmgL: 5, hit: 4, dmgBonus: 6, spd: 1.0, req: "elf", safe: 6, p: 547300, legend: true, gachaWeight: 1, procStatusSkill: { skId: "sk_disease", rate: 10 }, d: "惡魔王的長弓，射出的每一箭都帶著瘟疫的詛咒。" },
         // ===== 🏝️ 遺忘之島：武器 =====
         "wpn_greatsword": { n: "巨劍", type: "wpn", w2h: true, dmgS: 20, dmgL: 14, hit: 0, dmgBonus: 0, spd: 1, req: "knight", safe: 6, p: 15000, gachaWeight: 80, eff: "cleave", d: "沉重而厚實的雙手巨劍，一揮便能將成排敵人一同斬開。切割。" },
         "wpn_taurus_axe": { n: "牛人斧頭", type: "wpn", w2h: true, dmgS: 22, dmgL: 24, hit: 0, dmgBonus: 0, spd: 1.2, req: "knight", safe: 6, p: 15000, gachaWeight: 30, eff: "crush", d: "牛人族戰士慣用的雙手鈍器，蠻力一砸足以震碎骨骼。重擊。" },
-        "wpn_shaha_bow": { n: "沙哈之弓", type: "wpn", isBow: true, ranged: true, w2h: true, legend: true, rapidfire: 70, dmgS: 4, dmgL: 4, hit: 2, dmgBonus: 5, spd: 1.0, req: "elf", safe: 6, p: 230000, gachaWeight: 0, shahaBow: true, d: "傳說中神射手沙哈所遺的名弓，拉滿弦時便有清風自箭袋憑空生出。連射 70%；裝備時箭矢欄位自動變為彈藥無限的沙哈之箭（小型1D15、大型1D12），卸下沙哈之弓即消失。" },
+        "wpn_shaha_bow": { n: "沙哈之弓", type: "wpn", isBow: true, ranged: true, w2h: true, legend: true, rapidfire: 70, dmgS: 4, dmgL: 4, hit: 2, dmgBonus: 5, spd: 1.0, req: "elf", safe: 6, p: 230000, gachaWeight: 0, shahaBow: true, d: "傳說中神射手沙哈所遺的名弓，拉滿弦時便有清風自箭袋憑空生出。" },
         "wpn_shaha_arrow": { n: "沙哈之箭", type: "wpn", isArrow: true, dmgS: 15, dmgL: 12, hit: 0, p: 0, gachaWeight: 0, shahaArrow: true, noSell: true, d: "沙哈之弓憑風凝成的箭矢，取之不竭（卸下沙哈之弓即消失）。" },
         // ===== 🏝️ 遺忘之島：防具 =====
-        "hlm_wind": { n: "風之頭盔", type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 26000, gachaWeight: 10, windHelm: true, d: "以疾風祝福鍛成的頭盔，戴上時身形彷彿被風托起。施放加速術、強力加速術不消耗 MP（裝備或放在背包都有效）。" },
-        "hlm_darkelf": { n: "黑暗妖精頭箍", type: "arm", slot: "helm", ac: 1, req: "elf,dark", safe: 6, p: 6000, gachaWeight: 30, d: "承載著高等黑暗精靈血脈記憶的頭箍，集齊全套方能喚醒沉睡的暗夜之姿。<br>【黑暗妖精套裝】3 件齊：AC-3、HP自然恢復-2、MP自然恢復-7、力量-2、敏捷+2，變身「高等黑暗精靈」（遠距離傷害+5、遠距離命中+5、套用黑暗精靈的攻擊速度，可與自我加速藥水/勇水/妖精餅乾疊加）。" },
-        "amr_darkelf": { n: "黑暗妖精鱗甲", type: "arm", slot: "armor", ac: 1, req: "elf,dark", safe: 6, p: 10000, gachaWeight: 30, d: "以暗影精煉而成的鱗甲，與其餘部件呼應時便流轉著幽冷光澤。<br>【黑暗妖精套裝】3 件齊：AC-3、HP自然恢復-2、MP自然恢復-7、力量-2、敏捷+2，變身「高等黑暗精靈」（遠距離傷害+5、遠距離命中+5、套用黑暗精靈的攻擊速度，可與自我加速藥水/勇水/妖精餅乾疊加）。" },
-        "bot_darkelf": { n: "黑暗妖精涼鞋", type: "arm", slot: "boots", ac: 1, req: "elf,dark", safe: 6, p: 6000, gachaWeight: 30, d: "步履無聲的黑暗妖精涼鞋，齊備全套時方顯其敏捷真章。<br>【黑暗妖精套裝】3 件齊：AC-3、HP自然恢復-2、MP自然恢復-7、力量-2、敏捷+2，變身「高等黑暗精靈」（遠距離傷害+5、遠距離命中+5、套用黑暗精靈的攻擊速度，可與自我加速藥水/勇水/妖精餅乾疊加）。" },
+        "hlm_wind": { n: "風之頭盔", type: "arm", slot: "helm", ac: 2, req: "mage", safe: 4, p: 26000, gachaWeight: 10, windHelm: true, d: "以疾風祝福鍛成的頭盔，戴上時身形彷彿被風托起。" },
+        "hlm_darkelf": { n: "黑暗妖精頭箍", type: "arm", slot: "helm", ac: 1, req: "elf,dark", safe: 6, p: 6000, gachaWeight: 30, d: "承載著高等黑暗精靈血脈記憶的頭箍，集齊全套方能喚醒沉睡的暗夜之姿。" },
+        "amr_darkelf": { n: "黑暗妖精鱗甲", type: "arm", slot: "armor", ac: 1, req: "elf,dark", safe: 6, p: 10000, gachaWeight: 30, d: "以暗影精煉而成的鱗甲，與其餘部件呼應時便流轉著幽冷光澤。" },
+        "bot_darkelf": { n: "黑暗妖精涼鞋", type: "arm", slot: "boots", ac: 1, req: "elf,dark", safe: 6, p: 6000, gachaWeight: 30, d: "步履無聲的黑暗妖精涼鞋，齊備全套時方顯其敏捷真章。" },
         // ===== 🏝️ 遺忘之島：飾品 =====
-        "rng_harpy": { n: "哈維戒指", type: "acc", slot: "ring", ac: 0, resWind: 10, mpR: 1, req: "all", safe: 0, p: 100000, gachaWeight: 1, d: "鑲嵌哈維羽風的戒指，戴上時指間隱隱有微風盤旋。風屬性抗性+10、MP自然恢復+1。" },
+        "rng_harpy": { n: "哈維戒指", type: "acc", slot: "ring", ac: 0, resWind: 10, mpR: 1, req: "all", safe: 0, p: 100000, gachaWeight: 1, d: "鑲嵌哈維羽風的戒指，戴上時指間隱隱有微風盤旋。" },
         // ===== 🏝️ 遺忘之島：製作材料 =====
         "item_ancient_scroll": { n: "古代的卷軸", type: "etc", p: 1, c: "text-amber-300", noUse: true, gachaWeight: 0, d: "製作材料。" },
         "item_wind_tear": { n: "風之淚", type: "etc", p: 1, c: "text-cyan-300", noUse: true, gachaWeight: 0, d: "製作材料。沙哈之弓的材料之一。" },
@@ -1307,26 +1377,26 @@ const DB = {
         "item_forgotten_robe": { n: "被遺忘的長袍", type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "製作材料。" },
         "item_forgotten_plate": { n: "被遺忘的金屬盔甲", type: "etc", p: 1, c: "text-blue-300", noUse: true, gachaWeight: 0, d: "製作材料。" },
         // ===== 🏛️ 古代/古老裝備（威頓村 客盧亞 製作）=====
-        "armguard_archer": { n: "古代神射臂甲", type: "arm", slot: "shield", ac: 0, mhp: 80, req: "all", safe: 0, p: 100000, gachaWeight: 0, armguard: { stat: "rangedDmg", base: 1, th: [1, 2, 3] }, d: "古代神射手綁縛拉弦之臂的護甲，仍留有他百步穿楊的氣度（裝於副手，可與雙手武器並用）。HP+80、遠距離傷害+1；強化達 +5/+7/+9 時遠距離傷害改為 +2/+3/+4（取最高階、非累加）。每強化+1，HP+10。" },
-        "armguard_fighter": { n: "古代鬥士臂甲", type: "arm", slot: "shield", ac: 0, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", safe: 0, p: 100000, gachaWeight: 0, armguard: { stat: "meleeDmg", base: 1, th: [1, 2, 3] }, d: "古代競技場鬥士磨礪近身搏殺的臂甲，刻滿了無數場生死搏鬥的痕跡（裝於副手，可與雙手武器並用）。全屬性抗性+5、近距離傷害+1；強化達 +5/+7/+9 時近距離傷害改為 +2/+3/+4（取最高階、非累加）。每強化+1，HP+10。" },
+        "armguard_archer": { n: "古代神射臂甲", type: "arm", slot: "shield", ac: 0, mhp: 80, req: "all", safe: 0, p: 100000, gachaWeight: 0, armguard: { stat: "rangedDmg", base: 1, th: [1, 2, 3] }, d: "古代神射手綁縛拉弦之臂的護甲，仍留有他百步穿楊的氣度（裝於副手，可與雙手武器並用）。" },
+        "armguard_fighter": { n: "古代鬥士臂甲", type: "arm", slot: "shield", ac: 0, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", safe: 0, p: 100000, gachaWeight: 0, armguard: { stat: "meleeDmg", base: 1, th: [1, 2, 3] }, d: "古代競技場鬥士磨礪近身搏殺的臂甲，刻滿了無數場生死搏鬥的痕跡（裝於副手，可與雙手武器並用）。" },
         "wpn_old_sword": { n: "古老的劍", type: "wpn", dmgS: 35, dmgL: 20, hit: 5, dmgBonus: 0, spd: 0.8, req: "knight,elf,dark", safe: 0, p: 15000, gachaWeight: 0, noEnhance: true, d: "塵封已久的古代單手劍，劍身雖舊，鋒芒卻不減當年。反擊、居合；無法強化。" },
         "wpn_old_greatsword": { n: "古老的巨劍", type: "wpn", w2h: true, dmgS: 27, dmgL: 45, hit: 3, dmgBonus: 3, spd: 0.9, req: "knight", safe: 0, p: 15000, gachaWeight: 0, eff: "cleave", noEnhance: true, d: "古老戰場上遺落的雙手巨劍，沉甸甸的劍身仍能一掃千軍。切割；無法強化。" },
-        "wpn_old_xbow": { n: "古老的弩槍", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 90, dmgS: 3, dmgL: 3, hit: 5, dmgBonus: 2, spd: 0.9, req: "elf,dark", safe: 6, p: 15000, gachaWeight: 0, d: "古代工匠巧製的單手弩槍，是有史以來第一把可單手持握的弓。連射90%；可同時裝備盾牌或臂甲。" },
-        "wpn_ancient_spear": { n: "古代神之槍", type: "wpn", w2h: true, legend: true, dmgS: 27, dmgL: 30, hit: 3, dmgBonus: 5, spd: 1.1, req: "knight", safe: 6, p: 465000, gachaWeight: 0, eff: "pierce", pierceChance: 90, d: "傳說由古代神祇親手持握的雙手神槍，槍尖所向無可阻擋。穿透90%。" },
+        "wpn_old_xbow": { n: "古老的弩槍", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 90, dmgS: 3, dmgL: 3, hit: 5, dmgBonus: 2, spd: 0.9, req: "elf,dark", safe: 6, p: 15000, gachaWeight: 0, d: "古代工匠巧製的單手弩槍，是有史以來第一把可單手持握的弓。" },
+        "wpn_ancient_spear": { n: "古代神之槍", type: "wpn", w2h: true, legend: true, dmgS: 27, dmgL: 30, hit: 3, dmgBonus: 5, spd: 1.1, req: "knight", safe: 6, p: 465000, gachaWeight: 0, eff: "pierce", pierceChance: 90, d: "傳說由古代神祇親手持握的雙手神槍，槍尖所向無可阻擋。" },
         "wpn_ancient_axe": { n: "古代神之斧", type: "wpn", legend: true, dmgS: 25, dmgL: 28, hit: 3, dmgBonus: 8, spd: 1, req: "warrior", safe: 6, p: 465000, gachaWeight: 0, d: "古代神祇腰間配掛的單手神斧，劈下時連神明也為之低首。鈍擊。" },
-        "wpn_ancient_darkelf_sword": { n: "古代黑暗妖精之劍", type: "wpn", dmgS: 12, dmgL: 12, hit: 3, dmgBonus: 1, spd: 0.9, req: "elf", safe: 6, p: 68000, gachaWeight: 1, unBonus: true, dex: 1, mhp: 50, d: "古代黑暗妖精所執的單手劍，劍身流轉著暗夜的寒光。反擊、對不死 / 狼人加成；近距離傷害+1、近距離命中+3、敏捷+1、HP+50。" },
-        "wpn_ancient_elf_xbow": { n: "古代妖精弩槍", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 55, dmgS: 3, dmgL: 3, hit: 1, dmgBonus: 2, spd: 1.0, req: "elf", safe: 6, p: 68000, gachaWeight: 1, dex: 1, d: "古代妖精打造的單手弩槍，輕巧迅捷、箭如疾風。連射55%、敏捷+1；遠距離傷害+2、遠距離命中+1；可同時裝備盾牌或臂甲。" },
+        "wpn_ancient_darkelf_sword": { n: "古代黑暗妖精之劍", type: "wpn", dmgS: 12, dmgL: 12, hit: 3, dmgBonus: 1, spd: 0.9, req: "elf", safe: 6, p: 68000, gachaWeight: 1, unBonus: true, dex: 1, mhp: 50, d: "古代黑暗妖精所執的單手劍，劍身流轉著暗夜的寒光。" },
+        "wpn_ancient_elf_xbow": { n: "古代妖精弩槍", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 55, dmgS: 3, dmgL: 3, hit: 1, dmgBonus: 2, spd: 1.0, req: "elf", safe: 6, p: 68000, gachaWeight: 1, dex: 1, d: "古代妖精打造的單手弩槍，輕巧迅捷、箭如疾風。" },
         // ===== 👹 隱藏的魔族武器（說話之島 尤麗婭以 黑暗哈汀的日記本 六選一兌換；紅惡靈逆襲＝水魔傷+吸HP / 藍惡靈奪魔＝回MP，4%+每強化1%） =====
-        "wpn_demon_sword_hidden": { n: "隱藏的魔族之劍", type: "wpn", dmgS: 23, dmgL: 25, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,elf,dragon", safe: 0, p: 28000, gachaWeight: 1, mhp: 30, ignHardSkin: true, redSpecter: true, d: "潛藏魔族之力的單手劍，劍身浮現赤紅惡靈的低語。反擊、貫穿、HP+30；近距離命中+3。攻擊時 4%（每強化 +1%）機率發動 紅惡靈逆襲：4D10 水屬性魔法傷害（受魔法傷害公式影響），並恢復造成傷害 10% 的 HP。" },
-        "wpn_demon_bow_hidden": { n: "隱藏的魔族弓箭", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 70, dmgS: 2, dmgL: 2, hit: 3, dmgBonus: 6, spd: 1.0, req: "royal,mage,elf,illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的單手弓，弦上纏繞著湛藍惡靈的氣息。連射70%；遠距離傷害+6、遠距離命中+3；可同時裝備盾牌或臂甲。攻擊時 4%（每強化 +1%）機率發動 藍惡靈奪魔：恢復 3D6 MP。" },
-        "wpn_demon_wand_hidden": { n: "隱藏的魔族魔杖", type: "wpn", dmgS: 15, dmgL: 16, hit: 3, dmgBonus: 0, spd: 1.0, mdmg: 1, mpR: 3, req: "mage,illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的魔杖，杖頭湛藍惡靈共鳴不息。共鳴、貫穿、魔法傷害+1、MP自然恢復量+3；近距離命中+3。攻擊時 4%（每強化 +1%）機率發動 藍惡靈奪魔：恢復 3D6 MP。" },
-        "wpn_demon_claw_hidden": { n: "隱藏的魔族鋼爪", type: "wpn", w2h: true, dmgS: 24, dmgL: 26, hit: 3, dmgBonus: 0, spd: 0.9, eff: "combo", comboRate: 33, req: "dark", safe: 0, p: 28000, gachaWeight: 1, redSpecter: true, d: "潛藏魔族之力的雙手鋼爪，爪尖撕扯間迸出赤紅惡靈之火。雙擊33%、貫穿；近距離命中+3。攻擊時 4%（每強化 +1%）機率發動 紅惡靈逆襲：4D10 水屬性魔法傷害（受魔法傷害公式影響），並恢復造成傷害 10% 的 HP。" },
-        "wpn_demon_chain_hidden": { n: "隱藏的魔族鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, dmgS: 25, dmgL: 26, hit: 3, dmgBonus: 0, spd: 0.9, req: "dragon", safe: 0, p: 28000, gachaWeight: 1, redSpecter: true, d: "潛藏魔族之力的雙手鎖鏈劍，鏈節間糾纏著赤紅惡靈的怨念。弱點曝光、貫穿；近距離命中+3。攻擊時 4%（每強化 +1%）機率發動 紅惡靈逆襲：4D10 水屬性魔法傷害（受魔法傷害公式影響），並恢復造成傷害 10% 的 HP。" },
-        "wpn_demon_qigu_hidden": { n: "隱藏的魔族奇古獸", type: "wpn", qigu: true, dmgS: 28, dmgL: 28, hit: 3, dmgBonus: 0, spd: 1.0, mdmg: 1, mpR: 1, req: "illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的奇古獸，獸身散發湛藍惡靈的魔力。奇古獸（魔法傷害）、魔法傷害+1、MP自然恢復量+1；近距離命中+3。攻擊時 4%（每強化 +1%）機率發動 藍惡靈奪魔：恢復 3D6 MP。" },
-        "amr_old_plate": { n: "古老的金屬盔甲", type: "arm", slot: "armor", ac: 16, hpR: 1, req: "knight", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "歷經歲月仍未鏽蝕的古代金屬盔甲，沉默地守護著穿戴者。HP自然恢復+1；無法強化。" },
-        "amr_old_scale": { n: "古老的鱗甲", type: "arm", slot: "armor", ac: 14, hpR: 8, mpR: 4, req: "knight,elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代工匠以層層鱗片疊織的鎧甲，輕巧卻不失堅韌。HP自然恢復+8、MP自然恢復+4；無法強化。" },
-        "amr_old_leather": { n: "古老的皮盔甲", type: "arm", slot: "armor", ac: 14, hpR: 4, mpR: 8, req: "elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代遊俠所穿的皮製戰甲，柔軟貼身，行動無拘。HP自然恢復+4、MP自然恢復+8；無法強化。" },
-        "amr_old_robe": { n: "古老的長袍", type: "arm", slot: "armor", ac: 12, mpR: 12, req: "mage", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代術士披掛的長袍，織線間仍縈繞著淡淡的魔力餘韻。MP自然恢復+12；無法強化。" },
+        "wpn_demon_sword_hidden": { n: "隱藏的魔族之劍", type: "wpn", dmgS: 23, dmgL: 25, hit: 3, dmgBonus: 0, spd: 0.9, req: "royal,knight,elf,dragon", safe: 0, p: 28000, gachaWeight: 1, mhp: 30, ignHardSkin: true, redSpecter: true, d: "潛藏魔族之力的單手劍，劍身浮現赤紅惡靈的低語。" },
+        "wpn_demon_bow_hidden": { n: "隱藏的魔族弓箭", type: "wpn", isBow: true, ranged: true, oneHand: true, rapidfire: 70, dmgS: 2, dmgL: 2, hit: 3, dmgBonus: 6, spd: 1.0, req: "royal,mage,elf,illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的單手弓，弦上纏繞著湛藍惡靈的氣息。" },
+        "wpn_demon_wand_hidden": { n: "隱藏的魔族魔杖", type: "wpn", dmgS: 15, dmgL: 16, hit: 3, dmgBonus: 0, spd: 1.0, mdmg: 1, mpR: 3, req: "mage,illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的魔杖，杖頭湛藍惡靈共鳴不息。" },
+        "wpn_demon_claw_hidden": { n: "隱藏的魔族鋼爪", type: "wpn", w2h: true, dmgS: 24, dmgL: 26, hit: 3, dmgBonus: 0, spd: 0.9, eff: "combo", comboRate: 33, req: "dark", safe: 0, p: 28000, gachaWeight: 1, redSpecter: true, d: "潛藏魔族之力的雙手鋼爪，爪尖撕扯間迸出赤紅惡靈之火。" },
+        "wpn_demon_chain_hidden": { n: "隱藏的魔族鎖鏈劍", type: "wpn", w2h: true, chainsword: true, weakExpose: true, dmgS: 25, dmgL: 26, hit: 3, dmgBonus: 0, spd: 0.9, req: "dragon", safe: 0, p: 28000, gachaWeight: 1, redSpecter: true, d: "潛藏魔族之力的雙手鎖鏈劍，鏈節間糾纏著赤紅惡靈的怨念。" },
+        "wpn_demon_qigu_hidden": { n: "隱藏的魔族奇古獸", type: "wpn", qigu: true, dmgS: 28, dmgL: 28, hit: 3, dmgBonus: 0, spd: 1.0, mdmg: 1, mpR: 1, req: "illusion", safe: 0, p: 28000, gachaWeight: 1, blueSpecter: true, d: "潛藏魔族之力的奇古獸，獸身散發湛藍惡靈的魔力。" },
+        "amr_old_plate": { n: "古老的金屬盔甲", type: "arm", slot: "armor", ac: 16, hpR: 1, req: "knight", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "歷經歲月仍未鏽蝕的古代金屬盔甲，沉默地守護著穿戴者。" },
+        "amr_old_scale": { n: "古老的鱗甲", type: "arm", slot: "armor", ac: 14, hpR: 8, mpR: 4, req: "knight,elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代工匠以層層鱗片疊織的鎧甲，輕巧卻不失堅韌。" },
+        "amr_old_leather": { n: "古老的皮盔甲", type: "arm", slot: "armor", ac: 14, hpR: 4, mpR: 8, req: "elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代遊俠所穿的皮製戰甲，柔軟貼身，行動無拘。" },
+        "amr_old_robe": { n: "古老的長袍", type: "arm", slot: "armor", ac: 12, mpR: 12, req: "mage", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代術士披掛的長袍，織線間仍縈繞著淡淡的魔力餘韻。" },
         // ===== 法師魔法書 =====
         "bk_heal1": { type: "skillbk", n: "魔法書(初級治癒術)", p: 100, sk: "sk_heal1", gachaWeight: 0 },
         "bk_sunlight": { type: "skillbk", n: "魔法書(日光術)", p: 100, sk: "sk_sunlight", gachaWeight: 0 },
@@ -1391,8 +1461,8 @@ const DB = {
 
         "bk_full_heal": { type: "skillbk", n: "魔法書(全部治癒術)", p: 54000, sk: "sk_full_heal", gachaWeight: 40 },
         "bk_blizzard": { type: "skillbk", n: "魔法書(冰雪暴)", p: 54000, sk: "sk_blizzard", gachaWeight: 1 },
-        "bk_blizzard_storm": { type: "skillbk", n: "魔法書(冰雪颶風)", p: 102400, sk: "sk_blizzard_storm", gachaWeight: 1, d: "習得「冰雪颶風」（十階魔法・水屬性・全體）：於輔助欄勾選維持的傷害技能，持續 32 秒內每 4 秒對全體敵人造成 1D10 水屬性魔法傷害，並依（魔法命中-3）機率使其冰凍；效果結束後才能再次施放。" },
-        "bk_fire_prison": { type: "skillbk", n: "魔法書(火牢)", p: 25600, sk: "sk_fire_prison", gachaWeight: 1, d: "習得「火牢」（八階魔法・火屬性・全體）：於輔助欄勾選維持的傷害技能，持續 10 秒內每 2 秒對全體敵人造成 1D15 火屬性魔法傷害；效果結束後才能再次施放。" },
+        "bk_blizzard_storm": { type: "skillbk", n: "魔法書(冰雪颶風)", p: 102400, sk: "sk_blizzard_storm", gachaWeight: 1, d: "記載著「冰雪颶風」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
+        "bk_fire_prison": { type: "skillbk", n: "魔法書(火牢)", p: 25600, sk: "sk_fire_prison", gachaWeight: 1, d: "記載著「火牢」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
         "bk_quake": { type: "skillbk", n: "魔法書(震裂術)", p: 54000, sk: "sk_quake", gachaWeight: 10 },
         "bk_invisible": { type: "skillbk", n: "魔法書(隱身術)", p: 54000, sk: "sk_invisible", gachaWeight: 1 },
         "bk_resurrection": { type: "skillbk", n: "魔法書(返生術)", p: 54000, sk: "sk_resurrection", gachaWeight: 1 },
@@ -1406,7 +1476,7 @@ const DB = {
 
         "bk_meteor": { type: "skillbk", n: "魔法書(流星雨)", p: 250000, sk: "sk_meteor", gachaWeight: 1 },
         "bk_soul_up": { type: "skillbk", n: "魔法書(靈魂昇華)", p: 250000, sk: "sk_soul_up", gachaWeight: 1 },
-        "bk_abs_barrier": { type: "skillbk", n: "魔法書(絕對屏障)", p: 102400, sk: "sk_abs_barrier", gachaWeight: 1, d: "習得「絕對屏障」（手動・增益・持續7秒）：施放後與世界隔絕——無法攻擊、施法、使用藥水與道具，不會自然恢復HP/MP，也不會受到任何傷害；效果結束後需等待12秒才能再次使用。" },
+        "bk_abs_barrier": { type: "skillbk", n: "魔法書(絕對屏障)", p: 102400, sk: "sk_abs_barrier", gachaWeight: 1, d: "記載著「絕對屏障」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
         "bk_disintegrate": { type: "skillbk", n: "魔法書(究極光裂術)", p: 250000, sk: "sk_disintegrate", gachaWeight: 1 },
 
         // ===== 騎士技術書 =====
@@ -1414,7 +1484,7 @@ const DB = {
         "bk_reduction_armor": { type: "skillbk", n: "技術書(增幅防禦)", p: 30000, sk: "sk_reduction_armor", gachaWeight: 10 },
         "bk_shock_stun": { type: "skillbk", n: "技術書(衝擊之暈)", p: 30000, sk: "sk_shock_stun", gachaWeight: 10 },
         "bk_spike_armor": { type: "skillbk", n: "技術書(尖刺盔甲)", p: 30000, sk: "sk_spike_armor", gachaWeight: 1 },
-        "bk_counter_barrier": { type: "skillbk", n: "技術書(反擊屏障)", p: 30000, sk: "sk_counter_barrier", gachaWeight: 1, d: "習得「反擊屏障」（增益・持續64秒）：裝備雙手武器時可發動反擊；裝備原生有反擊/居合的武器時，反擊與居合最終傷害×2。" },
+        "bk_counter_barrier": { type: "skillbk", n: "技術書(反擊屏障)", p: 30000, sk: "sk_counter_barrier", gachaWeight: 1, d: "記載著「反擊屏障」術式的古老魔法書，研讀後可將咒文銘刻於記憶。" },
 
         // ===== 妖精精靈水晶 =====
         "bk_elf_mr": { type: "skillbk", n: "精靈水晶(魔法防禦)", p: 3000, sk: "sk_elf_mr", gachaWeight: 0 },
@@ -1438,23 +1508,23 @@ const DB = {
         "bk_elf_summon": { type: "skillbk", n: "精靈水晶(召喚屬性精靈)", p: 30000, sk: "sk_elf_summon", gachaWeight: 20 },
         "bk_elf_dancefire": { type: "skillbk", n: "精靈水晶(舞躍之火)", p: 30000, sk: "sk_elf_dancefire", gachaWeight: 10 },
         "bk_elf_stormeye": { type: "skillbk", n: "精靈水晶(暴風之眼)", p: 30000, sk: "sk_elf_stormeye", gachaWeight: 10 },
-        "bk_elf_mirror": { type: "skillbk", n: "精靈水晶(鏡反射)", p: 16000, sk: "sk_elf_mirror", gachaWeight: 1, d: "習得「鏡反射」（輔助・增益・持續16秒）：受到魔法傷害時，有（精神）% 機率（每 1 點精神 +1%）對施法目標造成與自身所受傷害等量的必中固定傷害。" },
+        "bk_elf_mirror": { type: "skillbk", n: "精靈水晶(鏡反射)", p: 16000, sk: "sk_elf_mirror", gachaWeight: 1, d: "封存著「鏡反射」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
         "bk_elf_earthshield": { type: "skillbk", n: "精靈水晶(大地屏障)", p: 30000, sk: "sk_elf_earthshield", gachaWeight: 10 },
         "bk_elf_lifespring": { type: "skillbk", n: "精靈水晶(生命之泉)", p: 30000, sk: "sk_elf_lifespring", gachaWeight: 10 },
-        "bk_elf_earthbless": { type: "skillbk", n: "精靈水晶(大地的祝福)", p: 30000, sk: "sk_elf_earthbless", gachaWeight: 10, d: "習得「大地的祝福」（增益・大地屬性）。施放後全隊（玩家＋所有傭兵）防禦(AC)-7，持續 1200 秒。可學等級 40。消耗 MP 35。" },
+        "bk_elf_earthbless": { type: "skillbk", n: "精靈水晶(大地的祝福)", p: 30000, sk: "sk_elf_earthbless", gachaWeight: 10, d: "封存著「大地的祝福」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
 
         "bk_elf_summon2": { type: "skillbk", n: "精靈水晶(召喚強力屬性精靈)", p: 60000, sk: "sk_elf_summon2", gachaWeight: 1 },
         "bk_elf_lifebless": { type: "skillbk", n: "精靈水晶(生命的祝福)", p: 60000, sk: "sk_elf_lifebless", gachaWeight: 5 },
         "bk_elf_seal": { type: "skillbk", n: "精靈水晶(封印禁地)", p: 60000, sk: "sk_elf_seal", gachaWeight: 10 },
         "bk_elf_blazewpn": { type: "skillbk", n: "精靈水晶(烈炎武器)", p: 60000, sk: "sk_elf_blazewpn", gachaWeight: 1 },
-        "bk_elf_flamesoul": { type: "skillbk", n: "精靈水晶(烈焰之魂)", p: 16000, sk: "sk_elf_flamesoul", gachaWeight: 1, d: "習得「烈焰之魂」（五階精靈魔法・火屬性）。持續 128 秒內，近距離一般攻擊的武器擲骰必定為最大值；效果結束後才能再次施放。" },
-        "bk_elf_physboost": { type: "skillbk", n: "精靈水晶(體能激發)", p: 16000, sk: "sk_elf_physboost", gachaWeight: 20, d: "習得「體能激發」（五階精靈魔法・地屬性・增益）。持續 960 秒內，負重狀態下仍可自然恢復 HP、MP；效果結束後才能再次施放。" },
-        "bk_elf_energyboost": { type: "skillbk", n: "精靈水晶(能量激發)", p: 16000, sk: "sk_elf_energyboost", gachaWeight: 20, d: "習得「能量激發」（五階精靈魔法・火屬性・增益）。持續 960 秒內，負重狀態下仍可自然恢復 HP、MP；效果結束後才能再次施放。" },
-        "bk_elf_attrfire": { type: "skillbk", n: "精靈水晶(屬性之火)", p: 16000, sk: "sk_elf_attrfire", gachaWeight: 1, d: "習得「屬性之火」（五階精靈魔法・火屬性・增益）。持續 320 秒內，一般攻擊有 30% 機率造成 1.5 倍傷害；效果結束後才能再次施放。" },
-        "bk_elf_preciseshot": { type: "skillbk", n: "精靈水晶(精準射擊)", p: 16000, sk: "sk_elf_preciseshot", gachaWeight: 1, d: "習得「精準射擊」（五階精靈魔法・風屬性・輔助・增益）。持續 64 秒內，一般攻擊的最高命中率可提升至 100%；效果結束後才能再次施放。消耗 MP 15。" },
+        "bk_elf_flamesoul": { type: "skillbk", n: "精靈水晶(烈焰之魂)", p: 16000, sk: "sk_elf_flamesoul", gachaWeight: 1, d: "封存著「烈焰之魂」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
+        "bk_elf_physboost": { type: "skillbk", n: "精靈水晶(體能激發)", p: 16000, sk: "sk_elf_physboost", gachaWeight: 20, d: "封存著「體能激發」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
+        "bk_elf_energyboost": { type: "skillbk", n: "精靈水晶(能量激發)", p: 16000, sk: "sk_elf_energyboost", gachaWeight: 20, d: "封存著「能量激發」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
+        "bk_elf_attrfire": { type: "skillbk", n: "精靈水晶(屬性之火)", p: 16000, sk: "sk_elf_attrfire", gachaWeight: 1, d: "封存著「屬性之火」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
+        "bk_elf_preciseshot": { type: "skillbk", n: "精靈水晶(精準射擊)", p: 16000, sk: "sk_elf_preciseshot", gachaWeight: 1, d: "封存著「精準射擊」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
         "bk_elf_stormshot": { type: "skillbk", n: "精靈水晶(暴風神射)", p: 60000, sk: "sk_elf_stormshot", gachaWeight: 1 },
-        "bk_elf_steelguard": { type: "skillbk", n: "精靈水晶(鋼鐵防護)", p: 60000, sk: "sk_elf_steelguard", gachaWeight: 1, d: "習得「鋼鐵防護」（增益・大地屬性）。施放後全隊（玩家＋所有傭兵）受到的傷害減少 5%，持續 1200 秒。可學等級 50。消耗 MP 30。" },
-        "bk_elf_watervital": { type: "skillbk", n: "精靈水晶(水之元氣)", p: 4000, sk: "sk_elf_watervital", gachaWeight: 10, d: "習得「水之元氣」（三階精靈魔法・水屬性・增益）。持續 64 秒內，全隊（玩家＋所有傭兵）下次受到治癒術治癒時恢復量加倍（持續回復 HoT 不計・全隊共用一次），觸發後 7 秒冷卻；效果結束後才能再次施放。" },
+        "bk_elf_steelguard": { type: "skillbk", n: "精靈水晶(鋼鐵防護)", p: 60000, sk: "sk_elf_steelguard", gachaWeight: 1, d: "封存著「鋼鐵防護」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
+        "bk_elf_watervital": { type: "skillbk", n: "精靈水晶(水之元氣)", p: 4000, sk: "sk_elf_watervital", gachaWeight: 10, d: "封存著「水之元氣」精靈之力的水晶，與之共鳴便能領悟其中奧祕。" },
         // ===== 黑暗精靈水晶（黑暗妖精魔法，賽帝亞販售；潘朵拉抽不到） =====
         "bk_dark_str":       { type: "skillbk", n: "黑暗精靈水晶(力量提升)", p: 500,   sk: "sk_dark_str",       gachaWeight: 0 },
         "bk_dark_mrup":      { type: "skillbk", n: "黑暗精靈水晶(影之防護)", p: 500,   sk: "sk_dark_mrup",      gachaWeight: 0 },
@@ -1472,40 +1542,40 @@ const DB = {
         "bk_dark_double":    { type: "skillbk", n: "黑暗精靈水晶(雙重破壞)", p: 12500, sk: "sk_dark_double",    gachaWeight: 10 },
         "bk_dark_armorbreak":{ type: "skillbk", n: "黑暗精靈水晶(破壞盔甲)", p: 12500, sk: "sk_dark_armorbreak", gachaWeight: 1 },
         // ===== 記憶水晶（幻術士法術，史菲爾販售）=====
-        "mem_ogre":       { type: "skillbk", n: "記憶水晶(幻覺：歐吉)", p: 1800,  sk: "sk_illu_ogre",       gachaWeight: 0, d: "習得「幻覺：歐吉」（增益）。施放後全隊（玩家＋所有傭兵）額外傷害+4、額外命中+4，持續 64 秒。可學等級 10。消耗 MP 20。" },
+        "mem_ogre":       { type: "skillbk", n: "記憶水晶(幻覺：歐吉)", p: 1800,  sk: "sk_illu_ogre",       gachaWeight: 0, d: "封存幻術「幻覺：歐吉」的記憶水晶，凝視其中便能窺見扭曲現實的祕法。" },
         "mem_confuse":    { type: "skillbk", n: "記憶水晶(混亂)",       p: 1800,  sk: "sk_illu_confuse",    gachaWeight: 0 },
         "mem_cube_burn":  { type: "skillbk", n: "記憶水晶(立方：燃燒)", p: 1800,  sk: "sk_illu_cube_burn",  gachaWeight: 0 },
         "mem_crush":      { type: "skillbk", n: "記憶水晶(粉碎能量)",   p: 1800,  sk: "sk_illu_crush",      gachaWeight: 0 },
         "mem_mirror":     { type: "skillbk", n: "記憶水晶(鏡像)",       p: 1800,  sk: "sk_illu_mirror",     gachaWeight: 0 },
         "mem_focus":      { type: "skillbk", n: "記憶水晶(專注)",       p: 4800,  sk: "sk_illu_focus",      gachaWeight: 0 },
-        "mem_lich":       { type: "skillbk", n: "記憶水晶(幻覺：巫妖)", p: 4800,  sk: "sk_illu_lich",       gachaWeight: 0, d: "習得「幻覺：巫妖」（增益）。施放後全隊（玩家＋所有傭兵）魔法傷害+2，持續 64 秒。可學等級 20。消耗 MP 20。" },
+        "mem_lich":       { type: "skillbk", n: "記憶水晶(幻覺：巫妖)", p: 4800,  sk: "sk_illu_lich",       gachaWeight: 0, d: "封存幻術「幻覺：巫妖」的記憶水晶，凝視其中便能窺見扭曲現實的祕法。" },
         "mem_mindbreak":  { type: "skillbk", n: "記憶水晶(心靈破壞)",   p: 4800,  sk: "sk_illu_mindbreak",  gachaWeight: 20 },
         "mem_cube_quake": { type: "skillbk", n: "記憶水晶(立方：地裂)", p: 4800,  sk: "sk_illu_cube_quake", gachaWeight: 20 },
         "mem_skullbreak": { type: "skillbk", n: "記憶水晶(骷髏毀壞)",   p: 4800,  sk: "sk_illu_skullbreak", gachaWeight: 0 },
         "mem_fantasy":    { type: "skillbk", n: "記憶水晶(幻想)",       p: 10800, sk: "sk_illu_fantasy",    gachaWeight: 10 },
-        "mem_golem":      { type: "skillbk", n: "記憶水晶(幻覺：鑽石高崙)", p: 10800, sk: "sk_illu_golem",  gachaWeight: 1, d: "習得「幻覺：鑽石高崙」（增益）。施放後全隊（玩家＋所有傭兵）防禦(AC)-10，持續 64 秒。可學等級 30。消耗 MP 30、HP 25。" },
+        "mem_golem":      { type: "skillbk", n: "記憶水晶(幻覺：鑽石高崙)", p: 10800, sk: "sk_illu_golem",  gachaWeight: 1, d: "封存幻術「幻覺：鑽石高崙」的記憶水晶，凝視其中便能窺見扭曲現實的祕法。" },
         "mem_cube_shock": { type: "skillbk", n: "記憶水晶(立方：衝擊)", p: 10800, sk: "sk_illu_cube_shock", gachaWeight: 0 },
         "mem_endure":     { type: "skillbk", n: "記憶水晶(耐力)",       p: 10800, sk: "sk_illu_endure",     gachaWeight: 0 },
-        "mem_avatar":     { type: "skillbk", n: "記憶水晶(幻覺：化身)", p: 43200, sk: "sk_illu_avatar",     gachaWeight: 1, d: "習得「幻覺：化身」（增益）。施放後全隊（玩家＋所有傭兵）額外傷害+10、受到所有傷害減少 3%，持續 64 秒。可學等級 40。消耗 MP 50。" },
+        "mem_avatar":     { type: "skillbk", n: "記憶水晶(幻覺：化身)", p: 43200, sk: "sk_illu_avatar",     gachaWeight: 1, d: "封存幻術「幻覺：化身」的記憶水晶，凝視其中便能窺見扭曲現實的祕法。" },
         "mem_panic":      { type: "skillbk", n: "記憶水晶(恐慌)",       p: 43200, sk: "sk_illu_panic",      gachaWeight: 10 },
         "mem_insight":    { type: "skillbk", n: "記憶水晶(洞察)",       p: 43200, sk: "sk_illu_insight",    gachaWeight: 10 },
         "mem_cube_harmony":{ type: "skillbk", n: "記憶水晶(立方：和諧)", p: 43200, sk: "sk_illu_cube_harmony", gachaWeight: 1 },
         "mem_pain":       { type: "skillbk", n: "記憶水晶(疼痛的歡愉)", p: 43200, sk: "sk_illu_pain",       gachaWeight: 10 },
         // ===== 🐉 龍騎士書板（龍魔法，森帕爾販售一部分・其餘怪物掉落）=====
-        "bk_dragon_armor":          { type: "skillbk", n: "龍騎士書板(龍之護鎧)",     p: 2400,  sk: "sk_dragon_armor",          gachaWeight: 30, d: "習得「龍之護鎧」（一階龍魔法・增益・消耗 HP 12）。傷害減免+5，持續 1800 秒（結束才再施放）。" },
-        "bk_dragon_flameslash":     { type: "skillbk", n: "龍騎士書板(燃燒擊砍)",     p: 2400,  sk: "sk_dragon_flameslash",     gachaWeight: 0,  d: "習得「燃燒擊砍」（一階龍魔法・增益・消耗 HP 6）。須裝備近距離武器；下一次一般攻擊額外傷害+7並轉為火屬性，持續 60 秒。" },
-        "bk_dragon_guardbreak":     { type: "skillbk", n: "龍騎士書板(護衛毀滅)",     p: 2400,  sk: "sk_dragon_guardbreak",     gachaWeight: 0,  d: "習得「護衛毀滅」（一階龍魔法・攻擊・消耗 HP 20）。10% 機率使目標 AC+10，持續 32 秒。" },
-        "bk_dragon_lavaspit":       { type: "skillbk", n: "龍騎士書板(岩漿噴吐)",     p: 2400,  sk: "sk_dragon_lavaspit",       gachaWeight: 30, d: "習得「岩漿噴吐」（一階龍魔法・火屬性・全體・消耗 HP 10）。基礎傷害 5D7。" },
-        "bk_dragon_awaken_antares": { type: "skillbk", n: "龍騎士書板(覺醒：安塔瑞斯)", p: 2400,  sk: "sk_dragon_awaken_antares", gachaWeight: 10, d: "習得「覺醒：安塔瑞斯」（一階龍魔法・增益・消耗 HP 10、MP 20）。免疫中毒與麻痺、HP+(2×等級)、AC-8、攻速+20%，可與自我加速/變身/血之渴望疊加；持續 600 秒。龍騎士同時只能使用一種覺醒。" },
-        "bk_dragon_bloodlust":      { type: "skillbk", n: "龍騎士書板(血之渴望)",     p: 10800, sk: "sk_dragon_bloodlust",      gachaWeight: 10, d: "習得「血之渴望」（二階龍魔法・增益・消耗 HP 30）。攻速+15%，可與自我加速/變身/覺醒疊加；持續 300 秒。" },
-        "bk_dragon_slaughter":      { type: "skillbk", n: "龍騎士書板(屠宰者)",       p: 10800, sk: "sk_dragon_slaughter",      gachaWeight: 0,  d: "習得「屠宰者」（二階龍魔法・單體・近距離・消耗 HP 16）。須裝備近距離武器；立即額外進行 3 次近距離一般攻擊；命中時消耗目標的弱點曝光，每層額外傷害+10。" },
-        "bk_dragon_terror":         { type: "skillbk", n: "龍騎士書板(恐懼無助)",     p: 10800, sk: "sk_dragon_terror",         gachaWeight: 0,  d: "習得「恐懼無助」（二階龍魔法・攻擊・消耗 HP 12）。10% 機率使目標陷入恐懼，攻擊大幅落空，持續 16 秒。" },
-        "bk_dragon_lavabolt":       { type: "skillbk", n: "龍騎士書板(岩漿之箭)",     p: 10800, sk: "sk_dragon_lavabolt",       gachaWeight: 10, d: "習得「岩漿之箭」（二階龍魔法・單體・火屬性・消耗 HP 16）。基礎傷害 10D8。" },
-        "bk_dragon_awaken_falion":  { type: "skillbk", n: "龍騎士書板(覺醒：法利昂)",  p: 10800, sk: "sk_dragon_awaken_falion",  gachaWeight: 1,  d: "習得「覺醒：法利昂」（二階龍魔法・增益・消耗 HP 20、MP 30）。MR+15%、全屬性抗性+15、攻速+20%，可疊加；持續 600 秒。同時只能使用一種覺醒。" },
-        "bk_dragon_deadlybody":     { type: "skillbk", n: "龍騎士書板(致命身軀)",     p: 43200, sk: "sk_dragon_deadlybody",     gachaWeight: 10, d: "習得「致命身軀」（三階龍魔法・增益・消耗 HP 50）。受到攻擊時 23% 機率反射相同傷害，持續 300 秒。" },
-        "bk_dragon_deathlightning": { type: "skillbk", n: "龍騎士書板(奪命之雷)",     p: 43200, sk: "sk_dragon_deathlightning", gachaWeight: 10, d: "習得「奪命之雷」（三階龍魔法・全體・風屬性・消耗 HP 35）。基礎傷害 6D8，機率使目標暈眩。" },
-        "bk_dragon_reaper":         { type: "skillbk", n: "龍騎士書板(驚悚死神)",     p: 43200, sk: "sk_dragon_reaper",         gachaWeight: 1,  d: "習得「驚悚死神」（三階龍魔法・攻擊・消耗 HP 20）。無視目標 MR，機率使其一般攻擊傷害-20、技能傷害-20，持續 32 秒。" },
-        "bk_dragon_awaken_baraka":  { type: "skillbk", n: "龍騎士書板(覺醒：巴拉卡斯)", p: 43200, sk: "sk_dragon_awaken_baraka",  gachaWeight: 1,  d: "習得「覺醒：巴拉卡斯」（三階龍魔法・增益・消耗 HP 30、MP 50）。力量/體質/敏捷/智力/精神+3、額外命中+5、攻速+20%，可疊加；持續 600 秒。同時只能使用一種覺醒。" },
+        "bk_dragon_armor":          { type: "skillbk", n: "龍騎士書板(龍之護鎧)",     p: 2400,  sk: "sk_dragon_armor",          gachaWeight: 30, d: "以龍語刻下「龍之護鎧」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_flameslash":     { type: "skillbk", n: "龍騎士書板(燃燒擊砍)",     p: 2400,  sk: "sk_dragon_flameslash",     gachaWeight: 0,  d: "以龍語刻下「燃燒擊砍」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_guardbreak":     { type: "skillbk", n: "龍騎士書板(護衛毀滅)",     p: 2400,  sk: "sk_dragon_guardbreak",     gachaWeight: 0,  d: "以龍語刻下「護衛毀滅」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_lavaspit":       { type: "skillbk", n: "龍騎士書板(岩漿噴吐)",     p: 2400,  sk: "sk_dragon_lavaspit",       gachaWeight: 30, d: "以龍語刻下「岩漿噴吐」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_awaken_antares": { type: "skillbk", n: "龍騎士書板(覺醒：安塔瑞斯)", p: 2400,  sk: "sk_dragon_awaken_antares", gachaWeight: 10, d: "龍騎士同時只能使用一種覺醒。" },
+        "bk_dragon_bloodlust":      { type: "skillbk", n: "龍騎士書板(血之渴望)",     p: 10800, sk: "sk_dragon_bloodlust",      gachaWeight: 10, d: "以龍語刻下「血之渴望」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_slaughter":      { type: "skillbk", n: "龍騎士書板(屠宰者)",       p: 10800, sk: "sk_dragon_slaughter",      gachaWeight: 0,  d: "以龍語刻下「屠宰者」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_terror":         { type: "skillbk", n: "龍騎士書板(恐懼無助)",     p: 10800, sk: "sk_dragon_terror",         gachaWeight: 0,  d: "以龍語刻下「恐懼無助」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_lavabolt":       { type: "skillbk", n: "龍騎士書板(岩漿之箭)",     p: 10800, sk: "sk_dragon_lavabolt",       gachaWeight: 10, d: "以龍語刻下「岩漿之箭」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_awaken_falion":  { type: "skillbk", n: "龍騎士書板(覺醒：法利昂)",  p: 10800, sk: "sk_dragon_awaken_falion",  gachaWeight: 1,  d: "同時只能使用一種覺醒。" },
+        "bk_dragon_deadlybody":     { type: "skillbk", n: "龍騎士書板(致命身軀)",     p: 43200, sk: "sk_dragon_deadlybody",     gachaWeight: 10, d: "以龍語刻下「致命身軀」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_deathlightning": { type: "skillbk", n: "龍騎士書板(奪命之雷)",     p: 43200, sk: "sk_dragon_deathlightning", gachaWeight: 10, d: "以龍語刻下「奪命之雷」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_reaper":         { type: "skillbk", n: "龍騎士書板(驚悚死神)",     p: 43200, sk: "sk_dragon_reaper",         gachaWeight: 1,  d: "以龍語刻下「驚悚死神」奧義的書板，唯有龍騎士能喚醒其中力量。" },
+        "bk_dragon_awaken_baraka":  { type: "skillbk", n: "龍騎士書板(覺醒：巴拉卡斯)", p: 43200, sk: "sk_dragon_awaken_baraka",  gachaWeight: 1,  d: "同時只能使用一種覺醒。" },
         // ===== 幻術士階段5：材料 / 任務道具（巴特爾製作 + 希蓮恩試煉用） =====
         "mat_rough_stone": { n: "原石碎片", p: 1, c: "text-slate-300", noUse: true, gachaWeight: 0, d: "未經雕琢的原石碎片，製作奇古獸的素材。" },
         "mat_crack_core":  { n: "龜裂之核", p: 1, c: "text-amber-300", noUse: true, gachaWeight: 0, d: "時空裂痕的紊亂之力被凝鍊成的核心，握於掌中仍隱隱震動，製作奇古獸的素材。由巴特爾以時空裂痕碎片打造。" },
@@ -1526,8 +1596,8 @@ const DB = {
         "item_kukulkan_box_basic": { n: "上鎖的庫庫爾坎初級寶箱", type: "misc", p: 0, c: "text-amber-300", gachaWeight: 0, eff: "osiris_box", boxTier: "basic", d: "羽蛇神庫庫爾坎封印的初級寶箱。使用時可選擇開啟數量，每開啟 1 個消耗 1 顆 龜裂之核，隨機獲得提卡爾寶物。" },
         "item_kukulkan_box_high":  { n: "上鎖的庫庫爾坎高級寶箱", type: "misc", p: 0, c: "text-amber-300", gachaWeight: 0, eff: "osiris_box", boxTier: "high", d: "沉睡於庫庫爾坎祭壇深處的高級寶箱，金封下藏著更豐厚的賜予。使用時可選擇開啟數量，每開啟 1 個消耗 1 顆 龜裂之核，隨機獲得更豐厚的提卡爾寶物。" },
         "item_tikal_altar_key":    { n: "提卡爾庫庫爾坎祭壇鑰匙", p: 1, c: "text-amber-300", gachaWeight: 0, d: "鐫刻羽蛇神紋章的古鑰，唯有持之者能踏入庫庫爾坎祭壇。通往提卡爾庫庫爾坎祭壇的鑰匙，持有後方可入場（進入與再臨各消耗 1 把）。" },
-        "mat_tikal_fang":          { n: "提卡爾杰弗雷庫尖牙", legend: true, type: "acc", slot: "amulet", ac: 0, str: 1, dex: 1, mhp: 30, req: "all", safe: 0, p: 300000, gachaWeight: 1, d: "羽蛇神杰弗雷庫的倒勾尖牙，蘊藏蛇神狂暴之力。<br>力量+1、敏捷+1、HP+30。" },
-        "mat_tikal_eye":           { n: "提卡爾杰弗雷庫之眼", legend: true, type: "acc", slot: "amulet", ac: 0, int: 1, con: 1, mmp: 30, req: "all", safe: 0, p: 300000, gachaWeight: 1, d: "羽蛇神杰弗雷庫凝視萬物的眼球，透出冷冽微光。<br>智力+1、體質+1、MP+30。" },
+        "mat_tikal_fang":          { n: "提卡爾杰弗雷庫尖牙", legend: true, type: "acc", slot: "amulet", ac: 0, str: 1, dex: 1, mhp: 30, req: "all", safe: 0, p: 300000, gachaWeight: 1, d: "羽蛇神杰弗雷庫的倒勾尖牙，蘊藏蛇神狂暴之力。" },
+        "mat_tikal_eye":           { n: "提卡爾杰弗雷庫之眼", legend: true, type: "acc", slot: "amulet", ac: 0, int: 1, con: 1, mmp: 30, req: "all", safe: 0, p: 300000, gachaWeight: 1, d: "羽蛇神杰弗雷庫凝視萬物的眼球，透出冷冽微光。" },
         "item_ant_fruit":  { n: "污濁安特的水果", p: 0, c: "text-emerald-300", noUse: true, noSell: true, gachaWeight: 0, d: "自腐化安特身上墜落的果實，外皮蒙著一層揮之不去的污濁。希蓮恩的試煉道具。（無法販售）" },
         "item_ant_branch": { n: "污濁安特的樹枝", p: 0, c: "text-emerald-300", noUse: true, noSell: true, gachaWeight: 0, d: "從受污染的安特折下的枯枝，仍滲著黯沉的樹液。希蓮恩的試煉道具。（無法販售）" },
         "item_ant_bark":   { n: "污濁安特的樹皮", p: 0, c: "text-emerald-300", noUse: true, noSell: true, gachaWeight: 0, d: "剝自腐化安特軀幹的樹皮，紋路間爬滿了黑斑。希蓮恩的試煉道具。（無法販售）" },
@@ -1535,78 +1605,78 @@ const DB = {
         "item_time_orb":   { n: "完成的時間水晶球", p: 0, c: "text-sky-300", noUse: true, noSell: true, gachaWeight: 0, d: "匯聚流逝歲月而成的水晶球，凝視其中彷彿能窺見時光倒流。希蓮恩的試煉道具。（無法販售）" },
         "item_wyvern_blood": { n: "翼龍之血", p: 0, c: "text-red-300", noUse: true, noSell: true, gachaWeight: 0, d: "自翼龍體內汲取的滾燙血液，蘊藏著飛龍一族的兇暴生命力。希蓮恩 50 級試煉道具。（無法販售）" },
         // ===== 🏴‍☠️ 海賊島 武器 =====
-        "wpn_pirate_dagger": { n: "血紅慾望短劍", type: "wpn", dmgS: 10, dmgL: 8, hit: 0, spd: 0.6, req: "elf,dark", safe: 6, p: 12000, gachaWeight: 60, unBonus: true, hpR: -3, d: "沁著血色慾望的短刃，渴飲不死與狼人之血。<br>對不死／狼人加成；出血；HP自然恢復量 -3。" },
-        "wpn_glory_sword": { n: "榮耀之劍", type: "wpn", dmgS: 9, dmgL: 12, hit: 0, dmgBonus: 2, spd: 0.8, req: "knight,dragon", safe: 6, p: 6000, gachaWeight: 80, d: "象徵騎士榮耀的單手劍，反擊來犯之敵。<br>反擊。" },
-        "wpn_pirate_shortblade": { n: "短刀", type: "wpn", dmgS: 10, dmgL: 12, hit: 1, spd: 0.9, req: "royal,knight,elf,dark,dragon", safe: 6, p: 5000, gachaWeight: 100, d: "輕巧易於揮舞的短刀，適合多數職業使用。<br>反擊。" },
-        "wpn_pirate_cutlass": { n: "海賊彎刀", type: "wpn", dmgS: 11, dmgL: 6, hit: 1, spd: 0.9, req: "knight,elf,dark,dragon", safe: 6, p: 8000, gachaWeight: 90, unBonus: true, d: "海賊愛用的彎刀，刃口浸染過無數亡者之血。<br>對不死／狼人加成；反擊。" },
-        "wpn_abyss_dualblade": { n: "深淵雙刀", type: "wpn", w2h: true, dmgS: 14, dmgL: 10, hit: 0, spd: 0.8, req: "dark", safe: 6, p: 10000, gachaWeight: 50, eff: "combo", comboRate: 25, ignHardSkin: true, d: "自深淵汲取力量的雙刀，撕裂一切堅硬的防護。<br>雙擊 25%；貫穿（無視硬皮額外減傷）。" },
-        "wpn_dark_crystalball": { n: "漆黑水晶球", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, spd: 1.0, req: "mage,illusion", safe: 6, p: 20000, gachaWeight: 1, mdmg: 1, cha: 2, ignHardSkin: true, d: "凝聚漆黑魔力的水晶球，魔力共鳴而出。<br>共鳴；貫穿（無視硬皮額外減傷）；魔法傷害 +1；魅力 +2。" },
-        "wpn_silent_crossbow": { n: "寂靜十字弓", type: "wpn", ranged: true, isBow: true, oneHand: true, dmgS: 3, dmgL: 2, hit: 1, dmgBonus: 1, spd: 1.0, req: "elf,illusion", safe: 6, p: 15000, gachaWeight: 30, rapidfire: 50, d: "無聲扣動的十字弓，連發如疾雨。<br>連射 50%。（單手弓，可與盾牌／臂甲並用，需裝備箭矢）" },
+        "wpn_pirate_dagger": { n: "血紅慾望短劍", type: "wpn", dmgS: 10, dmgL: 8, hit: 0, spd: 0.6, req: "elf,dark", safe: 6, p: 12000, gachaWeight: 60, unBonus: true, hpR: -3, d: "沁著血色慾望的短刃，渴飲不死與狼人之血。" },
+        "wpn_glory_sword": { n: "榮耀之劍", type: "wpn", dmgS: 9, dmgL: 12, hit: 0, dmgBonus: 2, spd: 0.8, req: "knight,dragon", safe: 6, p: 6000, gachaWeight: 80, d: "象徵騎士榮耀的單手劍，反擊來犯之敵。" },
+        "wpn_pirate_shortblade": { n: "短刀", type: "wpn", dmgS: 10, dmgL: 12, hit: 1, spd: 0.9, req: "royal,knight,elf,dark,dragon", safe: 6, p: 5000, gachaWeight: 100, d: "輕巧易於揮舞的短刀，適合多數職業使用。" },
+        "wpn_pirate_cutlass": { n: "海賊彎刀", type: "wpn", dmgS: 11, dmgL: 6, hit: 1, spd: 0.9, req: "knight,elf,dark,dragon", safe: 6, p: 8000, gachaWeight: 90, unBonus: true, d: "海賊愛用的彎刀，刃口浸染過無數亡者之血。" },
+        "wpn_abyss_dualblade": { n: "深淵雙刀", type: "wpn", w2h: true, dmgS: 14, dmgL: 10, hit: 0, spd: 0.8, req: "dark", safe: 6, p: 10000, gachaWeight: 50, eff: "combo", comboRate: 25, ignHardSkin: true, d: "自深淵汲取力量的雙刀，撕裂一切堅硬的防護。" },
+        "wpn_dark_crystalball": { n: "漆黑水晶球", type: "wpn", dmgS: 1, dmgL: 1, hit: 0, spd: 1.0, req: "mage,illusion", safe: 6, p: 20000, gachaWeight: 1, mdmg: 1, cha: 2, ignHardSkin: true, d: "凝聚漆黑魔力的水晶球，魔力共鳴而出。" },
+        "wpn_silent_crossbow": { n: "寂靜十字弓", type: "wpn", ranged: true, isBow: true, oneHand: true, dmgS: 3, dmgL: 2, hit: 1, dmgBonus: 1, spd: 1.0, req: "elf,illusion", safe: 6, p: 15000, gachaWeight: 30, rapidfire: 50, d: "無聲扣動的十字弓，連發如疾雨。" },
         // ===== 🏴‍☠️ 海賊島 防具 =====
-        "arm_faith_shield": { n: "信念之盾", type: "arm", slot: "shield", ac: 3, dr: 2, cha: 2, block: 60, req: "royal", safe: 6, p: 15000, gachaWeight: 1, d: "承載著堅定信念的盾牌，守護持有者的意志。<br>格檔 60%、傷害減免 +2、魅力 +2。" },
-        "arm_bluepirate_boots": { n: "藍海賊長靴", type: "arm", slot: "boots", ac: 2, req: "all", safe: 4, p: 6000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的航海長靴。<br><span class='text-amber-300'>【藍海賊套裝】頭巾＋皮盔甲＋手套＋長靴 四件齊：AC-1、HP+10、智力+1。</span>" },
-        "arm_bluepirate_helm": { n: "藍海賊頭巾", type: "arm", slot: "helm", ac: 2, req: "all", safe: 4, p: 6000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的標誌頭巾。<br><span class='text-amber-300'>【藍海賊套裝】頭巾＋皮盔甲＋手套＋長靴 四件齊：AC-1、HP+10、智力+1。</span>" },
-        "arm_bluepirate_armor": { n: "藍海賊皮盔甲", type: "arm", slot: "armor", ac: 5, req: "all", safe: 4, p: 8000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的皮製盔甲。<br><span class='text-amber-300'>【藍海賊套裝】頭巾＋皮盔甲＋手套＋長靴 四件齊：AC-1、HP+10、智力+1。</span>" },
-        "arm_bluepirate_gloves": { n: "藍海賊手套", type: "arm", slot: "gloves", ac: 1, req: "all", safe: 4, p: 7000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的皮手套。<br><span class='text-amber-300'>【藍海賊套裝】頭巾＋皮盔甲＋手套＋長靴 四件齊：AC-1、HP+10、智力+1。</span>" },
-        "arm_bluepirate_cloak": { n: "藍海賊斗篷", type: "arm", slot: "cloak", ac: 2, cha: 1, req: "all", safe: 4, p: 9000, gachaWeight: 20, d: "藍海賊團的航海斗篷，隨海風飄揚。<br>魅力 +1。" },
+        "arm_faith_shield": { n: "信念之盾", type: "arm", slot: "shield", ac: 3, dr: 2, cha: 2, block: 60, req: "royal", safe: 6, p: 15000, gachaWeight: 1, d: "承載著堅定信念的盾牌，守護持有者的意志。" },
+        "arm_bluepirate_boots": { n: "藍海賊長靴", type: "arm", slot: "boots", ac: 2, req: "all", safe: 4, p: 6000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的航海長靴。" },
+        "arm_bluepirate_helm": { n: "藍海賊頭巾", type: "arm", slot: "helm", ac: 2, req: "all", safe: 4, p: 6000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的標誌頭巾。" },
+        "arm_bluepirate_armor": { n: "藍海賊皮盔甲", type: "arm", slot: "armor", ac: 5, req: "all", safe: 4, p: 8000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的皮製盔甲。" },
+        "arm_bluepirate_gloves": { n: "藍海賊手套", type: "arm", slot: "gloves", ac: 1, req: "all", safe: 4, p: 7000, gachaWeight: 40, set: "bluepirate", d: "藍海賊團的皮手套。" },
+        "arm_bluepirate_cloak": { n: "藍海賊斗篷", type: "arm", slot: "cloak", ac: 2, cha: 1, req: "all", safe: 4, p: 9000, gachaWeight: 20, d: "藍海賊團的航海斗篷，隨海風飄揚。" },
         // ===== 🏴‍☠️ 海賊島 詛咒耳環（裝備欄＝項鍊）＋ 淨化之耳環（裝備欄＝耳環）=====
-        "acc_curse_red": { n: "詛咒的紅色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附紅色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。<br><span class='text-amber-300'>與 淨化之耳環 同時裝備：力量 +2、體質 -2。</span>" },
-        "acc_curse_blue": { n: "詛咒的藍色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附藍色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。<br><span class='text-amber-300'>與 淨化之耳環 同時裝備：智力 +2、精神 -2。</span>" },
-        "acc_curse_green": { n: "詛咒的綠色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附綠色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。<br><span class='text-amber-300'>與 淨化之耳環 同時裝備：敏捷 +2、魅力 -2。</span>" },
-        "acc_purify_earring": { n: "淨化之耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 30, d: "蘊含淨化之力的耳環，可與任一色詛咒耳環共鳴。<br><span class='text-amber-300'>與 詛咒的紅／藍／綠色耳環 同時裝備可獲得對應加成。</span>（裝於耳環欄）" },
+        "acc_curse_red": { n: "詛咒的紅色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附紅色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。" },
+        "acc_curse_blue": { n: "詛咒的藍色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附藍色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。" },
+        "acc_curse_green": { n: "詛咒的綠色耳環", type: "acc", slot: "amulet", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "纏附綠色詛咒的耳環，雖名為耳環，實際裝於項鍊欄。" },
+        "acc_purify_earring": { n: "淨化之耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 10000, gachaWeight: 30, d: "蘊含淨化之力的耳環，可與任一色詛咒耳環共鳴。" },
         // ===== ❄️ 冰之女王的耳環 Lv0~Lv8（裝備欄＝耳環）=====
         "acc_icequeen_ear_0": { n: "冰之女王的耳環 Lv0", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 1, d: "冰之女王所佩戴耳環的雛形，蘊藏成長的可能。可在歐瑞村 大衛 處以 冰之結晶 逐級精煉。（裝於耳環欄）" },
-        "acc_icequeen_ear_1": { n: "冰之女王的耳環 Lv1", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 10, d: "經一次精煉的冰之女王耳環。<br>HP +10。（裝於耳環欄）" },
-        "acc_icequeen_ear_2": { n: "冰之女王的耳環 Lv2", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 10, mmp: 5, d: "經二次精煉的冰之女王耳環。<br>HP +10、MP +5。（裝於耳環欄）" },
-        "acc_icequeen_ear_3": { n: "冰之女王的耳環 Lv3", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 5, d: "經三次精煉的冰之女王耳環。<br>HP +15、MP +5。（裝於耳環欄）" },
-        "acc_icequeen_ear_4": { n: "冰之女王的耳環 Lv4", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 5, hpR: 1, d: "經四次精煉的冰之女王耳環。<br>HP +15、MP +5、HP自然恢復 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_5": { n: "冰之女王的耳環 Lv5", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 10, hpR: 1, d: "經五次精煉的冰之女王耳環。<br>HP +15、MP +10、HP自然恢復 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_6": { n: "冰之女王的耳環 Lv6", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 10, hpR: 1, mpR: 1, d: "經六次精煉的冰之女王耳環。<br>HP +15、MP +10、HP自然恢復 +1、MP自然恢復 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_7": { n: "冰之女王的耳環 Lv7", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 20, mmp: 10, hpR: 2, mpR: 1, d: "經七次精煉的冰之女王耳環。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_str": { n: "冰之女王的耳環 Lv8 力量", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, str: 1, d: "冰之女王耳環的至高型態（力量）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、力量 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_dex": { n: "冰之女王的耳環 Lv8 敏捷", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, dex: 1, d: "冰之女王耳環的至高型態（敏捷）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、敏捷 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_int": { n: "冰之女王的耳環 Lv8 智力", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, int: 1, d: "冰之女王耳環的至高型態（智力）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、智力 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_con": { n: "冰之女王的耳環 Lv8 體質", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, con: 1, d: "冰之女王耳環的至高型態（體質）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、體質 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_wis": { n: "冰之女王的耳環 Lv8 精神", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, wis: 1, d: "冰之女王耳環的至高型態（精神）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、精神 +1。（裝於耳環欄）" },
-        "acc_icequeen_ear_8_cha": { n: "冰之女王的耳環 Lv8 魅力", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, cha: 1, d: "冰之女王耳環的至高型態（魅力）。<br>HP +20、MP +10、HP自然恢復 +2、MP自然恢復 +1、魅力 +1。（裝於耳環欄）" },
+        "acc_icequeen_ear_1": { n: "冰之女王的耳環 Lv1", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 10, d: "經一次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_2": { n: "冰之女王的耳環 Lv2", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 10, mmp: 5, d: "經二次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_3": { n: "冰之女王的耳環 Lv3", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 5, d: "經三次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_4": { n: "冰之女王的耳環 Lv4", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 5, hpR: 1, d: "經四次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_5": { n: "冰之女王的耳環 Lv5", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 10, hpR: 1, d: "經五次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_6": { n: "冰之女王的耳環 Lv6", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 15, mmp: 10, hpR: 1, mpR: 1, d: "經六次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_7": { n: "冰之女王的耳環 Lv7", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, noEnhance: true, mhp: 20, mmp: 10, hpR: 2, mpR: 1, d: "經七次精煉的冰之女王耳環。" },
+        "acc_icequeen_ear_8_str": { n: "冰之女王的耳環 Lv8 力量", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, str: 1, d: "冰之女王耳環的至高型態（力量）。" },
+        "acc_icequeen_ear_8_dex": { n: "冰之女王的耳環 Lv8 敏捷", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, dex: 1, d: "冰之女王耳環的至高型態（敏捷）。" },
+        "acc_icequeen_ear_8_int": { n: "冰之女王的耳環 Lv8 智力", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, int: 1, d: "冰之女王耳環的至高型態（智力）。" },
+        "acc_icequeen_ear_8_con": { n: "冰之女王的耳環 Lv8 體質", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, con: 1, d: "冰之女王耳環的至高型態（體質）。" },
+        "acc_icequeen_ear_8_wis": { n: "冰之女王的耳環 Lv8 精神", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, wis: 1, d: "冰之女王耳環的至高型態（精神）。" },
+        "acc_icequeen_ear_8_cha": { n: "冰之女王的耳環 Lv8 魅力", type: "acc", slot: "ear", legend: true, ac: 0, req: "all", safe: 0, p: 100000, gachaWeight: 0, mhp: 20, mmp: 10, hpR: 2, mpR: 1, cha: 1, d: "冰之女王耳環的至高型態（魅力）。" },
         // ===== 🏴‍☠️ 海賊島 受詛咒戒指 =====
-        "acc_curse_diamond_ring": { n: "受詛咒的鑽石戒指", type: "acc", slot: "ring", ac: 0, mr: 10, con: -1, wis: -1, req: "all", safe: 0, p: 10000, gachaWeight: 70, d: "受詛咒的鑽石戒指，魔力護身卻折損心神。<br>MR +10、體質 -1、精神 -1。" },
-        "acc_curse_ruby_ring": { n: "受詛咒的紅寶石戒指", type: "acc", slot: "ring", ac: -2, hpR: 1, mpR: 1, req: "all", safe: 0, p: 10000, gachaWeight: 80, d: "受詛咒的紅寶石戒指，加速恢復卻削弱防護。<br>AC +2、HP自然恢復 +1、MP自然恢復 +1。" },
-        "acc_curse_sapphire_ring": { n: "受詛咒的藍寶石戒指", type: "acc", slot: "ring", ac: 0, immStone: true, resFire: -10, resWater: -10, resEarth: -10, resWind: -10, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "受詛咒的藍寶石戒指，免於石化卻喪失屬性抗性。<br>免疫石化；全屬性抗性 -10。" },
-        "acc_curse_emerald_ring": { n: "受詛咒的綠寶石戒指", type: "acc", slot: "ring", ac: 0, mhp: 25, mr: -10, req: "all", safe: 0, p: 10000, gachaWeight: 90, d: "受詛咒的綠寶石戒指，增益體魄卻削弱魔防。<br>HP +25、MR -10。" },
+        "acc_curse_diamond_ring": { n: "受詛咒的鑽石戒指", type: "acc", slot: "ring", ac: 0, mr: 10, con: -1, wis: -1, req: "all", safe: 0, p: 10000, gachaWeight: 70, d: "受詛咒的鑽石戒指，魔力護身卻折損心神。" },
+        "acc_curse_ruby_ring": { n: "受詛咒的紅寶石戒指", type: "acc", slot: "ring", ac: -2, hpR: 1, mpR: 1, req: "all", safe: 0, p: 10000, gachaWeight: 80, d: "受詛咒的紅寶石戒指，加速恢復卻削弱防護。" },
+        "acc_curse_sapphire_ring": { n: "受詛咒的藍寶石戒指", type: "acc", slot: "ring", ac: 0, immStone: true, resFire: -10, resWater: -10, resEarth: -10, resWind: -10, req: "all", safe: 0, p: 10000, gachaWeight: 50, d: "受詛咒的藍寶石戒指，免於石化卻喪失屬性抗性。" },
+        "acc_curse_emerald_ring": { n: "受詛咒的綠寶石戒指", type: "acc", slot: "ring", ac: 0, mhp: 25, mr: -10, req: "all", safe: 0, p: 10000, gachaWeight: 90, d: "受詛咒的綠寶石戒指，增益體魄卻削弱魔防。" },
         // ===== 💍 賽巴斯（奇岩）寶石加工坊製作：4 屬性戒指 + 4 精靈皮帶 =====
-        "acc_ring_magic": { n: "魔力戒指", type: "acc", slot: "ring", ac: 0, mpR: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "蘊含魔力的戒指。<br>MP自然恢復量+1。" },
-        "acc_ring_str":   { n: "力量戒指", type: "acc", slot: "ring", ac: 0, str: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "灌注力量的戒指。<br>力量+1。" },
-        "acc_ring_dex":   { n: "敏捷戒指", type: "acc", slot: "ring", ac: 0, dex: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "輕盈靈動的戒指。<br>敏捷+1。" },
-        "acc_ring_int":   { n: "知識戒指", type: "acc", slot: "ring", ac: 0, int: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "蘊藏知識的戒指。<br>智力+1。" },
-        "acc_belt_fire":  { n: "火精靈的皮帶", type: "acc", slot: "belt", ac: 0, resFire: 10,  weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "火精靈祝福的皮帶。<br>火屬性抗性+10、負重+165。" },
-        "acc_belt_water": { n: "水精靈的皮帶", type: "acc", slot: "belt", ac: 0, resWater: 10, weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "水精靈祝福的皮帶。<br>水屬性抗性+10、負重+165。" },
-        "acc_belt_earth": { n: "地精靈的皮帶", type: "acc", slot: "belt", ac: 0, resEarth: 10, weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "地精靈祝福的皮帶。<br>地屬性抗性+10、負重+165。" },
-        "acc_belt_wind":  { n: "風精靈的皮帶", type: "acc", slot: "belt", ac: 0, resWind: 10,  weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "風精靈祝福的皮帶。<br>風屬性抗性+10、負重+165。" },
+        "acc_ring_magic": { n: "魔力戒指", type: "acc", slot: "ring", ac: 0, mpR: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "蘊含魔力的戒指。" },
+        "acc_ring_str":   { n: "力量戒指", type: "acc", slot: "ring", ac: 0, str: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "灌注力量的戒指。" },
+        "acc_ring_dex":   { n: "敏捷戒指", type: "acc", slot: "ring", ac: 0, dex: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "輕盈靈動的戒指。" },
+        "acc_ring_int":   { n: "知識戒指", type: "acc", slot: "ring", ac: 0, int: 1, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "蘊藏知識的戒指。" },
+        "acc_belt_fire":  { n: "火精靈的皮帶", type: "acc", slot: "belt", ac: 0, resFire: 10,  weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "火精靈祝福的皮帶。" },
+        "acc_belt_water": { n: "水精靈的皮帶", type: "acc", slot: "belt", ac: 0, resWater: 10, weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "水精靈祝福的皮帶。" },
+        "acc_belt_earth": { n: "地精靈的皮帶", type: "acc", slot: "belt", ac: 0, resEarth: 10, weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "地精靈祝福的皮帶。" },
+        "acc_belt_wind":  { n: "風精靈的皮帶", type: "acc", slot: "belt", ac: 0, resWind: 10,  weightCap: 165, req: "all", safe: 0, p: 10000, gachaWeight: 0, d: "風精靈祝福的皮帶。" },
         // ===== 🏴‍☠️ 海賊島 材料 / 任務道具 =====
         "mat_ice_crystal": { n: "冰之結晶", type: "etc", p: 1, c: "text-cyan-200", noUse: true, gachaWeight: 0, d: "冰之女王凝聚而成的寒冰結晶。可在歐瑞村 大衛 處精煉 冰之女王的耳環。（製作材料）" },
         "item_son_letter": { n: "兒子的信", type: "etc", p: 10, c: "text-amber-200", noUse: true, gachaWeight: 0, d: "一封未能送達的家書，字跡因海水暈染。可交給海賊島村莊的 希米哲。（任務兌換道具）" },
         "item_son_remains": { n: "兒子的遺骸", type: "etc", p: 10, c: "text-amber-200", noUse: true, gachaWeight: 0, d: "葬身海賊島的某人遺骸。可交給海賊島村莊的 希米哲。（任務兌換道具）" },
         "item_son_portrait": { n: "兒子的肖像畫", type: "etc", p: 10, c: "text-amber-200", noUse: true, gachaWeight: 0, d: "一幅褪色的肖像畫，描繪著年輕的面容。可交給海賊島村莊的 希米哲。（任務兌換道具）" },
         // ===== 💎 大衛 寶石加工 耳環（藍系智慧/真實/支配·綠系憤怒/勇猛/不死·紅系熱情/名譽/寬容；中間階無法強化、最終階可強化）=====
-        "acc_ear_wisdom":    { n: "智慧耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mmp: 10, d: "凝聚智慧的耳環。<br>MP +10。（裝於耳環欄）" },
-        "acc_ear_truth":     { n: "真實耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mmp: 20, mpR: 1, d: "映照真實的耳環。<br>MP +20、MP自然恢復 +1。（裝於耳環欄）" },
-        "acc_ear_dominate":  { n: "支配耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mmp: 30, mpR: 2, d: "蘊含支配之力的耳環。<br>MP +30、MP自然恢復 +2。（裝於耳環欄）" },
-        "acc_ear_rage":      { n: "憤怒耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 10, mmp: 5, d: "燃燒憤怒的耳環。<br>HP +10、MP +5。（裝於耳環欄）" },
-        "acc_ear_brave":     { n: "勇猛耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 20, mmp: 5, d: "象徵勇猛的耳環。<br>HP +20、MP +5。（裝於耳環欄）" },
-        "acc_ear_undead":    { n: "不死耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 20, mmp: 10, d: "蘊含不死之力的耳環。<br>HP +20、MP +10。（裝於耳環欄）" },
-        "acc_ear_passion":   { n: "熱情耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 20, d: "燃起熱情的耳環。<br>HP +20。（裝於耳環欄）" },
-        "acc_ear_honor":     { n: "名譽耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 30, d: "承載名譽的耳環。<br>HP +30。（裝於耳環欄）" },
-        "acc_ear_tolerance": { n: "寬容耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 40, hpR: 3, d: "充滿寬容的耳環。<br>HP +40、HP自然恢復 +3。（裝於耳環欄）" },
+        "acc_ear_wisdom":    { n: "智慧耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mmp: 10, d: "凝聚智慧的耳環。" },
+        "acc_ear_truth":     { n: "真實耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mmp: 20, mpR: 1, d: "映照真實的耳環。" },
+        "acc_ear_dominate":  { n: "支配耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mmp: 30, mpR: 2, d: "蘊含支配之力的耳環。" },
+        "acc_ear_rage":      { n: "憤怒耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 10, mmp: 5, d: "燃燒憤怒的耳環。" },
+        "acc_ear_brave":     { n: "勇猛耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 20, mmp: 5, d: "象徵勇猛的耳環。" },
+        "acc_ear_undead":    { n: "不死耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 20, mmp: 10, d: "蘊含不死之力的耳環。" },
+        "acc_ear_passion":   { n: "熱情耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 20, d: "燃起熱情的耳環。" },
+        "acc_ear_honor":     { n: "名譽耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 30, d: "承載名譽的耳環。" },
+        "acc_ear_tolerance": { n: "寬容耳環", type: "acc", slot: "ear", ac: 0, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 40, hpR: 3, d: "充滿寬容的耳環。" },
         // ===== 🔥 炎魔的輔佐官 靈魂石碎片 耳環（舞動→…→奴隸；前7階無法強化、奴隸可強化）=====
-        "acc_ear_dance":    { n: "舞動耳環", type: "acc", slot: "ear", ac: 1, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "隨炎舞動的耳環。<br>AC -1。（裝於耳環欄）" },
-        "acc_ear_twin":     { n: "雙子耳環", type: "acc", slot: "ear", ac: 2, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "成對相映的雙子耳環。<br>AC -2。（裝於耳環欄）" },
-        "acc_ear_festival": { n: "慶典耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "炎獄慶典的耳環。<br>AC -3。（裝於耳環欄）" },
-        "acc_ear_peak":     { n: "絕頂耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 25, mmp: 10, d: "登峰絕頂的耳環。<br>AC -3、HP +25、MP +10。（裝於耳環欄）" },
-        "acc_ear_rampage":  { n: "暴走耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, d: "失控暴走的耳環。<br>AC -3、HP +50、MP +20。（裝於耳環欄）" },
-        "acc_ear_phantom":  { n: "幻魔耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, weightCap: 40, d: "幻魔之力的耳環。<br>AC -3、HP +50、MP +20、負重上限 +40。（裝於耳環欄）" },
-        "acc_ear_clan":     { n: "族群耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, weightCap: 100, d: "凝聚族群的耳環。<br>AC -3、HP +50、MP +20、負重上限 +100。（裝於耳環欄）" },
-        "acc_ear_slave":    { n: "奴隸耳環", type: "acc", slot: "ear", legend: true, ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 50, mmp: 20, weightCap: 200, d: "禁忌的奴隸耳環。<br>AC -3、HP +50、MP +20、負重上限 +200。（裝於耳環欄）" },
+        "acc_ear_dance":    { n: "舞動耳環", type: "acc", slot: "ear", ac: 1, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "隨炎舞動的耳環。" },
+        "acc_ear_twin":     { n: "雙子耳環", type: "acc", slot: "ear", ac: 2, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "成對相映的雙子耳環。" },
+        "acc_ear_festival": { n: "慶典耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, d: "炎獄慶典的耳環。" },
+        "acc_ear_peak":     { n: "絕頂耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 25, mmp: 10, d: "登峰絕頂的耳環。" },
+        "acc_ear_rampage":  { n: "暴走耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, d: "失控暴走的耳環。" },
+        "acc_ear_phantom":  { n: "幻魔耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, weightCap: 40, d: "幻魔之力的耳環。" },
+        "acc_ear_clan":     { n: "族群耳環", type: "acc", slot: "ear", ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, noEnhance: true, mhp: 50, mmp: 20, weightCap: 100, d: "凝聚族群的耳環。" },
+        "acc_ear_slave":    { n: "奴隸耳環", type: "acc", slot: "ear", legend: true, ac: 3, req: "all", safe: 0, p: 0, gachaWeight: 0, mhp: 50, mmp: 20, weightCap: 200, d: "禁忌的奴隸耳環。" },
     },
     sets: {
         "set_0": { n: "皮套裝", items: ["arm_48", "arm_91", "arm_111", "arm_75"], ac: 3 },
@@ -1642,7 +1712,7 @@ const DB = {
         "siege_gate_heine": { hard: true, n: "海音城門", img: "assets/icons/monsters/海音城門.png", lv: 1, s: "L", beh: "被動", race: "建築", siegeEnemy: true, siegePersistHp: true, noAttack: true, e: "none", boss: true, hp: 10000, ac: 10, mr: 0, dr: 20, exp: 0, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [0, 0], db: 0, hit: 0, siege: { fixed: true, hpPerLv: 300, ac: 10, mr: 0, dr: 20 } },   // 🔧 海音城門：能力同肯特城門
         "siege_tower_ww": { hard: true, n: "風木守護塔", img: "assets/icons/monsters/風木守護塔.png", lv: 1, s: "L", beh: "被動", race: "建築", siegeEnemy: true, siegePersistHp: true, noAttack: true, e: "none", boss: true, hp: 15000, ac: 10, mr: 0, dr: 10, exp: 0, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [0, 0], db: 0, hit: 0, siege: { fixed: true, hpPerLv: 500, ac: 10, mr: 0, dr: 10 } },   // 🔧 風木守護塔：HP=500×玩家等級、傷害減免10
         "siege_gate_ww": { hard: true, n: "風木城門", img: "assets/icons/monsters/風木城門.png", lv: 1, s: "L", beh: "被動", race: "建築", siegeEnemy: true, siegePersistHp: true, noAttack: true, e: "none", boss: true, hp: 10000, ac: 10, mr: 0, dr: 20, exp: 0, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [0, 0], db: 0, hit: 0, siege: { fixed: true, hpPerLv: 300, ac: 10, mr: 0, dr: 20 } },   // 🔧 風木城門：HP=300×玩家等級、傷害減免20
-        "baless": { hard: true, n: "巴列斯", lv: 53, s: "S", beh: "主動", race: "惡魔", e: "earth", boss: true, hp: 6200, ac: -66, mr: 80, exp: 2802, goldMin: 385, goldMax: 1554, atkSpd: 1.5, dmg: [3, 94], db: 28, hit: 77,
+        "baless": { hard: true, n: "巴列斯", lv: 70, s: "S", beh: "主動", race: "惡魔", e: "earth", boss: true, hp: 6200, ac: -66, mr: 80, exp: 2802, goldMin: 385, goldMax: 1554, atkSpd: 1.5, dmg: [3, 94], db: 28, hit: 77,
             mag:  { skn: "燃燒的火球", cd: 50, chance: 0.5, dmg: [4, 100], db: 202, ele: "fire" },
             mag2: { skn: "地獄犬噴吐", cd: 70, dmg: [3, 100], db: 130, ele: "fire" } },   // 🔧 巴列斯 BOSS（風木地監）
         // 特羅斯王子 / 依詩蒂公主：技能「呼喚盟友」(場上敵人<3 立即追加一次普攻，10%暈眩) — 已實作(call_ally)
@@ -1666,6 +1736,19 @@ const DB = {
         "nm_005": { n: "熊", lv: 5, s: "S", beh: "被動", race: "動物", e: "earth", hp: 50, ac: 10, mr: 80, exp: 26, goldMin: 0, goldMax: 0, atkSpd: 3, dmg: [2, 6], db: 3, hit: 0 },
         "zombie": { n: "人形殭屍", lv: 6, s: "S", beh: "主動", race: "不死", un: true, e: "earth", hp: 45, ac: 8, mr: 5, exp: 37, goldMin: 10, goldMax: 120, atkSpd: 2, dmg: [2, 7], db: 4, hit: 0 },
         "doberman": { n: "杜賓狗", lv: 6, s: "S", beh: "被動", race: "動物", e: "fire", hp: 20, ac: 10, mr: 30, exp: 37, goldMin: 0, goldMax: 0, atkSpd: 1, dmg: [1, 8], db: 1, hit: 0 },
+        // ===== 🐾 v3.2.17 夥伴更新：12 隻可捕捉動物（依「夥伴更新.md」·皆小型被動·金幣 0）=====
+        "wild_tiger":     { n: "老虎",     lv: 5, s: "S", beh: "被動", race: "動物", e: "earth", hp: 40, ac: 10, mr: 15, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 8], db: 4, hit: 0 },
+        "wild_cat":       { n: "貓",       lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 20, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "寒冷戰慄", cd: 50, dmg: [1, 10], db: 0, ele: "none", alwaysHit: true, vamp: [1, 10] } },
+        "wild_panda":     { n: "熊貓",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 30, ac: 10, mr: 70, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0 },
+        "wild_koreapup":  { n: "高麗幼犬", lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 30, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0 },
+        "wild_raccoon":   { n: "浣熊",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 30, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "緩速術", cd: 50, type: "slowatk", pbase: 100, dur: 8 } },
+        "wild_stbernard": { n: "聖伯納犬", lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 30, ac: 10, mr: 40, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "風刃", cd: 50, dmg: [1, 10], db: 0, ele: "wind", alwaysHit: true } },
+        "wild_fox":       { n: "狐狸",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 15, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "火箭", cd: 50, dmg: [1, 12], db: 0, ele: "fire", alwaysHit: true } },
+        "wild_rabbit":    { n: "暴走兔",   lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 20, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "冰錐", cd: 50, dmg: [1, 12], db: 0, ele: "water", alwaysHit: true } },
+        "wild_beagle":    { n: "小獵犬",   lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 20, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "地獄之牙", cd: 50, dmg: [1, 10], db: 0, ele: "earth", alwaysHit: true } },
+        "wild_collie":    { n: "柯利",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 40, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0 },
+        "wild_kangaroo":  { n: "袋鼠",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 25, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0, mag: { skn: "火焰拳", cd: 50, dmg: [1, 10], db: 0, ele: "fire", alwaysHit: true } },
+        "wild_monkey":    { n: "猴子",     lv: 5, s: "S", beh: "被動", race: "動物", e: "none",  hp: 30, ac: 10, mr: 30, exp: 25, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 6], db: 3, hit: 0 },
         "nm_006": { n: "安普長老", lv: 6, s: "S", beh: "被動", race: "安普", e: "wind", hp: 100, ac: 10, mr: 30, exp: 37, goldMin: 15, goldMax: 38, atkSpd: 2, dmg: [2, 7], db: 4, hit: 0, mag: { skn: "落石術", cd: 50, dmg: [1, 4], db: 0, ele: "earth" } },
         "nm_007": { n: "污染的安特", lv: 6, s: "S", beh: "被動", race: "安特", e: "none", hp: 50, ac: 6, mr: 0, exp: 37, goldMin: 15, goldMax: 38, atkSpd: 3, dmg: [2, 7], db: 4, hit: 0, mag: { skn: "中毒", cd: 100, type: "poison", pbase: 30, d: 10, tick: 5, dur: 20 } },
         "floating_eye": { n: "漂浮之眼", lv: 7, s: "S", beh: "被動", race: "眼魔", e: "none", hp: 40, ac: 5, mr: 200, exp: 50, goldMin: 0, goldMax: 0, atkSpd: 60, dmg: [2, 8], db: 5, hit: 0, mag: { skn: "木乃伊的詛咒", cd: 50, type: "stone", pbase: 100 } },
@@ -1708,7 +1791,7 @@ const DB = {
         "giant": { n: "巨人", lv: 30, s: "L", beh: "主動", race: "巨人", e: "earth", hp: 400, ac: -20, mr: 30, exp: 901, goldMin: 138, goldMax: 229, atkSpd: 2, dmg: [2, 42], db: 22, hit: 28 },
         "giant_warrior": { n: "巨人戰士", lv: 33, s: "L", beh: "主動", race: "巨人", e: "earth", hp: 420, ac: -25, mr: 40, exp: 1090, goldMin: 184, goldMax: 302, atkSpd: 2, dmg: [2, 46], db: 24, hit: 32 },
         "giant_elder": { n: "巨人長老", lv: 33, s: "L", beh: "主動", race: "巨人", e: "earth", hp: 1000, ac: -25, mr: 40, exp: 1090, goldMin: 184, goldMax: 302, atkSpd: 2, dmg: [2, 46], db: 24, hit: 32 },
-        "giant_ancient": { hard: true, n: "古代巨人", lv: 56, s: "L", beh: "主動", race: "巨人", boss: true, e: "earth", hp: 8000, ac: -63, mr: 70, exp: 3137, goldMin: 1000, goldMax: 2000, atkSpd: 2, dmg: [4, 75], db: 76, hit: 81, mag: { skn: "震裂術", cd: 70, chance: 0.35, dmg: [1, 300], db: 299, ele: "earth", alwaysHit: true, sec: { type: "stun", pbase: 150 } } },
+        "giant_ancient": { hard: true, n: "古代巨人", lv: 70, s: "L", beh: "主動", race: "巨人", boss: true, e: "earth", hp: 8000, ac: -70, mr: 70, exp: 3137, goldMin: 1000, goldMax: 2000, atkSpd: 2, dmg: [4, 75], db: 76, hit: 81, mag: { skn: "震裂術", cd: 70, chance: 0.35, dmg: [1, 300], db: 299, ele: "earth", alwaysHit: true, sec: { type: "stun", pbase: 150 } } },
         "giant_ant": { n: "巨大兵蟻", lv: 20, s: "L", beh: "主動", race: "昆蟲", e: "earth", hp: 150, ac: -7, mr: 60, exp: 401, goldMin: 100, goldMax: 200, atkSpd: 2, dmg: [2, 9], db: 5, hit: 0 },
         "ratman": { n: "鼠人", lv: 20, s: "S", beh: "主動", race: "鼠人", e: "earth", hp: 150, ac: -5, mr: 10, exp: 401, goldMin: 73, goldMax: 129, atkSpd: 2, dmg: [2, 9], db: 5, hit: 0 },
         "starfish": { n: "海星", lv: 20, s: "L", beh: "主動", race: "海星", e: "water", hp: 180, ac: -10, mr: 5, exp: 401, goldMin: 73, goldMax: 129, atkSpd: 2, dmg: [2, 9], db: 5, hit: 0, mag: { skn: "麻痺", cd: 100, type: "paralyze", pbase: 50 } },
@@ -1789,7 +1872,7 @@ const DB = {
         "nm_046": { n: "冰人", lv: 30, s: "L", beh: "被動", race: "元素", elem: true, e: "water", hp: 300, ac: -20, mr: 21, exp: 901, goldMin: 143, goldMax: 324, atkSpd: 2, dmg: [2, 42], db: 22, hit: 28 },
         "ice_maid": { n: "冰之女王侍女", lv: 10, s: "S", beh: "主動", race: "元素", elem: true, e: "water", hp: 1000, ac: -35, mr: 60, exp: 0, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [2, 7], db: 4, hit: 0 },
         "ice_queen": { hard: true, n: "冰之女王", lv: 75, s: "S", beh: "主動", race: "元素", elem: true, boss: true, e: "water", hp: 15000, ac: -65, mr: 60, exp: 5000, goldMin: 9000, goldMax: 18000, atkSpd: 2, dmg: [4, 97], db: 98, hit: 113, mag: { skn: "冰雪暴", cd: 80, chance: 0.3, dmg: [7, 150], db: 99, ele: "water", alwaysHit: true, sec: { type: "freeze", pbase: 200 } }, mag2: { skn: "寒冰吐息", cd: 130, type: "frost_breath", pbase: 200, dur: 8 }, mag3: { skn: "冰錐", cd: 50, dmg: [1, 400], db: 99, ele: "water", alwaysHit: true } },
-        "ice_demon": { hard: true, n: "冰魔", lv: 65, s: "S", beh: "主動", race: "元素", elem: true, boss: true, e: "none", hp: 10000, ac: -70, mr: 80, exp: 3600, goldMin: 10000, goldMax: 20000, atkSpd: 2, dmg: [4, 86], db: 87, hit: 101, mag: { skn: "冰裂術", cd: 70, chance: 0.3, dmg: [5, 200], db: 99, ele: "water", alwaysHit: true, sec: { type: "freeze", pbase: 250 } }, mag2: { skn: "雷霆風暴", cd: 130, dmg: [3, 200], db: 66, ele: "wind", alwaysHit: true }, mag3: { skn: "衝擊之暈", cd: 90, chance: 0.5, type: "stun", pbase: 200 } },
+        "ice_demon": { hard: true, n: "冰魔", lv: 70, s: "S", beh: "主動", race: "元素", elem: true, boss: true, e: "none", hp: 10000, ac: -68, mr: 80, exp: 3600, goldMin: 10000, goldMax: 20000, atkSpd: 2, dmg: [4, 86], db: 87, hit: 101, mag: { skn: "冰裂術", cd: 70, chance: 0.3, dmg: [5, 200], db: 99, ele: "water", alwaysHit: true, sec: { type: "freeze", pbase: 250 } }, mag2: { skn: "雷霆風暴", cd: 130, dmg: [3, 200], db: 66, ele: "wind", alwaysHit: true }, mag3: { skn: "衝擊之暈", cd: 90, chance: 0.5, type: "stun", pbase: 200 } },
         "batus": { hard: true, n: "巴土瑟", lv: 43, s: "S", beh: "主動", race: "四色", boss: true, e: "none", hp: 2400, ac: -32, mr: 80, exp: 1850, goldMin: 150, goldMax: 300, atkSpd: 2, dmg: [3, 67], db: 51, hit: 64, mag: { skn: "地裂術", cd: 70, dmg: [3, 80], db: 183, ele: "earth" } },
         "casper": { hard: true, n: "卡士柏", lv: 44, s: "S", beh: "主動", race: "四色", boss: true, e: "none", hp: 1350, ac: -32, mr: 80, exp: 1937, goldMin: 150, goldMax: 300, atkSpd: 2, dmg: [3, 68], db: 52, hit: 65, mag: { skn: "燃燒的火球", cd: 60, dmg: [2, 100], db: 196, ele: "fire" } },
         "marcus": { hard: true, n: "馬庫爾", lv: 45, s: "S", beh: "主動", race: "四色", boss: true, e: "none", hp: 1350, ac: -32, mr: 80, exp: 2026, goldMin: 1500, goldMax: 3000, atkSpd: 2, dmg: [3, 70], db: 53, hit: 67, mag: { skn: "光箭", cd: 30, dmg: [1, 120], db: 90, ele: "none" } },
@@ -1799,13 +1882,13 @@ const DB = {
         "fire_beast": { n: "烈炎獸", lv: 48, s: "S", beh: "主動", race: "地獄犬", e: "fire", hp: 1154, ac: -28, mr: 35, exp: 2810, goldMin: 351, goldMax: 430, atkSpd: 1.2, dmg: [1, 64], db: 6, hit: 60, mag: { skn: "火焰噴吐", cd: 50, dmg: [1, 120], db: 45, ele: "fire" } },
         "wyvern": { hard: true, n: "飛龍", lv: 48, s: "L", beh: "主動", race: "飛龍", boss: true, e: "wind", hp: 2200, ac: -48, mr: 70, exp: 2810, goldMin: 340, goldMax: 545, atkSpd: 1, dmg: [2, 76], db: 15, hit: 70, mag: { skn: "火焰噴吐", cd: 70, dmg: [3, 120], db: 248, ele: "fire" } },
         "blackelder": { hard: true, n: "黑長者", lv: 50, s: "S", beh: "主動", race: "長老", boss: true, e: "none", hp: 2500, ac: -45, mr: 90, exp: 2501, goldMin: 245, goldMax: 1121, atkSpd: 2, dmg: [3, 78], db: 59, hit: 73, mag: { skn: "龍捲風", cd: 110, dmg: [4, 100], db: 148, ele: "wind" }, mag2: { skn: "靈光箭", cd: 30, chance: 0.7, dmg: [1, 100], db: 50, ele: "none" } },
-        "doppel_boss": { hard: true, n: "變形怪首領", lv: 50, s: "S", beh: "主動", race: "變形怪", boss: true, e: "wind", hp: 2000, ac: -63, mr: 80, exp: 2501, goldMin: 345, goldMax: 1224, atkSpd: 2, dmg: [3, 78], db: 59, hit: 73, mag: { skn: "冰雪暴", cd: 50, chance: 0.5, dmg: [2, 100], db: 148, ele: "water" }, mag2: { skn: "火風暴", cd: 70, chance: 0.2, dmg: [2, 110], db: 248, ele: "fire" } },
-        "baphomet": { hard: true, n: "巴風特", lv: 50, s: "S", beh: "主動", race: "惡魔", boss: true, e: "earth", hp: 2500, ac: -65, mr: 80, exp: 2602, goldMin: 365, goldMax: 1354, atkSpd: 1.5, dmg: [3, 89], db: 27, hit: 73, mag: { skn: "地裂術", cd: 50, chance: 0.5, dmg: [3, 100], db: 252, ele: "earth" }, mag2: { skn: "震裂術", cd: 60, chance: 0.4, dmg: [6, 100], db: 130, ele: "earth" } },
-        "kurt": { hard: true, n: "克特", lv: 51, s: "S", beh: "主動", race: "黑騎士", boss: true, e: "none", hp: 4500, ac: -67, mr: 65, exp: 5185, goldMin: 426, goldMax: 2155, atkSpd: 1, dmg: [3, 75], db: 23, hit: 74, mag: { skn: "盾擊", cd: 70, chance: 0.3, type: "stun", pbase: 150 }, mag2: { skn: "極道落雷", cd: 110, dmg: [2, 100], db: 199, ele: "wind" } },
-        "dk": { hard: true, n: "死亡騎士", lv: 52, s: "S", beh: "主動", race: "不死", boss: true, un: true, e: "earth", hp: 6000, ac: -65, mr: 100, exp: 6185, goldMin: 521, goldMax: 3155, atkSpd: 0.8, dmg: [2, 91], db: 18, hit: 76, mag: { skn: "地面震裂", cd: 50, chance: 0.2, dmg: [5, 100], db: 499, ele: "earth" }, mag2: { skn: "吸血鬼之吻", cd: 130, dmg: [1, 100], db: 199, ele: "none", vamp: [1, 212] }, mag3: { skn: "光球", cd: 30, chance: 0.2, dmg: [1, 200], db: 199, ele: "none" } },
-        "ant_queen": { hard: true, n: "巨蟻女皇", lv: 57, s: "L", beh: "主動", race: "螞蟻", boss: true, e: "earth", hp: 10000, ac: -80, mr: 60, exp: 3250, goldMin: 426, goldMax: 2845, atkSpd: 1.5, dmg: [4, 87], db: 35, hit: 82, mag: { skn: "震裂術", cd: 70, dmg: [5, 100], db: 99, ele: "earth" } },
-        "phoenix": { hard: true, n: "不死鳥", lv: 59, s: "L", beh: "主動", race: "不死鳥", boss: true, un: true, e: "fire", hp: 10000, ac: -63, mr: 150, exp: 5790, goldMin: 936, goldMax: 3748, atkSpd: 1.2, dmg: [3, 99], db: 30, hit: 85, mag: { skn: "火焰雨", cd: 130, dmg: [2, 100], db: 318, ele: "fire", sec: { type: "burn", tick: 5, d: 100, dur: 20, pbase: 100 } }, mag2: { skn: "流星雨", cd: 60, chance: 0.2, dmg: [4, 100], db: 318, ele: "fire" } },
-        "nm_034": { hard: true, n: "惡魔", lv: 61, s: "L", beh: "主動", race: "惡魔", boss: true, e: "earth", hp: 15000, ac: -75, mr: 100, exp: 3722, goldMin: 13500, goldMax: 22500, atkSpd: 1, dmg: [3, 84], db: 25, hit: 89, mag: { skn: "火焰之舞", cd: 60, chance: 0.3, dmg: [6, 66], db: 666, ele: "fire", sec: { type: "burn", tick: 5, d: 66, dur: 20, pbase: 100 } }, mag2: { skn: "禁地封印", cd: 90, chance: 0.3, type: "magicseal", pbase: 200 }, mag3: { skn: "地面震裂", cd: 50, chance: 0.2, dmg: [5, 100], db: 499, ele: "earth" } },
+        "doppel_boss": { hard: true, n: "變形怪首領", lv: 65, s: "S", beh: "主動", race: "變形怪", boss: true, e: "wind", hp: 2000, ac: -63, mr: 80, exp: 2501, goldMin: 345, goldMax: 1224, atkSpd: 2, dmg: [3, 78], db: 59, hit: 73, mag: { skn: "冰雪暴", cd: 50, chance: 0.5, dmg: [2, 100], db: 148, ele: "water" }, mag2: { skn: "火風暴", cd: 70, chance: 0.2, dmg: [2, 110], db: 248, ele: "fire" } },
+        "baphomet": { hard: true, n: "巴風特", lv: 61, s: "S", beh: "主動", race: "惡魔", boss: true, e: "earth", hp: 16000, ac: -65, mr: 80, exp: 2602, goldMin: 365, goldMax: 1354, atkSpd: 1.5, dmg: [3, 89], db: 27, hit: 73, mag: { skn: "地裂術", cd: 50, chance: 0.5, dmg: [3, 100], db: 252, ele: "earth" }, mag2: { skn: "震裂術", cd: 60, chance: 0.4, dmg: [6, 100], db: 130, ele: "earth" } },
+        "kurt": { hard: true, n: "克特", lv: 65, s: "S", beh: "主動", race: "黑騎士", boss: true, e: "none", hp: 4500, ac: -67, mr: 65, exp: 5185, goldMin: 426, goldMax: 2155, atkSpd: 1, dmg: [3, 75], db: 23, hit: 74, mag: { skn: "盾擊", cd: 70, chance: 0.3, type: "stun", pbase: 150 }, mag2: { skn: "極道落雷", cd: 110, dmg: [2, 100], db: 199, ele: "wind" } },
+        "dk": { hard: true, n: "死亡騎士", lv: 75, s: "S", beh: "主動", race: "不死", boss: true, un: true, e: "earth", hp: 6000, ac: -72, mr: 100, exp: 6185, goldMin: 521, goldMax: 3155, atkSpd: 0.8, dmg: [2, 91], db: 18, hit: 76, mag: { skn: "地面震裂", cd: 50, chance: 0.2, dmg: [5, 100], db: 499, ele: "earth" }, mag2: { skn: "吸血鬼之吻", cd: 130, dmg: [1, 100], db: 199, ele: "none", vamp: [1, 212] }, mag3: { skn: "光球", cd: 30, chance: 0.2, dmg: [1, 200], db: 199, ele: "none" } },
+        "ant_queen": { hard: true, n: "巨蟻女皇", lv: 70, s: "L", beh: "主動", race: "螞蟻", boss: true, e: "earth", hp: 10000, ac: -65, mr: 60, exp: 3250, goldMin: 426, goldMax: 2845, atkSpd: 1.5, dmg: [4, 87], db: 35, hit: 82, mag: { skn: "震裂術", cd: 70, dmg: [5, 100], db: 99, ele: "earth" } },
+        "phoenix": { hard: true, n: "不死鳥", lv: 69, s: "L", beh: "主動", race: "不死鳥", boss: true, un: true, e: "fire", hp: 10000, ac: -68, mr: 150, exp: 5790, goldMin: 936, goldMax: 3748, atkSpd: 1.2, dmg: [3, 99], db: 30, hit: 85, mag: { skn: "火焰雨", cd: 130, dmg: [2, 100], db: 318, ele: "fire", sec: { type: "burn", tick: 5, d: 100, dur: 20, pbase: 100 } }, mag2: { skn: "流星雨", cd: 60, chance: 0.2, dmg: [4, 100], db: 318, ele: "fire" } },
+        "nm_034": { hard: true, n: "惡魔", lv: 70, s: "L", beh: "主動", race: "惡魔", boss: true, e: "earth", hp: 15000, ac: -68, mr: 100, exp: 3722, goldMin: 13500, goldMax: 22500, atkSpd: 1, dmg: [3, 84], db: 25, hit: 89, mag: { skn: "火焰之舞", cd: 60, chance: 0.3, dmg: [6, 66], db: 666, ele: "fire", sec: { type: "burn", tick: 5, d: 66, dur: 20, pbase: 100 } }, mag2: { skn: "禁地封印", cd: 90, chance: 0.3, type: "magicseal", pbase: 200 }, mag3: { skn: "地面震裂", cd: 50, chance: 0.2, dmg: [5, 100], db: 499, ele: "earth" } },
         "antaras": { hard: true, n: "安塔瑞斯", lv: 93, s: "L", beh: "主動", race: "龍", boss: true, e: "earth", hp: 150000, ac: -80, mr: 200, exp: 9200, goldMin: 19236, goldMax: 26524, atkSpd: 1.5, dmg: [4, 94], db: 38, hit: 128, mag: { skn: "毒氣風暴", cd: 130, type: "poison", pbase: 250, d: 200, tick: 3, dur: 12 }, mag2: { skn: "地裂術", cd: 70, dmg: [6, 100], db: 499, ele: "earth" }, mag3: { skn: "大地怒吼", cd: 90, chance: 0.3, dmg: [1, 600], db: 999, ele: "earth" } },
         "fafurion": { hard: true, n: "法利昂", lv: 93, s: "L", beh: "主動", race: "龍", boss: true, e: "water", hp: 130000, ac: -80, mr: 250, exp: 9400, goldMin: 18236, goldMax: 28524, atkSpd: 2, dmg: [5, 79], db: 101, hit: 128, mag: { skn: "巨水炮", cd: 50, dmg: [3, 100], db: 250, ele: "water" }, mag2: { skn: "寒冰噴吐", cd: 70, chance: 0.3, dmg: [4, 100], db: 399, ele: "water", sec: { type: "freeze", pbase: 200 } }, mag3: { skn: "冰裂術", cd: 70, dmg: [1, 100], db: 200, ele: "water", ext_freeze: 666 } },
         "valakas": { hard: true, n: "巴拉卡斯", lv: 95, s: "L", beh: "主動", race: "龍", boss: true, e: "fire", hp: 200000, ac: -99, mr: 200, exp: 10000, goldMin: 20236, goldMax: 36524, atkSpd: 4, dmg: [5, 96], db: 122, hit: 128, mag: { skn: "火牢", cd: 50, chance: 0.1, type: "burn", d: 200, tick: 3, dur: 21 }, mag2: { skn: "流星雨", cd: 100, dmg: [5, 100], db: 560, ele: "fire", sec: { type: "scald", tick: 3, d: 100, dur: 15, pbase: 200 } }, mag3: { skn: "火焰噴吐", cd: 170, dmg: [2, 100], db: 1200, ele: "fire" } },
@@ -2026,7 +2109,7 @@ const DB = {
         "abyss_wind":     { n: "深淵風靈", lv: 55, s: "S", beh: "主動", race: "元素", e: "wind", hp: 1800, ac: -50, mr: 45, exp: 3026, goldMin: 493, goldMax: 786, atkSpd: 1, dmg: [1, 87], db: 9, hit: 70, mag: { skn: "極道落雷", cd: 70, dmg: [1, 200], db: 28, ele: "wind", alwaysHit: true } },
         "abyss_fire":     { n: "深淵火靈", lv: 55, s: "S", beh: "主動", race: "元素", e: "fire", hp: 1800, ac: -50, mr: 45, exp: 3026, goldMin: 493, goldMax: 786, atkSpd: 2, dmg: [2, 90], db: 45, hit: 62, mag: { skn: "裂炎術", cd: 90, dmg: [1, 250], db: 28, ele: "fire", alwaysHit: true } },
         "mambo_rabbit":   { n: "曼波兔", lv: 50, s: "S", beh: "被動", hard: true, race: "精靈", e: "none", hp: 3000, ac: -40, mr: 65, exp: 2000, goldMin: 493, goldMax: 786, atkSpd: 2, dmg: [2, 71], db: 36, hit: 56, mag: { skn: "跳躍波動", cd: 90, chance: 0.5, dmg: [1, 250], db: 1, ele: "none", alwaysHit: true, sec: { type: "stun", pbase: 200 } }, mag2: { skn: "冰裂術", cd: 110, chance: 0.7, dmg: [1, 250], db: 1, ele: "water", alwaysHit: true, sec: { type: "freeze", pbase: 200 } } },
-        "abyss_lord":     { n: "深淵之主", lv: 60, s: "S", beh: "被動", hard: true, boss: true, race: "惡魔", e: "none", hp: 6000, ac: -60, mr: 60, exp: 3601, goldMin: 1000, goldMax: 5000, atkSpd: 2, dmg: [4, 80], db: 81, hit: 86, mag: { skn: "火焰之舞", cd: 70, chance: 0.3, dmg: [2, 366], db: 66, ele: "fire", alwaysHit: true }, mag2: { skn: "燃燒的火球", cd: 130, dmg: [1, 666], db: 66, ele: "fire", alwaysHit: true } },
+        "abyss_lord":     { n: "深淵之主", lv: 65, s: "S", beh: "被動", hard: true, boss: true, race: "惡魔", e: "none", hp: 6000, ac: -60, mr: 60, exp: 3601, goldMin: 1000, goldMax: 5000, atkSpd: 2, dmg: [4, 80], db: 81, hit: 86, mag: { skn: "火焰之舞", cd: 70, chance: 0.3, dmg: [2, 366], db: 66, ele: "fire", alwaysHit: true }, mag2: { skn: "燃燒的火球", cd: 130, dmg: [1, 666], db: 66, ele: "fire", alwaysHit: true } },
         // ===== 🔥 50級試煉擴充：大洞穴隱遁者村莊地區 =====
         "demon_bat":      { n: "魔蝙蝠", lv: 22, s: "S", beh: "被動", race: "野獸", e: "wind", hp: 250, ac: -6, mr: 10, exp: 485, goldMin: 87, goldMax: 150, atkSpd: 2, dmg: [2, 23], db: 12, hit: 4 },
         "de_thief":       { n: "黑暗妖精盜賊", lv: 28, s: "S", beh: "主動", race: "黑暗妖精", e: "wind", hp: 500, ac: -18, mr: 20, exp: 785, goldMin: 87, goldMax: 150, atkSpd: 2, dmg: [2, 40], db: 20, hit: 25 },
@@ -2254,8 +2337,8 @@ const DB = {
                 { id: "npc_lawen", n: "拉溫", title: "雜貨商人", type: "shop", d: "販售各種日常消耗品。" },
                 { id: "npc_wh_aden", n: "恬金", title: "倉庫", type: "warehouse", d: "存放物品與金幣，四個存檔角色共用。" },
                 { id: "npc_upni", n: "烏普尼", title: "製作", type: "craft", d: "通曉禁忌符文的烏普尼，能將塔之力封入一紙。以 傲慢之塔傳送符 與 移動卷軸 製作 傲慢之塔支配符。" },
-                { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的項圈夥伴。" },
-                { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看愛犬。替你保管項圈（最多 8 個，與其他存檔角色不共通）。使用回憶蠟燭不會清除保管中的項圈。" }
+                { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的寵物。" },
+                { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 20 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上的寵物進化（基礎寵物需進化果實、高等寵物需勝利果實·黃金龍除外）。" }
             ]
         },
         "town_pride": {
@@ -2413,7 +2496,7 @@ const DB = {
         "sk_dark_shadow": { n: "黑闇之影", type: "atk", tier: 5, reqM: 20, reqE: 40, mp: 25, dmgType: "magic", status: { kind: "blind", pbase: 150, hit: 5, dur: 20 } },
 
         // 六階魔法 (Lv 24)
-        "sk_zombie": { n: "造屍術", type: "buff", tier: 6, reqM: 24, reqE: 48, mp: 35, dur: 3600, summon: { n: "隨從：人形殭屍", dmgDice: [1, 12], dmgDiv: 5, dmgLvDiv: 20, interval: 20, kind: "melee", hitLvOff: 0 } },
+        "sk_zombie": { n: "造屍術", type: "buff", tier: 6, reqM: 24, reqE: 48, mp: 35, dur: 3600, desc: "以死靈魔法喚醒倒下的人形軀殼，使其服從施術者並肩作戰。施術者的力量越成熟，甦醒的亡者也越強韌。", summon: { n: "隨從：人形殭屍", dmgDice: [1, 12], dmgDiv: 5, dmgLvDiv: 20, dmgMult: 0.90, interval: 20, kind: "melee", hitLvOff: 0 } },
         "sk_haste_spell": { n: "加速術", type: "buff", tier: 6, reqM: 24, reqE: 48, mp: 40, dur: 1200, haste: true, msg: "你感到身體變得非常輕盈。" },
         "sk_cancel": { n: "魔法相消術", type: "heal", tier: 6, reqM: 24, reqE: 48, mp: 40, msg: "你全身上下感到涼意。" },
         "sk_earthquake": { n: "地裂術", type: "atk", tier: 6, reqM: 24, reqE: 48, mp: 25, dmgType: "magic", ele: "earth", dmgDice: [10, 8] },
@@ -2485,7 +2568,7 @@ const DB = {
 
         // 四階 (Lv 40)
         "sk_elf_magicerase": { n: "魔法消除", type: "atk", tier: 4, reqE: 40, mp: 30, dmgType: "magic", status: { kind: "mrhalf", pbase: 150, dur: 16 } },
-        "sk_elf_summon": { n: "召喚屬性精靈", type: "buff", tier: 4, reqE: 40, mp: 30, dur: 3600, reqEleAny: true, summon: { n: "夥伴：{ele}精靈", dmgDice: [1, 40], elemScale: 20, interval: 10, kind: "ranged", eleFromPlayer: true, hitLvOff: 10 } },
+        "sk_elf_summon": { n: "召喚屬性精靈", type: "buff", tier: 4, reqE: 40, mp: 30, dur: 3600, reqEleAny: true, desc: "向締結契約的元素祈求援助，召來與自身屬性相同的精靈並肩作戰。", summon: { n: "夥伴：{ele}之精靈", dmgDice: [1, 40], elemScale: 20, dmgMult: 1.00, mrPenBase: 10, interval: 10, kind: "ranged", eleFromPlayer: true, hitLvOff: 10 } },
         "sk_elf_dancefire": { n: "舞躍之火", type: "buff", tier: 4, reqE: 40, mp: 30, dur: 1200, reqEle: "fire", d: { meleeDmg: 5 } },
         "sk_elf_stormeye": { n: "暴風之眼", type: "buff", tier: 4, reqE: 40, mp: 40, dur: 1200, reqEle: "wind", d: { rangedDmg: 2, rangedHit: 2 } },
         "sk_elf_earthshield": { n: "大地屏障", type: "buff", tier: 4, reqE: 40, mp: 50, dur: 8, reqEle: "earth" },
@@ -2493,7 +2576,7 @@ const DB = {
         "sk_elf_earthbless": { n: "大地的祝福", type: "buff", tier: 4, reqE: 40, mp: 35, dur: 1200, reqEle: "earth", d: { ac: 7 } },
 
         // 五階 (Lv 50)
-        "sk_elf_summon2": { n: "召喚強力屬性精靈", type: "buff", tier: 5, reqE: 50, mp: 50, dur: 3600, reqEleAny: true, summon: { n: "夥伴：上級{ele}精靈", dmgDice: [2, 40], elemScale: 10, interval: 10, kind: "ranged", eleFromPlayer: true, hitLvOff: 20 } },
+        "sk_elf_summon2": { n: "召喚強力屬性精靈", type: "buff", tier: 5, reqE: 50, mp: 50, dur: 3600, reqEleAny: true, desc: "以更深的元素契約呼喚高位精靈。精通精靈之道的妖精，甚至能使精靈王親臨戰場。", summon: { n: "夥伴：強力{ele}之精靈", dmgDice: [2, 40], elemScale: 10, dmgMult: 1.18, mrPenBase: 20, interval: 10, kind: "ranged", eleFromPlayer: true, hitLvOff: 20 } },
         "sk_elf_lifebless": { n: "生命的祝福", type: "heal", tier: 5, reqE: 50, mp: 30, reqEle: "water", hot: { interval: 30, ticks: 6 }, valDice: [1, 20], healDice: [1, 28], healBase: 28, autoBuff: true },
         "sk_elf_seal": { n: "封印禁地", type: "atk", tier: 5, reqE: 50, mp: 40, dmgType: "magic", reqEleAny: true, status: { kind: "magicseal", pbase: 100, dur: 8 } },
         "sk_elf_blazewpn": { n: "烈炎武器", type: "buff", tier: 5, reqE: 50, mp: 30, dur: 1200, reqEle: "fire", d: { meleeDmg: 5, meleeHit: 5 } },
@@ -2529,12 +2612,12 @@ const DB = {
         "sk_illu_ogre":      { n: "幻覺：歐吉", type: "buff", label: "增益", tier: 1, reqI: 10, mp: 20, dur: 64, d: { extraDmg: 4, extraHit: 4 }, illuSummon: "ogre", msg: "你以幻覺塑造出歐吉的形象。" },
         "sk_illu_confuse":   { n: "混亂", type: "atk", tier: 1, reqI: 10, mp: 15, hpCost: 10, dmgType: "magic", ele: "none", dmgDice: [2, 11], status: { kind: "confuse", pbase: 100, dur: 8 }, noRecastStatus: "confuse" },
         "sk_illu_cube_burn": { n: "立方：燃燒", type: "buff", label: "增益", tier: 1, reqI: 10, mp: 30, dur: 20, d: { resFire: 30 }, cube: { iv: 40, kind: "dmg", dice: [1, 20], ele: "fire" }, msg: "燃燒立方在你周身旋轉。" },
-        "sk_illu_crush":     { n: "粉碎能量", type: "atk", tier: 1, reqI: 10, mp: 5, dmgType: "physical", weaponDmg: true, magScale: true, msg: "你將能量灌入武器，粉碎目標。", d: "以物理公式計算基礎傷害＝武器傷害（目標大小決定大/小骰）＋近距離或遠距離傷害（依武器）＋強化值加成，整體再乘魔法傷害加成（1＋魔法傷害/16）；不計武器特效。為魔法技能：必定命中，且不受目標防禦力與硬皮減免。" },
+        "sk_illu_crush":     { n: "粉碎能量", type: "atk", tier: 1, reqI: 10, mp: 5, dmgType: "physical", weaponDmg: true, magScale: true, msg: "你將能量灌入武器，粉碎目標。", d: "將幻術能量灌入手中武器，化為必中的衝擊，穿透盔甲與堅硬外皮；武器與施術能力越強，威力越盛。" },
         "sk_illu_mirror":    { n: "鏡像", type: "buff", label: "增益", tier: 1, reqI: 10, mp: 10, dur: 1200, d: { er: 25 }, msg: "你分裂出無數鏡像。" },
         // 二階幻術
         "sk_illu_focus":     { n: "專注", type: "buff", label: "增益", tier: 2, reqI: 20, mp: 30, dur: 600, d: { mpR: 4 }, msg: "你進入高度專注。" },
         "sk_illu_lich":      { n: "幻覺：巫妖", type: "buff", label: "增益", tier: 2, reqI: 20, mp: 20, dur: 64, d: { magicDmg: 2 }, illuSummon: "lich", msg: "你以幻覺塑造出巫妖的形象。" },
-        "sk_illu_mindbreak": { n: "心靈破壞", type: "atk", tier: 2, reqI: 20, mpDmgPct: 0.05, dmgType: "magic", ele: "none", msg: "你以消耗的魔力撕裂目標的心靈。", d: "基礎傷害＝消耗的 MP 量（最大 MP 的 5%），再依魔法傷害加成（1＋魔法傷害/16）放大；無屬性魔法，受目標魔抗（MR）減免。" },
+        "sk_illu_mindbreak": { n: "心靈破壞", type: "atk", tier: 2, reqI: 20, mpDmgPct: 0.05, dmgType: "magic", ele: "none", msg: "你以消耗的魔力撕裂目標的心靈。", d: "燃燒自身魔力侵入敵人的意識，魔力越深厚，撕裂心靈的力量越強；意志堅定的目標較能抵禦。" },
         "sk_illu_cube_quake":{ n: "立方：地裂", type: "buff", label: "增益", tier: 2, reqI: 20, mp: 35, dur: 20, d: { resEarth: 30 }, cube: { iv: 40, kind: "slow" }, msg: "地裂立方在你周身旋轉。" },
         "sk_illu_skullbreak":{ n: "骷髏毀壞", type: "atk", tier: 2, reqI: 20, mp: 30, dmgType: "physical", weaponDmg: true, magScale: true, instakill: { tag: "undead", cap: 12 }, flatBonus: 20, tagReq: "undead", msg: "你試圖將不死者的骨骸徹底粉碎。" },   // 🦴 效果等同起死回生(即死·不死系·最高60%)；即死失敗才造成傷害＝粉碎能量公式+20固定
         // 三階幻術
@@ -2568,14 +2651,14 @@ const DB = {
         "sk_dragon_awaken_baraka": { n: "覺醒：巴拉卡斯", type: "buff", label: "增益", tier: 3, reqDk: 45, mp: 50, hpCost: 30, dur: 600, noRefresh: true, awaken: true, d: { str: 3, con: 3, dex: 3, int: 3, wis: 3, extraHit: 5 }, msg: "你引動巴拉卡斯之力，全身充滿磅礡之力。" },
         // ================= ⚔️【戰士技能·印記習得】 =================（cat:熱血blood/憤怒rage/忍耐endure）
         // —— 熱血 blood ——
-        "sk_warrior_dualaxe":     { n: "迅猛雙斧", type: "passive", cat: "blood", reqW: 15, desc: "裝備單手鈍器時副手也可裝單手鈍器，一般攻擊同時判定兩個攻擊來源。" },
-        "sk_warrior_crush":       { n: "粉碎", type: "passive", cat: "blood", reqW: 30, desc: "近距離傷害+2；玩家等級 45 時額外+1，之後每升一級+1。" },
-        "sk_warrior_armorbody":   { n: "護甲身軀", type: "passive", cat: "blood", reqW: 45, desc: "傷害減免 +[(10-AC)/10]。" },
-        "sk_warrior_berserk":     { n: "狂暴", type: "passive", cat: "blood", reqW: 50, desc: "一般攻擊 5% 機率造成兩倍傷害。" },
+        "sk_warrior_dualaxe":     { n: "迅猛雙斧", type: "passive", cat: "blood", reqW: 15, desc: "以雙手各持一柄鈍器，讓每次揮擊都化為接連不斷的猛攻。" },
+        "sk_warrior_crush":       { n: "粉碎", type: "passive", cat: "blood", reqW: 30, desc: "將戰士歷經百戰的力量灌入近身攻擊，等級越高，破壞力越驚人。" },
+        "sk_warrior_armorbody":   { n: "護甲身軀", type: "passive", cat: "blood", reqW: 45, desc: "把鎧甲與肉身鍛鍊成一體，防具越堅固，越能卸去迎面而來的衝擊。" },
+        "sk_warrior_berserk":     { n: "狂暴", type: "passive", cat: "blood", reqW: 50, desc: "戰意沸騰時爆發超越常人的蠻力，偶爾能揮出格外沉重的一擊。" },
         // —— 忍耐 endure ——
-        "sk_warrior_titan_rock":  { n: "泰坦：岩石", type: "passive", cat: "endure", reqW: 50, desc: "HP 低於 40% 時，受到一般攻擊對攻擊目標造成相同傷害。" },
-        "sk_warrior_titan_magic": { n: "泰坦：魔法", type: "passive", cat: "endure", reqW: 50, desc: "HP 低於 40% 時，受到技能攻擊對攻擊目標造成相同傷害。" },
-        "sk_warrior_titan_bullet":{ n: "泰坦：子彈", type: "passive", cat: "endure", reqW: 60, desc: "HP 低於 40% 時，ER+50。" },
+        "sk_warrior_titan_rock":  { n: "泰坦：岩石", type: "passive", cat: "endure", reqW: 50, desc: "身陷危境時喚醒泰坦之力，將敵人的近身猛攻反震回去。" },
+        "sk_warrior_titan_magic": { n: "泰坦：魔法", type: "passive", cat: "endure", reqW: 50, desc: "身陷危境時喚醒泰坦之力，使來襲的魔法與戰技反噬施術者。" },
+        "sk_warrior_titan_bullet":{ n: "泰坦：子彈", type: "passive", cat: "endure", reqW: 60, desc: "身陷危境時感官變得異常敏銳，更容易避開遠方射來的箭矢。" },
         // —— 憤怒 rage ——
         "sk_warrior_throwaxe":    { n: "戰斧投擲", type: "buff", label: "增益", cat: "rage", reqW: 15, mp: 5, dur: 64, noRefresh: true, reqWpnBlunt: true, throwAxe: true, msg: "你蓄勢待發，斧刃將撕裂一切阻擋。" },   // ⚔️ v3.1.74：持續 64 秒，期間近距離一般攻擊皆附加出血（不再一擊消耗）
         "sk_warrior_roar":        { n: "咆哮", type: "atk", cat: "rage", reqW: 30, mp: 5, roarFixed: true, target: "all" },
@@ -2587,7 +2670,7 @@ const DB = {
         "sk_royal_burnweapon": { n: "灼熱武器", type: "buff", label: "增益", cat: "royal", reqRoy: 40, mp: 25, dur: 640, noRefresh: true, d: { extraDmg: 5, extraHit: 5 }, msg: "你的武器燃起灼熱之炎。" },
         "sk_royal_bravewill":  { n: "勇猛意志", type: "buff", label: "增益", cat: "royal", reqRoy: 50, mp: 25, dur: 640, noRefresh: true, msg: "勇猛的意志充盈你的全身。" },
         "sk_royal_shield":     { n: "閃亮之盾", type: "buff", label: "增益", cat: "royal", reqRoy: 50, mp: 25, dur: 640, noRefresh: true, d: { ac: 8 }, msg: "閃亮的護盾環繞著你。" },
-        "sk_royal_kingguard":  { n: "王者加護", type: "passive", label: "被動", cat: "royal", reqRoy: 50, desc: "MR+10、20%機率抵抗暈眩。" },
+        "sk_royal_kingguard":  { n: "王者加護", type: "passive", label: "被動", cat: "royal", reqRoy: 50, desc: "亞丁王族不屈的意志護持身心，使邪術與撼動神智的攻擊更難得逞。" },
         // ================= 【魔法頭盔技能】 =================
         // 治癒魔法頭盔技能
         "sk_helm_heal1": { n: "治盔：初級治癒術", mp: 2, type: "heal", valBase: 0, valDice: [1, 15], healDice: [1, 20], healBase: 20, label: "恢復", msg: "你感覺舒服了一點。" },
@@ -2605,7 +2688,7 @@ const DB = {
     },
 
     maps: {
-        "pirate_wild": ["nm_035", "nm_003", "doberman", "pirate_wildpoison", "pirate_lizardrage", "pirate_wildfang", "pirate_wilddemon", "pirate_lizardhigh", "pirate_bluetail", "pirate_parrot", "pirate_chest", "mambo_rabbit"],
+        "pirate_wild": ["nm_035", "nm_003", "doberman", "pirate_wildpoison", "pirate_lizardrage", "pirate_wildfang", "pirate_wilddemon", "pirate_lizardhigh", "pirate_bluetail", "pirate_parrot", "pirate_chest", "mambo_rabbit", "wild_tiger", "wild_koreapup", "wild_raccoon"],
         "pirate_dungeon": ["pirate_lizardrage", "pirate_lizardhigh", "pirate_skeleton", "pirate_lizardheavy", "pirate_skelsoldier", "pirate_skelblade", "pirate_skelchief", "pirate_drake"],
         "training": ["orc", "goblin", "orc_archer", "gremlin"],
         "silent_outer": ["orc", "orc_archer", "zombie", "nm_008", "fighter", "nm_002", "nm_001", "wolf", "skeleton", "orc_zombie", "skel_archer", "stone_golem", "bear", "lizardman", "sparto"],
@@ -2624,21 +2707,21 @@ const DB = {
         "windwood_dungeon": ["zombie", "skeleton", "skel_archer", "skel_axe", "skel_spear", "sparto", "ghoul", "ungoliant", "ogre", "cerberus", "ogre_king", "nm_008", "baless"],
         "silver_knight": ["orc", "goblin", "orc_archer", "gremlin", "侏儒", "nm_003", "zombie", "fighter", "ice_wolf", "wolf", "gnome_warrior", "skeleton", "orc_mage", "stone_golem", "hobgoblin", "b_knight", "ghoul", "sparto", "lycan", "dragon_turtle"],
         "talking_island": ["orc", "goblin", "orc_archer", "gremlin", "侏儒", "nm_035", "nm_003", "doberman", "zombie", "floating_eye", "fighter", "wolf", "skeleton", "stone_golem", "spider"],
-        "zone_01": ["orc", "orc_archer", "nm_002", "nm_003", "侏儒", "fighter", "zombie", "wolf", "gandi_orc", "orc_mage", "rova_orc", "stone_golem", "atuba_orc", "duda_orc", "neruga_orc", "nm_007", "nm_009"],
+        "zone_01": ["orc", "orc_archer", "nm_002", "nm_003", "侏儒", "fighter", "zombie", "wolf", "gandi_orc", "orc_mage", "rova_orc", "stone_golem", "atuba_orc", "duda_orc", "neruga_orc", "nm_007", "nm_009", "wild_kangaroo"],
         "talking_island_port": ["fighter", "wolf", "stone_golem", "spider", "b_knight", "elder", "kurt"],
-        "elf_forest": ["orc_archer", "nm_003", "fighter", "wolf", "gandi_orc", "orc_mage", "rova_orc", "orc_scout", "atuba_orc", "duda_orc", "ghoul", "sparto", "neruga_orc", "lycan", "gaster", "dark_elf", "ogre_warrior", "gaster_king"],
-        "gludio": ["orc", "goblin", "orc_archer", "gremlin", "侏儒", "nm_035", "nm_003", "zombie", "doberman", "fighter", "wolf", "skeleton", "orc_mage", "skel_archer", "stone_golem", "hobgoblin", "spider", "ghoul", "sparto", "nm_011", "lycan", "elder", "ogre", "ogre_warrior"],
+        "elf_forest": ["orc_archer", "nm_003", "fighter", "wolf", "gandi_orc", "orc_mage", "rova_orc", "orc_scout", "atuba_orc", "duda_orc", "ghoul", "sparto", "neruga_orc", "lycan", "gaster", "dark_elf", "ogre_warrior", "gaster_king", "wild_monkey"],
+        "gludio": ["orc", "goblin", "orc_archer", "gremlin", "侏儒", "nm_035", "nm_003", "zombie", "doberman", "fighter", "wolf", "skeleton", "orc_mage", "skel_archer", "stone_golem", "hobgoblin", "spider", "ghoul", "sparto", "nm_011", "lycan", "elder", "ogre", "ogre_warrior", "wild_beagle", "wild_collie"],
         "windwood": ["orc_archer", "fighter", "nm_035", "nm_003", "doberman", "floating_eye", "gnome_warrior", "wolf", "orc_mage", "stone_golem", "hobgoblin", "lizardman", "ant", "lycan", "harpy"],
         "desert": ["evil_lizard", "scorpion", "ant", "giant_ant", "lizardman", "stone_golem", "sparto", "wolf", "griffon"],
         "kent": ["orc", "goblin", "orc_archer", "gremlin", "nm_002", "侏儒", "nm_035", "nm_003", "doberman", "nm_006", "fighter", "gnome_warrior", "wolf", "stone_golem", "spider", "hobgoblin", "bear", "lycan", "ungoliant", "elder", "harpy", "ogre_warrior"],
         "dragon_valley": ["侏儒", "nm_003", "wolf", "gnome_warrior", "sparto", "lycan", "scorpion", "harpy", "skel_sniper", "skel_guard", "dark_elf", "ogre_warrior", "skel_fighter", "arian", "wyvern", "blackelder"],
         "fire_dragon": ["侏儒", "gnome_warrior", "fire_archer", "bomb_flower", "dragon_fly", "fire_warrior", "salamander", "fire_egg", "lava_golem", "ashitakio", "ifrit", "fire_beast", "phoenix"],
-        "giran": ["goblin", "侏儒", "nm_006", "gnome_warrior", "hobgoblin", "bear", "lizardman", "wolf", "spider", "lycan", "ungoliant", "gaster", "bandit", "bandit_boss", "griffon", "dark_elf", "gaster_king", "fire_egg", "cyclops"],
-        "heine": ["croc", "spider", "bear", "lizardman", "troglodyte", "lycan", "ungoliant", "lamia", "giant_croc", "beholder"],
+        "giran": ["goblin", "侏儒", "nm_006", "gnome_warrior", "hobgoblin", "bear", "lizardman", "wolf", "spider", "lycan", "ungoliant", "gaster", "bandit", "bandit_boss", "griffon", "dark_elf", "gaster_king", "fire_egg", "cyclops", "wild_panda"],
+        "heine": ["croc", "spider", "bear", "lizardman", "troglodyte", "lycan", "ungoliant", "lamia", "giant_croc", "beholder", "wild_cat"],
         "twilight_mt": ["giant", "giant_warrior", "giant_elder", "giant_ancient"],
         "mirror_forest": ["doppelganger", "doppel_boss", "crabman", "croc", "dragon_turtle", "beholder", "spider", "ungoliant", "lamia"],
-        "zone_02": ["侏儒", "nm_005", "nm_004", "zombie", "ice_wolf", "gnome_warrior", "bear", "troglodyte", "ghoul", "nm_012", "nm_014", "nm_015", "nm_019", "nm_020", "nm_021"],
-        "zone_03": ["nm_012", "nm_014", "nm_015", "nm_017", "nm_019", "nm_020", "nm_021", "nm_022"],
+        "zone_02": ["侏儒", "nm_005", "nm_004", "zombie", "ice_wolf", "gnome_warrior", "bear", "troglodyte", "ghoul", "nm_012", "nm_014", "nm_015", "nm_019", "nm_020", "nm_021", "wild_fox"],
+        "zone_03": ["nm_012", "nm_014", "nm_015", "nm_017", "nm_019", "nm_020", "nm_021", "nm_022", "wild_stbernard", "wild_rabbit"],
         "crystal_cave1": ["nm_002", "nm_012", "nm_046", "nm_017", "nm_019", "nm_020", "nm_022"],
         "crystal_cave2": ["nm_002", "nm_012", "nm_046", "nm_017", "nm_019", "nm_020", "nm_022", "ice_demon"],
         "crystal_cave3": ["nm_046", "nm_017", "nm_019", "nm_020", "ice_maid", "ice_queen"],
@@ -2834,6 +2917,178 @@ const DB = {
         "oblivion_island": ["obli_croc", "obli_werewolf", "obli_sharlob", "obli_arian", "obli_darkelf", "obli_bear", "obli_lizardman", "obli_kasta", "obli_lamia", "obli_lycan", "obli_axetaurus", "obli_troll", "obli_ungoliant", "obli_griffon", "obli_hammertaurus", "obli_harpy", "obli_shapeshifter", "obli_bigcroc", "obli_kastaking", "obli_doro", "obli_aruba", "obli_trollking", "obli_evillizard", "obli_cyclops", "obli_wyvern", "obli_bigtaurus"]
     }
 }; // DB 結尾在這裡
+
+// ===== Lv51+ 頭目基礎 HP 曲線 =====
+// 只提高低於同級下限的頭目，不降低既有高血量；卡瑞維持原始 3,000 HP。
+(function normalizeHighLevelBossHp() {
+    function hpFloor(lv) {
+        let raw;
+        if (lv < 60) raw = 10000 + (lv - 51) * 1250;
+        else if (lv < 70) raw = 20000 + (lv - 60) * 2000;
+        else if (lv < 80) raw = 40000 + (lv - 70) * 2500;
+        else if (lv < 90) raw = 65000 + (lv - 80) * 3000;
+        else raw = 100000 + (lv - 90) * 5000;
+        return Math.round(raw / 500) * 500;
+    }
+    Object.keys(DB.mobs).forEach(id => {
+        let mob = DB.mobs[id];
+        if (!mob || !mob.boss || (mob.lv || 0) < 51 || mob.n === '卡瑞' || mob.race === '建築') return;
+        mob.hp = Math.max(mob.hp || 1, hpFloor(mob.lv));
+    });
+})();
+
+// ===== 頭目傷害曲線（基準：玩家 AC -50、MR 100）=====
+// 普攻依等級與攻擊間隔分配單次傷害；技能依冷卻、範圍、控場與段數分配總傷害。
+// 僅改變傷害載荷，不改技能種類、觸發率、控制率、血量或命中。
+(function normalizeBossDamageByLevel() {
+    const AC50_AVG_REDUCTION = 13;
+    const MR100_MULT = 0.5;
+    // 與戰鬥系統的 MOB_PARTY_AOE_SKILLS 同步；00-data 載入時該清單尚未建立。
+    const PARTY_AOE_SKILLS = new Set([
+        '闇黑波動', '毒霧', '鐮刀波動', '火焰之舞', '燃燒的火球', '火焰之陣', '地面震裂',
+        '跳躍波動', '冰雪暴', '震裂術', '火焰噴吐', '流星雨', '火牢', '寒冰噴吐', '巨水炮',
+        '大地怒吼', '毒氣風暴', '閃電風暴', '火焰雨', '寒冰吐息', '地獄犬噴吐', '火風暴',
+        '龍捲風', '爆炎的火球', '噴火', '漩渦', '防身電擊', '震裂踏擊', '火焰放射', '黑霧',
+        '火焰氣息', '黑暗流星雨', '放射斬', '迴旋鞭打', '衝擊波動', '千刃破軍', '靈魂波動',
+        '火焰爆發', '迴旋斬', '龍的一擊', '地獄火', '黑魔法力場', '鐮刀劍氣斬', '腐蝕之血',
+        '冰錐流星雨', '水氣爆裂', '集體衝暈', '巨石爆裂', '地面障礙', '邪靈之氣',
+        '血夜月彎刀', '夜魔飛襲', '幻象光線', '集體相消', '劇毒龍捲風', '麻痺蜘蛛網',
+        '雷霆風暴', '沙塵暴', '震裂重擊', '冰雪颶風'
+    ]);
+
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function mean(values) { return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length); }
+    function cooldownMult(cd) { return clamp(Math.sqrt((cd || 70) / 70), 0.8, 1.35); }
+    function physicalAfterAc(lv) { return 12 + lv * 1.05; }
+    function magicAfterMr(lv) { return 30 + lv * 1.9; }
+    function rollAverage(dice, bonus) {
+        if (!dice) return 0;
+        return dice[0] * (dice[1] + 1) / 2 + (bonus || 0);
+    }
+
+    // 一般怪基準排除頭目、建築、攻城與血盟鏡像單位；精確等級無樣本時逐步擴大至最近等級。
+    const normalMobs = Object.keys(DB.mobs).map(id => DB.mobs[id]).filter(mob =>
+        mob && !mob.boss && mob.race !== '建築' && !mob.siegeEnemy && !mob.pledgeEnemy &&
+        !mob.noAttack && (mob.hp || 0) > 1 && mob.dmg
+    );
+    const peerCache = {};
+
+    function normalPeers(lv) {
+        if (peerCache[lv]) return peerCache[lv];
+        for (let span of [0, 1, 2, 3, 5, 10]) {
+            let peers = normalMobs.filter(mob => Math.abs((mob.lv || 1) - lv) <= span);
+            if (peers.length) return (peerCache[lv] = peers);
+        }
+        return (peerCache[lv] = normalMobs);
+    }
+
+    function physicalPostAc(mob) {
+        return Math.max(1, rollAverage(mob.dmg, mob.db) - AC50_AVG_REDUCTION);
+    }
+
+    function normalPhysicalDps(lv) {
+        return mean(normalPeers(lv).map(mob => physicalPostAc(mob) / Math.max(0.5, mob.atkSpd || 1.5)));
+    }
+
+    function normalSkillImpact(mob, sk) {
+        if (!sk) return null;
+        if (sk.dmg) {
+            let extra = (sk.db || 0) + (sk.dbLv ? (mob.lv || 0) * (sk.dbLvMult || 1) : 0);
+            let raw = rollAverage(sk.dmg, extra);
+            return sk.fixedDmg ? raw : raw * MR100_MULT;
+        }
+        if (sk.type === 'multi_attack') {
+            let times = Math.max(1, sk.times || 3);
+            let dice = sk.atkDmg || mob.dmg;
+            let bonus = sk.atkDb != null ? sk.atkDb : mob.db;
+            return Math.max(1, rollAverage(dice, bonus) - AC50_AVG_REDUCTION) * times;
+        }
+        if (typeof sk.d === 'number') {
+            let tick = Math.max(1, sk.tick || 3);
+            let dur = Math.max(tick, sk.dur || tick);
+            return sk.d * Math.max(1, Math.ceil(dur / tick));
+        }
+        return null;
+    }
+
+    function normalSkillDamage(lv) {
+        let peers = normalPeers(lv);
+        let values = [];
+        peers.forEach(mob => {
+            [mob.mag, mob.mag2, mob.mag3].forEach(sk => {
+                let impact = normalSkillImpact(mob, sk);
+                if (impact != null) values.push(impact);
+            });
+        });
+        // 同級一般怪沒有傷害技能時，以其單次普攻作為最低技能參考。
+        return values.length ? mean(values) : mean(peers.map(physicalPostAc));
+    }
+
+    function setAverageRoll(obj, rollKey, bonusKey, targetMean, fallbackCount) {
+        let old = obj[rollKey];
+        let count = old && old[0] ? old[0] : (fallbackCount || 1);
+        count = clamp(Math.round(count), 1, 8);
+        targetMean = Math.max(count + 1, targetMean);
+        let bonus = Math.max(0, Math.round(targetMean * 0.5));
+        let sides = Math.max(2, Math.round(((targetMean - bonus) * 2 / count) - 1));
+        obj[rollKey] = [count, sides];
+        obj[bonusKey] = bonus;
+    }
+
+    function normalizeDot(holder, parentSkill, targetSkillDamage) {
+        if (!holder || typeof holder.d !== 'number') return;
+        let tick = Math.max(1, holder.tick || 3);
+        let dur = Math.max(tick, holder.dur || tick);
+        let tickCount = Math.max(1, Math.ceil(dur / tick));
+        let totalMult = parentSkill && parentSkill.dmg ? 0.55 : 1.0;
+        holder.d = Math.max(1, Math.round(targetSkillDamage * totalMult / tickCount));
+    }
+
+    function normalizeSkill(mob, sk) {
+        if (!sk) return;
+        let lv = Math.max(1, mob.lv || 1);
+        let targetPostMr = magicAfterMr(lv) * cooldownMult(sk.cd);
+        if (sk.aoe || sk.allTarget || sk.targetAll || PARTY_AOE_SKILLS.has(sk.skn)) targetPostMr *= 0.85;
+        if (sk.sec && ['stun', 'freeze', 'sleep', 'paralyze', 'stone'].includes(sk.sec.type)) targetPostMr *= 0.9;
+        targetPostMr = Math.max(targetPostMr, normalSkillDamage(lv) * 2.05);
+
+        if (sk.type === 'multi_attack') {
+            let times = Math.max(1, sk.times || 3);
+            let totalPostAc = targetPostMr * 1.1;
+            let perHitRaw = totalPostAc / times + AC50_AVG_REDUCTION;
+            setAverageRoll(sk, 'atkDmg', 'atkDb', perHitRaw, mob.dmg && mob.dmg[0]);
+            return;
+        }
+
+        if (sk.dmg) {
+            let rawTarget = sk.fixedDmg ? targetPostMr : targetPostMr / MR100_MULT;
+            setAverageRoll(sk, 'dmg', 'db', rawTarget, sk.dmg[0]);
+        }
+
+        normalizeDot(sk, sk, targetPostMr);
+        normalizeDot(sk.sec, sk, targetPostMr);
+
+        // 冰凍追擊為不經 MR 的額外傷害，限制在同級法術約 45%。
+        if (typeof sk.ext_freeze === 'number') sk.ext_freeze = Math.max(1, Math.round(targetPostMr * 0.45));
+    }
+
+    Object.keys(DB.mobs).forEach(id => {
+        let mob = DB.mobs[id];
+        if (!mob || !mob.boss || mob.race === '建築' || mob.siegeEnemy || mob.noAttack || (mob.hp || 0) <= 1) return;
+
+        let lv = Math.max(1, mob.lv || 1);
+        let interval = clamp(mob.atkSpd || 1.5, 0.5, 4);
+        let speedWeight = clamp(Math.sqrt(interval / 1.5), 0.8, 1.35);
+        let rawPhysicalTarget = physicalAfterAc(lv) * speedWeight + AC50_AVG_REDUCTION;
+        let doubleNormalDpsTarget = normalPhysicalDps(lv) * 2.05 * interval + AC50_AVG_REDUCTION;
+        rawPhysicalTarget = Math.max(rawPhysicalTarget, doubleNormalDpsTarget);
+        setAverageRoll(mob, 'dmg', 'db', rawPhysicalTarget, mob.dmg && mob.dmg[0]);
+
+        normalizeSkill(mob, mob.mag);
+        normalizeSkill(mob, mob.mag2);
+        normalizeSkill(mob, mob.mag3);
+    });
+})();
 
 // ===== 套裝代碼初始化：將 DB.sets 反向掛到各裝備的 .set 屬性 =====
 // 修正：原本沒有任何物品擁有 .set，導致 setCheck 永遠為空、套裝加成與底色判定都不會觸發。

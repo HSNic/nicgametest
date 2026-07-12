@@ -54,7 +54,13 @@ function gainItem(id, cnt=1, silent=false, forceNormal=false, affixOld=false) {
     let itemInfo = { id: id, cnt: cnt, en: _tEn, bless: bless, anc: anc, attr: attr, seteff: seteff };
     
     if (!silent && d) {
-        logSys(`獲得物品: <span class="font-bold">${getItemFullName(itemInfo)}</span>`);
+        // 🐾 擊殺掉落來源怪物存在時→「怪名 給你 物品名 。」；其餘來源(商店/製作/NPC 兌換)維持「獲得物品:」
+        if (_lootMobInfo) {
+            let _mc = (typeof getMobColor === 'function') ? getMobColor(_lootMobInfo.lv) : '';
+            logSys(`<span class="${_mc}">${_lootMobInfo.n}</span> 給你 <span class="font-bold">${getItemFullName(itemInfo)}</span> 。`);
+        } else {
+            logSys(`獲得物品: <span class="font-bold">${getItemFullName(itemInfo)}</span>`);
+        }
     }
     renderTabs();
     if(DB.items[id] && DB.items[id].grantSkills) { calcStats(); renderSkillSelects(); }   // 取得授予技能的頭盔：立即生效
@@ -294,19 +300,11 @@ function useItem(u, silent = false) {
         return;
     }
 
-    // 🐾 進化果實：玩家等級30以上、且道具欄有對應基礎項圈才能使用 → 消耗 1 基礎項圈 + 1 果實，獲得 1 進化項圈
-    if (d.eff === 'evolve') {
+    // 🥚 v3.2.17 頑皮幼龍蛋：原功能不變（攜帶觸發林德拜爾）＋新增可使用——寵物保管未滿時消耗，隨機獲得 淘氣龍/頑皮龍
+    //   （🚫 舊「進化果實 eff:'evolve' 項圈進化」已隨項圈系統移除；新進化改於包武寵物保管介面進行）
+    if (d.eff === 'dragonegg') {
         if (silent) return;
-        if ((player.lv || 1) < 30) { logSys('<span class="text-red-400">等級不足：進化果實需要玩家等級 30 以上才能使用。</span>'); return; }
-        let baseId = d.evolveFrom, toId = d.evolveTo;
-        let baseStack = player.inv.find(i => i.id === baseId && (i.cnt || 0) > 0);
-        if (!baseStack) { logSys(`<span class="text-red-400">你沒有可進化的 ${DB.items[baseId] ? DB.items[baseId].n : '對應項圈'}，無法使用此進化果實。</span>`); return; }
-        baseStack.cnt--; if (baseStack.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== baseStack.uid);   // 消耗 1 基礎項圈
-        item.cnt--; if (item.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== item.uid);                 // 消耗 1 果實
-        gainItem(toId, 1);                                                                                       // 獲得 1 進化項圈
-        logSys(`<span class="text-amber-300 font-bold">進化成功！</span>你的 ${DB.items[baseId].n} 進化為 <span class="text-amber-300 font-bold">${DB.items[toId].n}</span>！`);
-        renderTabs(); updateUI(); saveGame();
-        if (!document.getElementById('item-modal').classList.contains('hidden')) closeModal();
+        if (typeof petUseDragonEgg === 'function') petUseDragonEgg(item);
         return;
     }
 
@@ -365,6 +363,7 @@ function useItem(u, silent = false) {
             if (hasMastery('k_survive')) h = Math.floor(h * 1.25);   // 🏅 生存精通：治癒藥水恢復 +25%
             if (hasMastery('k_tough') && player.hp < player.mhp * 0.4) h = Math.floor(h * 1.5);   // ⚔️ 堅韌精通：HP<40% 時藥水治癒量 +50%
             if (hasMastery('k_dragonblood')) h = Math.floor(h * 1.15);   // 🐉 龍血精通：治癒藥水恢復 +15%
+            if (player.hp < player.mhp * 0.2) { try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].lowHpPotionX2) { h = h * 2; break; } } } catch (e) {} }   // 🏺 v3.2.17 聖伯納的急救酒桶：HP<20% 時治癒藥水恢復量 ×2
             player.hp = Math.min(player.mhp, player.hp + h);
             player.cds.pot = 1;
             if(!silent) logSys(`飲用 ${d.n}，恢復 ${h} HP。`);
@@ -393,33 +392,13 @@ function useItem(u, silent = false) {
             }
             player.buffs.poly = d.dur;
             if(!silent) logSys(`使用變形卷軸，變身為 <span class="${player.poly.c}">${player.poly.n}</span>。`);
-		} else if (d.eff === 'meat') {
-            // 肉：食用後獲得「誘捕」狀態；但 8 種項圈(杜賓狗/狼/哈士奇/牧羊犬/聖伯納/暴走兔/狐狸/小獵犬)總數達到 floor(魅力/7) 時無法誘捕
-            let limit = Math.min(8, Math.floor((player.d.cha || 0) / 7));   // 🔧 硬上限 8：不論魅力多高，項圈夥伴攜帶上限封頂 8
-            if (totalCollarCount() >= limit) {
-                if(!silent) logSys(`你持有的項圈數量已達上限，無法再進行誘捕。`);
-                return;   // 不消耗肉
-            }
-            player.buffs.taming = 300;
-            if(!silent) logSys(`你吃下了肉，獲得增益 <span class="text-pink-300 font-bold">誘捕</span>，持續300秒。`);
-            // 落到下方 consume(item)，消耗一塊肉
-        } else if (d.eff === 'whistle') {
-            // 哨子：使用不消耗。身上有任一夥伴 → 解除全部；否則依持有的各種項圈獲得對應夥伴（可多種並存）
-            if (!player.partners) player.partners = [];
-            if (player.partners.length > 0) {
-                player.partners = [];
-                if(!silent) logSys(`你收起了哨子，所有夥伴都離開了。`);
-            } else {
-                let added = [];
-                for (let nm in PET_DEF) {
-                    let cnt = petCollarCount(nm);
-                    if (cnt > 0) { player.partners.push(nm); added.push(`夥伴：${nm}${cnt > 1 ? (' ' + cnt) : ''}`); }
-                }
-                if (added.length) { if(!silent) logSys(`吹響哨子！獲得增益 ${added.join('、')}，持續到關閉遊戲或再次使用哨子。`); }
-                else { if(!silent) logSys(`你沒有任何項圈，哨子沒有作用。`); }
-            }
-            updateUI();
-            return;   // 哨子不消耗
+		} else if (d.eff === 'petlure') {
+            // 🐾 v3.2.17 誘捕道具（漂浮之眼肉/胡蘿蔔/虎男誘食/袋鼠·熊貓·猴子的飼料/高麗犬誘食）：
+            //   使用後獲得對應「誘捕」狀態 600 秒；期間擊殺對應動物 → 寵物保管獲得基本等級寵物並失去該狀態。
+            //   （🚫 舊「肉 eff:'meat' 誘捕項圈」與「哨子 eff:'whistle'」已隨項圈系統移除）
+            if (silent) return;
+            if (typeof petUseLureItem !== 'function' || !petUseLureItem(d, silent)) return;   // 失敗不消耗
+            // 落到下方 consume(item)，消耗 1 個
         } else if (d.eff === 'magicbarrier') {
             // 魔法卷軸：與魔法屏障法術共用 player.buffs.sk_magic_shield，不可疊加
             if ((player.magicShieldCd || 0) > 0) {
@@ -702,6 +681,8 @@ function playerHasWindHelm() {
 
 function equipItem(item) {
     let d = DB.items[item.id];
+    // 🦴 v3.2.37 寵物裝備改個別裝備制：玩家無寵物裝備欄——請至包武的寵物保管為單一寵物裝上
+    if (d && (d.slot === 'petwpn' || d.slot === 'petarm')) { logSys('<span class="text-amber-300">寵物裝備請到 亞丁「包武的寵物保管」為指定寵物裝上。</span>'); return; }
     let slot = d.type === 'wpn' ? 'wpn' : d.slot;
     if (d.isArrow) slot = 'arrow'; // 如果是箭矢，強制分配到 arrow 欄位
     // ⚔️ 迅猛雙斧雙持：已學迅猛雙斧且主手已是單手鈍器時，再裝單手鈍器 → 放副手 offwpn 欄
@@ -833,10 +814,9 @@ function consume(item) {
 function buyItem(id, qty) {
     qty = Math.max(1, Math.floor(Number(qty) || 1));   // 數量正規化，至少 1
 
-    // 箭 / 銀箭 / 肉：一「份」= 1000，單價固定，qty 代表份數
+    // 箭 / 銀箭：一「份」= 1000，單價固定，qty 代表份數（🚫 v3.2.17 肉已隨舊項圈系統移除）
     let bundle = (id === 'wpn_5')        ? { unit: 100, amount: 1000, n: '箭',   suffix: '根' }
                : (id === 'wpn_22')       ? { unit: 200, amount: 1000, n: '銀箭', suffix: '根' }
-               : (id === 'new_item_143') ? { unit: 100, amount: 1000, n: '肉',   suffix: '個' }
                : null;
     if (bundle) {
         let cost = shopPrice(bundle.unit) * qty;
@@ -1008,13 +988,15 @@ function renderStatusIconBar() {
     let bar=document.getElementById('status-icon-bar'); if(!bar||!player||!player.buffs)return;
     let rows=[],seen=new Set();
     // player.buffs 的數值單位就是「秒」，主迴圈每 10 tick（1 秒）扣 1；不可再除以 10。
-    let add=(name,seconds,label)=>{if(!name||seen.has(name))return;seen.add(name);let sec=Math.max(0,Math.ceil(Number(seconds)||0));rows.push({name,ticks:Number(seconds)||0,label:label||name,sec});};
+    let add=(name,seconds,label,icon)=>{if(!name||seen.has(name))return;seen.add(name);let sec=Math.max(0,Math.ceil(Number(seconds)||0));rows.push({name,ticks:Number(seconds)||0,label:label||name,sec,icon:icon||name});};   // 🐾 v3.2.17 icon 參數：多狀態共用同一圖示檔（如 7 種誘捕）
     if((player.buffs.sk_greater_haste||0)>0)add('加速術',player.buffs.sk_greater_haste,'強力加速術');   // 💨 v3.0.94 強力加速術優先：沿用加速術圖示·先登錄→seen 去重蓋掉下行的一般加速
     if(player.buffs.haste>0||player._equipHaste)add('加速術',player.buffs.haste||0,'加速');
     if(player.buffs.brave>0)add('勇敢藥水',player.buffs.brave,'勇敢藥水');
     if(player.buffs.blue>0)add('藍色藥水',player.buffs.blue,'藍色藥水');
     if(player.buffs.cautious>0)add('慎重藥水',player.buffs.cautious,'慎重藥水');
     if(player.buffs.elfcookie>0)add('精靈餅乾',player.buffs.elfcookie,'精靈餅乾');
+    // 🐾 v3.2.17 誘捕狀態（7 種·共用「誘捕」圖示·label 區分）：期間擊殺對應動物即捕獲
+    if(typeof PET_LURES!=='undefined')Object.keys(PET_LURES).forEach(k=>{if((player.buffs[k]||0)>0)add('誘捕|'+k,player.buffs[k],PET_LURES[k].n,'誘捕');});
     if(player._setPoly||(player.buffs.poly>0&&player.poly))add('變形術',player.buffs.poly||0,'變身');
     Object.keys(STATUS_ICON_SKILLS).forEach(id=>{if((player.buffs[id]||0)>0)add(STATUS_ICON_SKILLS[id],player.buffs[id],DB.skills[id]?DB.skills[id].n:STATUS_ICON_SKILLS[id]);});
     // 持續治療不存於 player.buffs，而是以 0.1 秒 tick 記在 player.hots；換算成真正剩餘秒數後顯示。
@@ -1025,7 +1007,7 @@ function renderStatusIconBar() {
     let sig=rows.map(x=>x.name+'|'+x.label).join('||');
     if(bar.dataset.statusSig!==sig){
         bar.dataset.statusSig=sig;
-        bar.innerHTML=rows.map((x,i)=>{let title=x.label+(x.ticks>0?'｜剩餘 '+x.sec+' 秒':'');return `<div class="status-icon" data-status-index="${i}" title="${title}"><img src="assets/state-icons/${encodeURIComponent(x.name)}.jpg" alt="${x.label}"></div>`;}).join('');
+        bar.innerHTML=rows.map((x,i)=>{let title=x.label+(x.ticks>0?'｜剩餘 '+x.sec+' 秒':'');return `<div class="status-icon" data-status-index="${i}" title="${title}"><img src="assets/state-icons/${encodeURIComponent(x.icon||x.name)}.jpg" alt="${x.label}"></div>`;}).join('');
     } else {
         rows.forEach((x,i)=>{let icon=bar.querySelector(`[data-status-index="${i}"]`);if(!icon)return;icon.title=x.label+(x.ticks>0?'｜剩餘 '+x.sec+' 秒':'');});
     }
@@ -1055,14 +1037,8 @@ function renderStatusEffects() {
       if(_polyDisp && !_skipIconized) buffs.push(`<span class="${_polyDisp.c} font-bold">變身:${_polyDisp.n}</span>`); }
 
     // 🤝 協力傭兵已改由「協力傭兵隊伍」面板(#squad-panel)顯示 HP/MP/EXP/狀態，移除此處「狀態」欄的重複「協力：XX」條目
-    // 👇 補上夥伴與誘捕狀態的顯示（可同時多種夥伴，數字=持有項圈數量，為1不顯示）
-    if(player.partners && player.partners.length) {
-        player.partners.forEach(nm => {
-            let cnt = petCollarCount(nm);
-            buffs.push(`<span class="text-orange-400 font-bold">夥伴：${nm}${cnt > 1 ? (' ' + cnt) : ''}</span>`);
-        });
-    }
-    if(player.buffs.taming > 0) buffs.push(`<span class="text-pink-300 font-bold">誘捕</span>`);
+    // 🐾 v3.2.17 誘捕狀態（新夥伴系統·7 種）；舊「夥伴：項圈」與 taming 顯示已隨項圈系統移除
+    if(typeof PET_LURES!=='undefined')Object.keys(PET_LURES).forEach(k=>{if((player.buffs[k]||0)>0)buffs.push(`<span class="text-pink-300 font-bold">${PET_LURES[k].n}</span>`);});
 
     // 🔮 席琳套裝：達 2 件以上（觸發套裝能力）的組別顯示於資訊面板（n/5）
     if (player._sherineSetCnt) {
@@ -1077,16 +1053,17 @@ function renderStatusEffects() {
         if(player.buffs[k] > 0 && DB.skills[k]) {
             // 迷魅術：狀態欄改顯示「迷魅：怪物名稱」，並以實際被迷魅的僕人(player.summon)為準；
             //   僕人不存在（死亡解除 / 被新召喚取代 / 已消失）時就不顯示，避免殘留。
-            // 迷魅術 / 各召喚術：狀態欄改顯示召喚物名稱（近戰召喚附上隨從數字 floor(魅力/6)，為1則不顯示）；
+            // 迷魅術 / 各召喚術：狀態欄改顯示召喚物名稱（多段或多隻時附上數量）；
             //   召喚物不存在（死亡解除 / 被新召喚取代 / 已消失）時就不顯示，避免殘留。
             if(k === 'sk_charm' || DB.skills[k].summon) {
+                // 🧙 v3.2.42 稽核修：v2 召喚（召喚術/造屍術/屬性精靈）狀態列顯示——讀 summonsV2 實體（原讀 player.summon 在 v2 恆 null→四個召喚技倒數永不顯示）
+                if(k !== 'sk_charm' && player._summonV2Sk === k) {
+                    continue;   // 🔮 v3.2.60 召喚物已於戰場顯示（浮動血量框／隊伍列）→狀態欄不再重複顯示「召喚物名＋數量」
+                }
                 let _creature = (k === 'sk_charm') ? player.charmed : player.summon;
                 if(_creature && _creature.skId === k) {
-                    let _chaC = Math.min(60, player.d.cha || 0);
                     let cnt = (k === 'sk_charm') ? 0
-                        : (_creature.kind === 'melee') ? Math.floor(_chaC / 6)
-                        : (hasMastery('e_spirit') && (k === 'sk_elf_summon' || k === 'sk_elf_summon2')) ? Math.min(7, 1 + Math.floor(_chaC / 10))   // 🏅 精靈精通：屬性精靈顯示數量 1+魅力/10（上限7）
-                        : 0;
+                        : (typeof summonAttackCount === 'function') ? summonAttackCount(_creature, player) : 1;
                     let suffix = cnt > 1 ? ` ${cnt}` : '';
                     buffs.push(`<span class="${getBuffColor(k, DB.skills[k])} font-bold">${_creature.n}${suffix}</span>`);
                 }

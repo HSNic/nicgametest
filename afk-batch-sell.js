@@ -31,7 +31,7 @@
   'use strict';
 
   var STYLE_ID = 'afk-batch-sell-style';
-  var MODAL_ID = 'm-bs-modal';
+  var MODAL_ID = 'afk-bsell-modal';
   var ENTRY_CLASS = 'm-batchsell-entry';
   var selected = {};   // uid -> true
   var currentType = 'item';   // 目前開啟中的批次販賣範圍:'wpn' / 'arm' / 'item'
@@ -49,28 +49,28 @@
     s.textContent = [
       '#' + MODAL_ID + '{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:12px;}',
       '#' + MODAL_ID + '.hidden{display:none;}',
-      '#' + MODAL_ID + ' .m-bs-box{background:#0f172a;border:1px solid #334155;border-radius:10px;width:100%;max-width:440px;max-height:86vh;display:flex;flex-direction:column;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.6);}',
-      '#' + MODAL_ID + ' .m-bs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}',
-      '#' + MODAL_ID + ' .m-bs-title{font-weight:800;color:#fdba74;font-size:16px;}',
-      '#' + MODAL_ID + ' .m-bs-close{background:#334155;border:1px solid #475569;color:#e2e8f0;border-radius:6px;width:32px;height:32px;font-weight:bold;cursor:pointer;}',
+      '#' + MODAL_ID + ' .afk-bsell-box{background:#0f172a;border:1px solid #334155;border-radius:10px;width:100%;max-width:440px;max-height:86vh;display:flex;flex-direction:column;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.6);}',
+      '#' + MODAL_ID + ' .afk-bsell-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}',
+      '#' + MODAL_ID + ' .afk-bsell-title{font-weight:800;color:#fdba74;font-size:16px;}',
+      '#' + MODAL_ID + ' .afk-bsell-close{background:#334155;border:1px solid #475569;color:#e2e8f0;border-radius:6px;width:32px;height:32px;font-weight:bold;cursor:pointer;}',
       '#' + MODAL_ID + ' input[type=search]{width:100%;box-sizing:border-box;padding:8px 10px;margin-bottom:8px;border-radius:6px;border:1px solid #475569;background:#020617;color:#e2e8f0;font-size:14px;}',
-      '#' + MODAL_ID + ' .m-bs-allrow{display:flex;align-items:center;gap:8px;padding:6px 2px;color:#cbd5e1;font-size:13px;font-weight:bold;}',
-      '#' + MODAL_ID + ' .m-bs-allrow input{width:20px;height:20px;}',
-      '#' + MODAL_ID + ' .m-bs-list{flex:1;overflow-y:auto;border:1px solid #334155;border-radius:6px;background:#020617;margin-bottom:8px;min-height:120px;}',
-      '#' + MODAL_ID + ' .m-bs-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-height:40px;box-sizing:border-box;border-bottom:1px solid #1e293b;cursor:pointer;}',
-      '#' + MODAL_ID + ' .m-bs-row:last-child{border-bottom:none;}',
-      '#' + MODAL_ID + ' .m-bs-row:hover,#' + MODAL_ID + ' .m-bs-row:active{background:#0f172a;}',
-      '#' + MODAL_ID + ' .m-bs-row.m-bs-hide{display:none;}',
-      '#' + MODAL_ID + ' .m-bs-row input[type=checkbox]{width:20px;height:20px;flex:0 0 auto;}',
-      '#' + MODAL_ID + ' .m-bs-icon{width:22px;height:22px;object-fit:contain;flex:0 0 auto;}',
-      '#' + MODAL_ID + ' .m-bs-name{flex:1;min-width:0;font-size:13px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-      '#' + MODAL_ID + ' .m-bs-meta{flex:0 0 auto;font-size:11px;color:#94a3b8;text-align:right;white-space:nowrap;}',
-      '#' + MODAL_ID + ' .m-bs-summary{font-size:13px;color:#fde68a;font-weight:bold;margin-bottom:8px;min-height:18px;}',
-      '#' + MODAL_ID + ' .m-bs-actions{display:flex;gap:8px;}',
-      '#' + MODAL_ID + ' .m-bs-actions button{flex:1;padding:10px;border-radius:6px;font-weight:bold;font-size:14px;border:1px solid;cursor:pointer;}',
-      '#' + MODAL_ID + ' .m-bs-cancel{background:#334155;border-color:#475569;color:#e2e8f0;}',
-      '#' + MODAL_ID + ' .m-bs-confirm{background:#c2410c;border-color:#ea580c;color:#fed7aa;}',
-      '#' + MODAL_ID + ' .m-bs-confirm:disabled{opacity:.5;cursor:not-allowed;}',
+      '#' + MODAL_ID + ' .afk-bsell-allrow{display:flex;align-items:center;gap:8px;padding:6px 2px;color:#cbd5e1;font-size:13px;font-weight:bold;}',
+      '#' + MODAL_ID + ' .afk-bsell-allrow input{width:20px;height:20px;}',
+      '#' + MODAL_ID + ' .afk-bsell-list{flex:1;overflow-y:auto;border:1px solid #334155;border-radius:6px;background:#020617;margin-bottom:8px;min-height:120px;}',
+      '#' + MODAL_ID + ' .afk-bsell-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-height:40px;box-sizing:border-box;border-bottom:1px solid #1e293b;cursor:pointer;}',
+      '#' + MODAL_ID + ' .afk-bsell-row:last-child{border-bottom:none;}',
+      '#' + MODAL_ID + ' .afk-bsell-row:hover,#' + MODAL_ID + ' .afk-bsell-row:active{background:#0f172a;}',
+      '#' + MODAL_ID + ' .afk-bsell-row.afk-bsell-hide{display:none;}',
+      '#' + MODAL_ID + ' .afk-bsell-row input[type=checkbox]{width:20px;height:20px;flex:0 0 auto;}',
+      '#' + MODAL_ID + ' .afk-bsell-icon{width:22px;height:22px;object-fit:contain;flex:0 0 auto;}',
+      '#' + MODAL_ID + ' .afk-bsell-name{flex:1;min-width:0;font-size:13px;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+      '#' + MODAL_ID + ' .afk-bsell-meta{flex:0 0 auto;font-size:11px;color:#94a3b8;text-align:right;white-space:nowrap;}',
+      '#' + MODAL_ID + ' .afk-bsell-summary{font-size:13px;color:#fde68a;font-weight:bold;margin-bottom:8px;min-height:18px;}',
+      '#' + MODAL_ID + ' .afk-bsell-actions{display:flex;gap:8px;}',
+      '#' + MODAL_ID + ' .afk-bsell-actions button{flex:1;padding:10px;border-radius:6px;font-weight:bold;font-size:14px;border:1px solid;cursor:pointer;}',
+      '#' + MODAL_ID + ' .afk-bsell-cancel{background:#334155;border-color:#475569;color:#e2e8f0;}',
+      '#' + MODAL_ID + ' .afk-bsell-confirm{background:#c2410c;border-color:#ea580c;color:#fed7aa;}',
+      '#' + MODAL_ID + ' .afk-bsell-confirm:disabled{opacity:.5;cursor:not-allowed;}',
       '.' + ENTRY_CLASS + '{white-space:nowrap;}'
     ].join('');
     document.head.appendChild(s);
@@ -105,27 +105,27 @@
     modal.id = MODAL_ID;
     modal.className = 'hidden';
     modal.innerHTML =
-      '<div class="m-bs-box">' +
-        '<div class="m-bs-head"><span class="m-bs-title" id="m-bs-title">🧺 批次販賣</span><button type="button" class="m-bs-close" id="m-bs-close">✕</button></div>' +
-        '<input type="search" id="m-bs-search" placeholder="搜尋物品名稱…">' +
-        '<label class="m-bs-allrow"><input type="checkbox" id="m-bs-selectall"> 全選(<span id="m-bs-selcount">0</span>/<span id="m-bs-total">0</span>)</label>' +
-        '<div class="m-bs-list" id="m-bs-list"></div>' +
-        '<div class="m-bs-summary" id="m-bs-summary"></div>' +
-        '<div class="m-bs-actions">' +
-          '<button type="button" class="m-bs-cancel" id="m-bs-cancel">取消</button>' +
-          '<button type="button" class="m-bs-confirm" id="m-bs-confirm">賣出勾選項目</button>' +
+      '<div class="afk-bsell-box">' +
+        '<div class="afk-bsell-head"><span class="afk-bsell-title" id="afk-bsell-title">🧺 批次販賣</span><button type="button" class="afk-bsell-close" id="afk-bsell-close">✕</button></div>' +
+        '<input type="search" id="afk-bsell-search" placeholder="搜尋物品名稱…">' +
+        '<label class="afk-bsell-allrow"><input type="checkbox" id="afk-bsell-selectall"> 全選(<span id="afk-bsell-selcount">0</span>/<span id="afk-bsell-total">0</span>)</label>' +
+        '<div class="afk-bsell-list" id="afk-bsell-list"></div>' +
+        '<div class="afk-bsell-summary" id="afk-bsell-summary"></div>' +
+        '<div class="afk-bsell-actions">' +
+          '<button type="button" class="afk-bsell-cancel" id="afk-bsell-cancel">取消</button>' +
+          '<button type="button" class="afk-bsell-confirm" id="afk-bsell-confirm">賣出勾選項目</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(modal);
 
     modal.addEventListener('click', function (e) { if (e.target === modal) closeModalUI(); });
-    document.getElementById('m-bs-close').onclick = closeModalUI;
-    document.getElementById('m-bs-cancel').onclick = closeModalUI;
-    document.getElementById('m-bs-confirm').onclick = confirmSell;
-    document.getElementById('m-bs-search').addEventListener('input', function () { filterList(this.value); });
-    document.getElementById('m-bs-selectall').addEventListener('change', function () {
+    document.getElementById('afk-bsell-close').onclick = closeModalUI;
+    document.getElementById('afk-bsell-cancel').onclick = closeModalUI;
+    document.getElementById('afk-bsell-confirm').onclick = confirmSell;
+    document.getElementById('afk-bsell-search').addEventListener('input', function () { filterList(this.value); });
+    document.getElementById('afk-bsell-selectall').addEventListener('change', function () {
       var checked = this.checked;
-      var rows = document.querySelectorAll('#m-bs-list .m-bs-row:not(.m-bs-hide)');
+      var rows = document.querySelectorAll('#afk-bsell-list .afk-bsell-row:not(.afk-bsell-hide)');
       for (var i = 0; i < rows.length; i++) {
         var cb = rows[i].querySelector('input[type=checkbox]');
         if (cb.checked !== checked) { cb.checked = checked; toggleSel(rows[i].getAttribute('data-uid'), checked); }
@@ -142,10 +142,10 @@
 
   function filterList(query) {
     var q = (query || '').trim().toLowerCase();
-    var rows = document.querySelectorAll('#m-bs-list .m-bs-row');
+    var rows = document.querySelectorAll('#afk-bsell-list .afk-bsell-row');
     for (var i = 0; i < rows.length; i++) {
       var name = (rows[i].getAttribute('data-name') || '').toLowerCase();
-      rows[i].classList.toggle('m-bs-hide', q !== '' && name.indexOf(q) === -1);
+      rows[i].classList.toggle('afk-bsell-hide', q !== '' && name.indexOf(q) === -1);
     }
   }
 
@@ -155,18 +155,18 @@
     var uids = Object.keys(selected);
     var totalGold = 0;
     uids.forEach(function (uid) {
-      var row = document.querySelector('#m-bs-list .m-bs-row[data-uid="' + uid + '"]');
+      var row = document.querySelector('#afk-bsell-list .afk-bsell-row[data-uid="' + uid + '"]');
       if (row) totalGold += Number(row.getAttribute('data-est')) || 0;
     });
-    var countEl = document.getElementById('m-bs-selcount');
+    var countEl = document.getElementById('afk-bsell-selcount');
     if (countEl) countEl.textContent = String(uids.length);
-    var summaryEl = document.getElementById('m-bs-summary');
+    var summaryEl = document.getElementById('afk-bsell-summary');
     if (summaryEl) summaryEl.textContent = uids.length ? ('已勾選 ' + uids.length + ' 項,預估獲得 ' + totalGold.toLocaleString() + ' 金幣。') : '尚未勾選任何物品。';
-    var confirmBtn = document.getElementById('m-bs-confirm');
+    var confirmBtn = document.getElementById('afk-bsell-confirm');
     if (confirmBtn) confirmBtn.disabled = uids.length === 0;
-    var allBox = document.getElementById('m-bs-selectall');
+    var allBox = document.getElementById('afk-bsell-selectall');
     if (allBox) {
-      var visibleRows = document.querySelectorAll('#m-bs-list .m-bs-row:not(.m-bs-hide)');
+      var visibleRows = document.querySelectorAll('#afk-bsell-list .afk-bsell-row:not(.afk-bsell-hide)');
       var visibleChecked = 0;
       for (var i = 0; i < visibleRows.length; i++) { if (visibleRows[i].querySelector('input[type=checkbox]').checked) visibleChecked++; }
       allBox.checked = visibleRows.length > 0 && visibleChecked === visibleRows.length;
@@ -177,9 +177,9 @@
   function renderList() {
     selected = {};
     var items = getEligibleItems(currentType);
-    var list = document.getElementById('m-bs-list');
+    var list = document.getElementById('afk-bsell-list');
     list.innerHTML = '';
-    document.getElementById('m-bs-total').textContent = String(items.length);
+    document.getElementById('afk-bsell-total').textContent = String(items.length);
     // 2026-07-08(使用者實機回報:武器分頁裝備多時,點「批次販賣」要等好幾秒視窗才跳出來):
     //   原本一次迴圈同步建完全部列,每列都要呼叫 getSellPrice/getItemFullName/getItemColor
     //   (裝備類這些函式比道具貴,要算強化/詞綴/席琳套裝等),物品一多整段同步跑完才讓視窗
@@ -193,7 +193,7 @@
       var price = getSellPrice(item);
       var est = price * (item.cnt || 0);
       var row = document.createElement('label');
-      row.className = 'm-bs-row';
+      row.className = 'afk-bsell-row';
       row.setAttribute('data-uid', item.uid);
       row.setAttribute('data-name', d.n || item.id);
       row.setAttribute('data-est', String(est));
@@ -202,9 +202,9 @@
       var colorClass = (typeof getItemColor === 'function') ? getItemColor(item) : '';
       row.innerHTML =
         '<input type="checkbox">' +
-        (imgUrl ? '<img class="m-bs-icon" src="' + imgUrl + '" onerror="this.style.visibility=\'hidden\';">' : '') +
-        '<span class="m-bs-name ' + colorClass + '">' + nameHtml + '</span>' +
-        '<span class="m-bs-meta">x' + (item.cnt || 0) + '・共 ' + est.toLocaleString() + ' 金</span>';
+        (imgUrl ? '<img class="afk-bsell-icon" src="' + imgUrl + '" onerror="this.style.visibility=\'hidden\';">' : '') +
+        '<span class="afk-bsell-name ' + colorClass + '">' + nameHtml + '</span>' +
+        '<span class="afk-bsell-meta">x' + (item.cnt || 0) + '・共 ' + est.toLocaleString() + ' 金</span>';
       row.querySelector('input[type=checkbox]').addEventListener('change', function (e) {
         toggleSel(item.uid, e.target.checked);
         updateSummary();
@@ -225,9 +225,9 @@
   function openModalUI(type) {
     currentType = type || 'item';
     ensureModal();
-    document.getElementById('m-bs-title').textContent = '🧺 批次販賣（' + typeLabel(currentType) + '）';
+    document.getElementById('afk-bsell-title').textContent = '🧺 批次販賣（' + typeLabel(currentType) + '）';
     renderList();
-    document.getElementById('m-bs-search').value = '';
+    document.getElementById('afk-bsell-search').value = '';
     filterList('');
     document.getElementById(MODAL_ID).classList.remove('hidden');
   }

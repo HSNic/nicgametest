@@ -559,6 +559,11 @@
 .classic-item-main { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
 .classic-icon-box { display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; }
 .classic-icon-box img,.classic-item-main .classic-icon-box img { width:88% !important; height:88% !important; max-width:none; max-height:none; margin:0 !important; object-fit:contain; }
+.classic-equipped-badge,.equipment-slot-equipped { position:absolute; z-index:9; left:2px; top:2px; display:flex; align-items:center; justify-content:center; min-width:15px; height:15px; padding:0 2px; box-sizing:border-box; border:1px solid #60a5fa; border-radius:1px; color:#eaf4ff; background:linear-gradient(145deg,#2563a8,#123d78); font:italic 800 12px/1 Georgia,serif; text-shadow:0 1px 1px #082047; box-shadow:0 0 3px #60a5fa99,inset 0 0 2px #bfdbfe88; pointer-events:none; }
+.classic-icon-corner-value,.equipment-slot-enhance,.equipment-slot-count { position:absolute; z-index:9; right:2px; bottom:1px; max-width:88%; overflow:hidden; color:#d5a94f; font:800 clamp(10px,.9vw,15px)/1 Arial,sans-serif; letter-spacing:0; text-align:right; white-space:nowrap; text-shadow:1px 1px 2px #000,-1px -1px 2px #000; pointer-events:none; }
+.classic-icon-corner-value.is-enhance,.equipment-slot-enhance { color:#39a9ff !important; text-shadow:0 0 3px #0b4f99,1px 1px 2px #000 !important; }
+.classic-icon-corner-value.is-count,.equipment-slot-count { color:#d5a94f; }
+.classic-item-junk .classic-icon-corner-value { bottom:11px; }
 .classic-name-box { display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden; color:#e5e7eb; text-shadow:0 1px 2px #000; white-space:nowrap; }
 .classic-name-box > span:not(.classic-slot-name):first-of-type { overflow:hidden; text-overflow:ellipsis; }
 .classic-slot-name { color:#9ca3af; font-size:11px; flex:0 0 auto; }
@@ -592,10 +597,28 @@
 #login-title-layer { position:absolute; z-index:3; left:3.1%; top:14%; width:30.8%; color:#f7df91; text-shadow:0 2px 4px #000,0 0 6px #000; }
 #login-title-layer h1 { margin:0 0 2.5%; font-size:clamp(14px,2.05vw,31px); line-height:1.15; color:#f5d46c; }
 #login-title-layer p { margin:0; font-size:clamp(9px,1.05vw,16px); color:#e7d7b5; }
-#main-menu { position:absolute; z-index:4; left:50.4%; top:48.5%; width:25%; margin:0 !important; display:flex; flex-direction:column; align-items:stretch; gap:clamp(4px,.8vw,11px) !important; }
+#main-menu { position:absolute; z-index:4; left:50.4%; top:48.5%; width:25%; margin:0 !important; display:flex; flex-direction:column; align-items:stretch; gap:clamp(10px,1.45vw,22px) !important; }
 #main-menu.hidden { display:none !important; }
-#main-menu > button { width:100% !important; padding:clamp(5px,.72vw,11px) 4px !important; font-size:clamp(9px,1.03vw,16px) !important; line-height:1.1; border-color:#b68a39; background:linear-gradient(180deg,rgba(35,55,83,.94),rgba(10,22,42,.96)); color:#f8e7bb; text-shadow:0 1px 2px #000; box-shadow:inset 0 0 9px rgba(116,165,219,.35),0 2px 5px #000; }
-#main-menu > button:hover { filter:brightness(1.18); }
+#main-menu > button {
+    width:100% !important;
+    padding:clamp(8px,1.08vw,17px) 4px !important;
+    border:1px solid rgba(198,156,74,.82) !important;
+    border-radius:2px !important;
+    background:linear-gradient(180deg, rgba(29,22,12,.96), rgba(7,5,3,.98)) !important;
+    color:#f7e79d !important;
+    font-family:Georgia, "Times New Roman", "Microsoft JhengHei", serif;
+    font-size:clamp(11px,1.22vw,20px) !important;
+    font-weight:700;
+    line-height:1.12;
+    text-shadow:0 1px 2px #000, 0 0 7px rgba(231,194,91,.45);
+    box-shadow:inset 0 1px 0 rgba(255,232,167,.13), inset 0 -14px 18px rgba(0,0,0,.34), 0 0 12px rgba(0,0,0,.75);
+}
+#main-menu > button:hover {
+    color:#fff1ba !important;
+    border-color:rgba(241,199,92,.95) !important;
+    background:linear-gradient(180deg, rgba(42,32,16,.98), rgba(12,8,4,.98)) !important;
+    box-shadow:inset 0 1px 0 rgba(255,232,167,.22), inset 0 -14px 18px rgba(0,0,0,.28), 0 0 16px rgba(216,179,80,.36);
+}
 #main-menu > p { width:150% !important; margin:1% 0 0 -25% !important; font-size:clamp(9px,.78vw,14px) !important; line-height:1.42; color:#eee2c7; text-shadow:0 1px 3px #000,0 0 3px #000; }
 #login-meta-layer { position:absolute; z-index:3; left:5.8%; top:41.5%; width:25.4%; color:#d8c8a2; text-shadow:0 1px 3px #000; }   /* 🔧 v3.0.41 用戶：版權文字縮小+寬度縮短不超框 */
 #login-version { margin-bottom:3%; font-size:clamp(12px,1.05vw,18px) !important; font-weight:700; color:#f2d77f; }
@@ -674,132 +697,6 @@ button.classic-skill-cell { cursor:pointer; }
 #slot-select-panel:not(.hidden) { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(760px,92vw); max-height:92vh; overflow:auto; margin:0 !important; padding:22px; border:2px solid #b89243; border-radius:14px; background:rgba(15,23,42,.96); box-shadow:0 20px 70px #000; }
 #creation-panel:not(.hidden) { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(1000px,96vw); max-height:96vh; overflow:auto; padding:20px; border:2px solid #b89243; border-radius:14px; background:rgba(15,23,42,.96); box-shadow:0 20px 70px #000; }
 
-/* ============================================================
-   🎨 創角畫面按鈕黑金視覺 + 職業/性別兩步驟選擇（2026-07-11）
-   範圍限定 #creation-panel 內，不影響遊戲其他畫面沿用 .btn 的按鈕（分頁鈕/道具鈕等）。
-   ============================================================ */
-#creation-panel button.create-btn,
-#creation-panel button.create-btn-primary,
-#creation-panel button.create-btn-secondary,
-#creation-panel button.stat-btn,
-#creation-panel button.class-btn,
-#creation-panel button.gender-btn {
-    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease, border-color .16s ease, background .16s ease;
-    border: 1px solid rgba(214,168,91,.72);
-    background-image: linear-gradient(180deg, rgba(255,232,181,.16) 0%, rgba(122,82,31,.16) 36%, rgba(12,9,6,.88) 100%);
-    background-color: #241a10;
-    color: #f3e6c8;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -2px 3px rgba(0,0,0,.55), 0 2px 4px rgba(0,0,0,.5);
-}
-@media (hover:hover) {
-    #creation-panel button.create-btn:hover:not(:disabled),
-    #creation-panel button.create-btn-primary:hover:not(:disabled),
-    #creation-panel button.create-btn-secondary:hover:not(:disabled),
-    #creation-panel button.stat-btn:hover:not(:disabled),
-    #creation-panel button.class-btn:hover:not(:disabled),
-    #creation-panel button.gender-btn:hover:not(:disabled) {
-        transform: translateY(-2px) scale(1.025);
-        filter: brightness(1.14);
-        border-color: rgba(255,214,130,.95);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 3px rgba(0,0,0,.5), 0 4px 10px rgba(0,0,0,.55), 0 0 12px rgba(214,168,91,.35);
-    }
-}
-#creation-panel button.create-btn:active:not(:disabled),
-#creation-panel button.create-btn-primary:active:not(:disabled),
-#creation-panel button.create-btn-secondary:active:not(:disabled),
-#creation-panel button.stat-btn:active:not(:disabled),
-#creation-panel button.class-btn:active:not(:disabled),
-#creation-panel button.gender-btn:active:not(:disabled) {
-    transform: translateY(2px) scale(.985);
-    filter: brightness(.94);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,.6), inset 0 -1px 0 rgba(255,255,255,.06);
-}
-
-/* 職業選單容器：4欄×2列排列8顆圖示鈕。⚠️ 不能靠 Tailwind 的 grid-cols-4 utility class——
-   本專案 css/tailwind-built.css 是預編譯(purge)過的，只含原版原本用到的 class，
-   原版從沒用過 grid-cols-4，套上去不會生效（8顆鈕會擠成單欄），故這裡自己補一條規則。 */
-#creation-panel .creation-class-list {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-}
-
-/* 職業圖示鈕（8顆，改成 V17 參考稿的「盾牌形」：上方圓角、下方直角，圖示＋下方文字，取代舊版16顆文字鈕與早期方形圖示版） */
-#creation-panel button.class-btn {
-    border-radius: 50px 50px 10px 10px;
-    width: 100%;
-    min-height: 64px;
-    padding: 8px 4px 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-}
-#creation-panel button.class-btn img { width: 30px; height: 30px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); pointer-events: none; }
-#creation-panel button.class-btn small { font-size: 11px; line-height: 1; color: #d8c297; }
-#creation-panel button.class-btn.active {
-    border-color: #ffd873;
-    color: #ffd873;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 3px rgba(0,0,0,.5), 0 0 14px rgba(255,214,115,.55), 0 0 3px rgba(255,214,115,.9);
-}
-#creation-panel button.class-btn.active small { color: #ffe6a8; }
-
-/* 性別鈕（2顆，改成 V17 參考稿的長方形：左右並排、符號＋文字） */
-#creation-panel button.gender-btn {
-    border-radius: 14px;
-    width: 100%;
-    min-height: 44px;
-    padding: 7px 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 1.05rem;
-}
-#creation-panel button.gender-btn small { font-size: 13px; color: #d8c297; }
-#creation-panel button.gender-btn.active {
-    border-color: #ffd873;
-    color: #ffd873;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -2px 3px rgba(0,0,0,.5), 0 0 10px rgba(255,214,115,.55);
-}
-#creation-panel button.gender-btn.active small { color: #ffe6a8; }
-
-/* 能力值加減鈕（12顆，正方形，比原本 px-3 py-0.5 縮小約 18%） */
-#creation-panel button.stat-btn {
-    border-radius: 8px;
-    background-image: linear-gradient(180deg,#79572e 0%,#4a2e16 52%,#24150a 100%);
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: .95rem;
-    flex-shrink: 0;
-}
-
-/* 底部主要按鈕（返回／開始冒險），垂直內距比原本 py-2.5(10px) 縮小約 18% */
-#creation-panel button.create-btn-secondary,
-#creation-panel button.create-btn-primary {
-    border-radius: 13px;
-    padding-top: 0.52rem;
-    padding-bottom: 0.52rem;
-    background-image: linear-gradient(180deg,#8b6737 0%,#5c3b1d 47%,#2c190c 100%);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 3px rgba(0,0,0,.55), 0 5px 0 #171008, 0 7px 10px rgba(0,0,0,.5);
-}
-#creation-panel button.create-btn-secondary:active:not(:disabled),
-#creation-panel button.create-btn-primary:active:not(:disabled) {
-    box-shadow: inset 0 2px 4px rgba(0,0,0,.6), 0 2px 0 #171008, 0 3px 6px rgba(0,0,0,.4);
-}
-#creation-panel button.create-btn-primary:disabled { box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -2px 3px rgba(0,0,0,.4); }
-
-/* ============================================================
-   🎨 2026-07-11 三畫面全面改版：採用原作者新版 2026071001 的視覺化角色選擇畫面
-   (#load-select-panel) 與人物立繪置中創角版面，逐幀走路動畫；移植自
-   Lineage/加掛版/原作者新版/2026071001/css/style.css（原檔第693~1370行，逐段疊代覆寫
-   保留原本的 cascade 順序，不手動計算「最終數值」以免抄錯）。
-   ============================================================ */
 /* ===== 824.png 創角畫面：底圖框架、序列幀角色、原圖配點熱區 ===== */
 #creation-panel:not(.hidden) {
     position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -1303,6 +1200,10 @@ button.classic-skill-cell { cursor:pointer; }
     transform-origin:center bottom;
     filter:drop-shadow(0 14px 12px rgba(0,0,0,.84)) contrast(1.08) saturate(1.05);
 }
+.load-slot-card[data-key="m_warrior"] img,
+.load-slot-card[data-key="f_warrior"] img {
+    transform:scale(1.20);   /* 戰士幀為200x270，其餘職業為160x270；補回 contain 因較寬畫布造成的高度縮小 */
+}
 .load-slot-card.filled:not(.selected) img {
     filter:grayscale(1) brightness(.48) contrast(1.08) drop-shadow(0 12px 10px rgba(0,0,0,.9));
     opacity:.78;
@@ -1477,110 +1378,4 @@ button.classic-skill-cell { cursor:pointer; }
 #load-action-panel button {
     height:clamp(18px,2.55vw,32px);
     font-size:clamp(8px,.9vw,12px);
-}
-
-/* ============================================================
-   🎨 2026-07-11 三畫面黑金立體加工(第二層)：主選單/角色選擇/創角底部按鈕統一疊上
-   「立體浮雕」質感(內高光+內陰影模擬凸起、hover浮起發光、按下凹陷)，呼應創角職業/性別鈕
-   已有的黑金風格。上面搬進來的原作按鈕(load-action-panel/creation-back-button 等)本身已是
-   黑金配色，這裡只加共通的過場/hover/active，不重覆定義背景色；#main-menu 原本是深藍配色，
-   這裡改成黑金漸層以統一三畫面視覺。
-   ============================================================ */
-#main-menu > button,
-#load-action-panel button,
-#btn-start.creation-start-button,
-#creation-back-button,
-.creation-class-btn,
-.creation-gender-btn,
-.creation-stat-btn,
-#load-page-tabs button {
-    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease, border-color .16s ease, background .16s ease;
-}
-#main-menu > button {
-    background: linear-gradient(180deg, rgba(139,103,55,.94) 0%, rgba(60,38,20,.95) 47%, rgba(20,13,7,.96) 100%) !important;
-    box-shadow: inset 0 1px 0 rgba(255,240,203,.28), inset 0 -2px 4px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.45) !important;
-}
-@media (hover:hover) {
-    #main-menu > button:hover,
-    #load-action-panel button:hover:not(:disabled),
-    #btn-start.creation-start-button:hover:not(:disabled),
-    #creation-back-button:hover {
-        transform: translateY(-1px);
-        filter: brightness(1.15);
-    }
-}
-#main-menu > button:active,
-#load-action-panel button:active:not(:disabled),
-#btn-start.creation-start-button:active:not(:disabled),
-#creation-back-button:active {
-    transform: translateY(1px) scale(.985);
-    filter: brightness(.92);
-}
-
-/* ============================================================
-   🎨 2026-07-11 首頁登入畫面改版——依使用者提供的 V17 參考稿
-   (game_ui_v17_create_buttons_3d_preview.html)的「左資訊卡＋右按鈕面板」版面。
-   真實登入頁保留原本 4:3 藝術舞台背景動畫(#login-bg-image/#login-anim-image)，
-   只換上面疊的資訊卡/按鈕面板版面與樣式，不是整頁換成 V17 的素材。
-   ============================================================ */
-/* ⚠️ 2026-07-11 使用者明訂:左側標題/版號資訊區維持原作者樣式,不套 V17 的卡片外框——
-   #login-copy-panel 只是個「不影響版面的透明包裝殼」,#login-title-layer/#login-meta-layer
-   直接沿用上面(約592~602行)原作者原本就有的 position:absolute 定位,這裡不再覆寫。 */
-#login-copy-panel { position: static; }
-/* 🔧 2026-07-11 使用者回饋:標題文字貼在畫框最頂端、超出資訊卡的裝飾畫框範圍——原作者原本
-   top:14% 這個數值在我們的版面比例下太靠上,往下移一些讓它完整落在畫框裡面。 */
-#login-title-layer { top: 20%; }
-
-#main-menu {
-    left: 49%; top: 26%; width: 31%; height: 67%;
-    display: grid; grid-auto-rows: min-content; gap: clamp(6px,.9vw,12px); align-content: start;
-}
-#main-menu > p { width: 100% !important; margin: 0 !important; }
-
-/* 開始遊戲：V17 的 .start-btn/.gold 金色主按鈕(暖金棕色,依使用者提供的 V17 實際渲染截圖調亮) */
-#btn-start-menu {
-    background: linear-gradient(180deg, #9c7a44 0%, #6b4826 55%, #3a2410 100%) !important;
-    border-color: #c9a15a !important;
-    font-weight: 800 !important; letter-spacing: .08em;
-}
-
-/* 戰鬥特效／傷害數字開關：V17 的 .toggle/.blue，兩行式(粗體標題+小字說明)＋右側 ON/OFF 圓角徽章。
-   說明文字用 data-desc + ::after content(見 index.html 按鈕上的 data-desc)顯示在標題下方；
-   ON/OFF 徽章改用 ::before(絕對定位、不影響文件流,兩個 pseudo-element 才不會互相覆蓋)。
-   ⚠ 依原生 bg-emerald-800(開)/bg-rose-900(關) 這兩個 class 當開關判斷鉤子——不能自己加 is-off 之類的
-   class,因為原生 _applyVfxPref() 每次都會整個重寫 button.className,我們自己加的 class 會被洗掉。 */
-#btn-vfx-toggle, #btn-vfxnum-toggle {
-    position: relative; text-align: left; padding: 10px 20% 10px 14px !important;
-    min-height: 3.4em; display: block; white-space: normal;
-    background: linear-gradient(180deg, #16385f, #08192e) !important;
-    font-weight: 800 !important;
-    /* 🔧 2026-07-11 使用者依實際渲染截圖糾正:V17 原始檔案裡開啟狀態的邊框其實是「綠色發光」
-       (.toggle:not(.is-off){border-color:#5ca879;box-shadow:...0 0 14px rgba(66,180,110,.28)...}),
-       不是先前誤用的暗棕金色框線。 */
-    border-color: #5ca879 !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -3px 0 rgba(0,0,0,.32),
-        0 0 14px rgba(66,180,110,.28), 0 5px 12px rgba(0,0,0,.55) !important;
-}
-#btn-vfx-toggle::after, #btn-vfxnum-toggle::after {
-    content: attr(data-desc); display: block;
-    margin-top: .3em; font-size: .68em; font-weight: 400; color: #bcae94;
-}
-#btn-vfx-toggle::before, #btn-vfxnum-toggle::before {
-    content: 'ON'; position: absolute; right: 6%; top: 50%; transform: translateY(-50%);
-    min-width: 2.6em; padding: .2em .5em; border-radius: 999px; text-align: center;
-    font-size: .7em; font-weight: 800; line-height: 1.6;
-    background: linear-gradient(#2d8a57,#13512f); color: #eaffef;
-    box-shadow: 0 0 8px rgba(74,220,132,.45), inset 0 1px rgba(255,255,255,.3);
-}
-/* 關閉狀態:V17 是整顆按鈕背景轉暗紅灰(不是只換右側徽章),依 bg-rose-900 這個原生 class 當鉤子 */
-#btn-vfx-toggle.bg-rose-900, #btn-vfxnum-toggle.bg-rose-900 {
-    background: linear-gradient(180deg, #3d3031, #171012) !important;
-    border-color: #79504a !important;
-    filter: saturate(.62) brightness(.86);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -3px 0 rgba(0,0,0,.32), 0 5px 12px rgba(0,0,0,.55) !important;
-}
-#btn-vfx-toggle.bg-rose-900::before, #btn-vfxnum-toggle.bg-rose-900::before {
-    content: 'OFF';
-    background: linear-gradient(#8a403b,#4d1f1d); color: #ffe2df;
-    box-shadow: 0 0 8px rgba(216,70,60,.32), inset 0 1px rgba(255,255,255,.2);
 }
