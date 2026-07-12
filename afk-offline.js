@@ -237,9 +237,15 @@
     return { gold: player.gold || 0, exp: player.exp || 0, lv: player.lv || 0, inv: inv };
   }
   function fmt(n) { try { return (n || 0).toLocaleString(); } catch (e) { return '' + n; } }
-  // 軍王之室:背包現有「軍王的鑰匙」總數(供離線摘要算消耗了幾把)
-  function countKingKeys() {
-    try { return (player.inv || []).reduce(function (s, i) { return s + ((i && i.id === 'item_king_key') ? (i.cnt || 1) : 0); }, 0); }
+  // 軍王之室/祭壇:背包現有「該房間鑰匙」總數(供離線摘要算消耗了幾把)。
+  // KING_ROOMS[mapId].key 沒有的話(四間傳統軍王之室)就 fallback 用預設的 item_king_key。
+  function kingKeyId(mapId) {
+    try { return (typeof KING_ROOMS !== 'undefined' && KING_ROOMS[mapId] && KING_ROOMS[mapId].key) || 'item_king_key'; }
+    catch (e) { return 'item_king_key'; }
+  }
+  function countKingKeys(mapId) {
+    var keyId = kingKeyId(mapId);
+    try { return (player.inv || []).reduce(function (s, i) { return s + ((i && i.id === keyId) ? (i.cnt || 1) : 0); }, 0); }
     catch (e) { return 0; }
   }
 
@@ -355,15 +361,15 @@
     line += parts.length ? parts.join('、') : '（無明顯收益）';
     line += '。';
     try { logSys(line); } catch (e) { console.log('[AFK]', line.replace(/<[^>]+>/g, '')); }
-    // ⚔ 軍王之室:附帶「擊敗輪數 / 消耗鑰匙」;若因鑰匙用完被傳回村,多一行提示
+    // ⚔ 軍王之室/祭壇:附帶「擊敗輪數 / 消耗鑰匙」(依實際房間動態顯示名稱與鑰匙名);若因鑰匙用完被傳回村,多一行提示
     if (kingInfo && kingInfo.kills > 0) {
-      var kl = `<span class="text-amber-300">⚔ 軍王之室：本次擊敗軍王 <b>${kingInfo.kills}</b> 輪`
-        + (kingInfo.keysUsed > 0 ? `，消耗 <b>${kingInfo.keysUsed}</b> 把軍王的鑰匙` : ``) + `。</span>`;
+      var kl = `<span class="text-amber-300">⚔ ${kingInfo.roomName}：本次擊敗 <b>${kingInfo.kills}</b> 輪`
+        + (kingInfo.keysUsed > 0 ? `，消耗 <b>${kingInfo.keysUsed}</b> 把${kingInfo.keyName}` : ``) + `。</span>`;
       try { logSys(kl); } catch (e) { console.log('[AFK]', kl.replace(/<[^>]+>/g, '')); }
     }
     if (kingInfo && kingInfo.depleted) {
-      try { logSys('<span class="text-amber-300 font-bold">🔑 軍王的鑰匙已用完，已自動傳回村莊。</span>'); }
-      catch (e) { console.log('[AFK] 軍王的鑰匙已用完，已自動傳回村莊。'); }
+      var kl2 = `<span class="text-amber-300 font-bold">🔑 ${kingInfo.keyName}已用完，已自動傳回村莊。</span>`;
+      try { logSys(kl2); } catch (e) { console.log('[AFK] ' + kingInfo.keyName + '已用完，已自動傳回村莊。'); }
     }
     // 平均效率(對齊遊戲「本圖效率統計」的 經驗/10分、金幣/10分):用實際補跑時間換算
     var preciseMin = doneTicks * TICK_MS / 60000;
@@ -432,7 +438,7 @@
     var isObl = !isClimb && !!(preObl && preObl.phase && typeof enterOblivionMap === 'function');   // 🏝️ 遺忘之島旅程:同攀登,還原 state.oblivion 後用 enterOblivionMap 進場(島地圖非選單地圖)
     // ⚔ 軍王之室:選單地圖,走通用 gotoMap 即可重進;補跑時數「擊敗輪數/消耗鑰匙/是否因鑰匙用完被傳回村」供摘要顯示
     var isKing = !isClimb && !isObl && (typeof KING_ROOMS !== 'undefined') && !!KING_ROOMS[huntMap];
-    var kingKeysBefore = isKing ? countKingKeys() : 0;
+    var kingKeysBefore = isKing ? countKingKeys(huntMap) : 0;
     var kingLeftRoom = false;   // 補跑期間因鑰匙用完被原作傳回村(離開了軍王之室)
 
     // 暫停 live loop,避免結算期間與主迴圈交錯;結算後再以全新計時重啟
@@ -801,8 +807,13 @@
 
     var kingInfo = null;
     if (isKing) {
-      var kingKeysUsed = Math.max(0, kingKeysBefore - countKingKeys());
-      kingInfo = { keysUsed: kingKeysUsed, kills: kingKeysUsed + (kingLeftRoom ? 1 : 0), depleted: kingLeftRoom };
+      var kingKeysUsed = Math.max(0, kingKeysBefore - countKingKeys(huntMap));
+      var _kr = (typeof KING_ROOMS !== 'undefined' && KING_ROOMS[huntMap]) || {};
+      kingInfo = {
+        keysUsed: kingKeysUsed, kills: kingKeysUsed + (kingLeftRoom ? 1 : 0), depleted: kingLeftRoom,
+        roomName: _kr.name || '軍王之室',
+        keyName: (typeof DB !== 'undefined' && DB.items && DB.items[kingKeyId(huntMap)]) ? DB.items[kingKeyId(huntMap)].n : '軍王的鑰匙'
+      };
     }
     if (climbSegs && climbSegs.length) summarizeClimb(climbSegs, done, died);   // 攀登:逐層摘要
     else summarize(before, after, done, died, (isObl && oblEndMap) ? oblEndMap : huntMap, kingInfo);   // 遺忘之島:用實際結束地圖顯示地圖名;軍王之室:附帶擊敗輪數/鑰匙消耗摘要
@@ -847,7 +858,9 @@
           items: invDeltaList(before, after),
           kills: hKills,
           died: !!died,
-          keysUsed: (kingInfo && kingInfo.keysUsed) || 0
+          keysUsed: (kingInfo && kingInfo.keysUsed) || 0,
+          keyName: (kingInfo && kingInfo.keyName) || '',
+          roomName: (kingInfo && kingInfo.roomName) || ''
         });
       }
     } catch (e) { console.warn('[AFK] 寫離線紀錄失敗:', e); }

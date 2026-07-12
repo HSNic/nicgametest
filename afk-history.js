@@ -109,10 +109,10 @@
     return info ? ('存檔 ' + slot + ' · ' + info.name + '（' + info.cls + ' Lv.' + info.lv + '）') : ('存檔 ' + slot);
   }
 
-  function kindBadge(kind) {
+  function kindBadge(kind, roomName) {
     if (kind === 'climb') return '<span class="m-hist-badge bg-sky">攀登</span>';
     if (kind === 'oblivion') return '<span class="m-hist-badge bg-teal">遺忘之島</span>';
-    if (kind === 'king') return '<span class="m-hist-badge bg-amber">軍王之室</span>';
+    if (kind === 'king') return '<span class="m-hist-badge bg-amber">' + esc(roomName || '軍王之室') + '</span>';
     return '';
   }
 
@@ -135,7 +135,7 @@
     if (r.died) html += '<span class="m-hist-flag flag-died">陣亡</span>';
     html += '</div>';
     // 地點(永遠顯示)
-    html += '<div class="m-hist-map">📍 ' + esc(r.map || '?') + ' ' + kindBadge(r.kind) + '</div>';
+    html += '<div class="m-hist-map">📍 ' + esc(r.map || '?') + ' ' + kindBadge(r.kind, r.roomName) + '</div>';
     // 經驗 / 升級 / 金錢(升級跟著「經驗」一起開關)
     var stats = [];
     if (fState.exp && r.exp > 0) stats.push('<span class="m-hist-stat"><span class="lbl">經驗</span> <b class="v-exp">+' + fmtNum(r.exp) + '</b>'
@@ -158,7 +158,7 @@
       }).join('');
       html += '<div class="m-hist-row"><span class="m-hist-rowlbl">擊殺</span><span class="m-hist-rowval">' + ks + '</span></div>';
     }
-    if (r.keysUsed > 0) html += '<div class="m-hist-keys">🔑 消耗軍王的鑰匙 ' + r.keysUsed + ' 把</div>';
+    if (r.keysUsed > 0) html += '<div class="m-hist-keys">🔑 消耗' + esc(r.keyName || '軍王的鑰匙') + ' ' + r.keysUsed + ' 把</div>';
     html += '</div>';
     return html;
   }

@@ -568,7 +568,7 @@
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-offline.js?v=20260710b"></script>
+<script src="afk-offline.js?v=20260712a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-mobile.js?v=20260712a"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -600,7 +600,7 @@
 <!-- 統一自製彈窗:全域接管 window.alert(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-ui.js?v=20260709a"></script>
 <!-- 物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-itemsearch.js?v=20260712a"></script>
+<script src="afk-itemsearch.js?v=20260712b"></script>
 <!-- 外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-autobuy.js?v=20260707a"></script>
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
@@ -608,9 +608,9 @@
 <!-- 首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-storage.js?v=20260712a"></script>
 <!-- 跨裝置雲端存檔同步(配對碼+後端代管,取代舊版Google登入方案afk-cloud-sync.js.disabled;API_BASE未設定前對遊戲零介入;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-cloud-sync-v2.js?v=20260709f"></script>
+<script src="afk-cloud-sync-v2.js?v=20260712a"></script>
 <!-- 離線掛機歷史紀錄:首頁設定選單列出各角色最近 5 筆離線收益(純唯讀讀 afk_hist_<slot>;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-history.js?v=20260705a"></script>
+<script src="afk-history.js?v=20260712a"></script>
 <!-- 顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-mobname.js?v=20260704c"></script>
 <!-- 木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -620,9 +620,17 @@
 <!-- 道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫,不動原作者本體;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-classic-list.js?v=20260707c"></script>
 <!-- 道具/武器/防具分頁加子分類篩選(下拉選單;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-item-subfilter.js?v=20260708c"></script>
+<script src="afk-item-subfilter.js?v=20260712a"></script>
 <!-- 物品欄批次販賣(道具分頁新增批次勾選賣出;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-batch-sell.js?v=20260708d"></script>
+<!-- 標記廢品同步進「自動販賣規則」個別例外清單,兩套機制不再各自獨立(可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-junk-to-rule.js?v=20260712a"></script>
+<!-- 席琳神殿菈克希絲遺骸拆分面板:換裝後即時刷新(可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-lachesis-refresh.js?v=20260712a"></script>
+<!-- 爆擊特效仿天堂W:被動監看飄傷害數字,爆擊時追加衝擊環/全螢幕閃光/戰場震動(可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-crit-fx.js?v=20260712a"></script>
+<!-- 協力傭兵隊伍面板顯示 buff 圖示(讀 ally.buffs,共用玩家狀態圖示資源;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-ally-buffs.js?v=20260712a"></script>
 <!-- 萬能藥一次選數量批量服用(物品詳情視窗多加批量鈕,外面迴圈呼叫既有單瓶服用邏輯;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-panacea-batch.js?v=20260710a"></script>
 <!-- 一鍵存入只存入「目前分類篩選」命中的物品(整支覆寫全域 whOneClickDeposit,既有按鈕不用動;可獨立維護,原作者更新後重新加回此行即可) -->

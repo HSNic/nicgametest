@@ -59,18 +59,28 @@
     if (mainCat === 'armor' && !options.some(function (c) { return c.key === 'tshirt'; })) {
       options.splice(2, 0, { key: 'tshirt', name: '內衣' });
     }
+    // 🆕 2026-07-12 使用者需求:武器/防具分頁加「遺跡」「席琳套裝」——遺物/遺骸/席琳套裝詞綴
+    // 橫跨武器與防具(含飾品),兩個分頁都加同樣兩個分類,判斷邏輯見 matchesSub。
+    options.push({ key: 'relic', name: '遺跡' });
+    options.push({ key: 'sherine_set', name: '席琳套裝' });
     return options;
   }
 
   // 子分類比對:比照 js/12-npc-quests.js 的 whMatchFilter() 子分類判斷段落。
-  function matchesSub(mainCat, id, subKey) {
+  // item 改傳完整 inv 物品(而非只有 id):「席琳套裝」要看 item.seteff(裝備實例上的詞綴,
+  // 不是 DB.items 定義本身的欄位),只傳 id 判斷不到。
+  function matchesSub(mainCat, item, subKey) {
     if (!subKey) return true;
+    var id = item.id;
+    var d = DB.items[id];
     if (mainCat === 'item') return (typeof whItemSubCat === 'function') && whItemSubCat(id) === subKey;
+    if (subKey === 'relic') return !!(d && typeof isRelic === 'function' && isRelic(d));
+    // 席琳套裝:遺骸拆分道具本身(d.remains,如「之爪」)+已附帶席琳套裝詞綴的裝備(item.seteff),兩者都算(使用者確認)
+    if (subKey === 'sherine_set') return !!(d && d.remains) || !!item.seteff;
     if (mainCat === 'armor' && subKey === 'tshirt') {
-      var d = DB.items[id];
       return !!(d && d.type === 'arm' && d.slot === 'tshirt');
     }
-    return (typeof equipCatKey === 'function') ? (equipCatKey(id, DB.items[id]) === subKey) : true;
+    return (typeof equipCatKey === 'function') ? (equipCatKey(id, d) === subKey) : true;
   }
 
   // 依 player.inv 目前順序,重現原函式 renderTabs() 分流到武器/防具/道具三分頁的規則。
@@ -118,7 +128,7 @@
     var sub = _subFilterState[cat];
     for (var idx = 0; idx < rows.length; idx++) {
       var invItem = invItems[idx];
-      var visible = !sub || (invItem && matchesSub(cat, invItem.id, sub));
+      var visible = !sub || (invItem && matchesSub(cat, invItem, sub));
       // afk-classic-list.js 對 .list-item 下了 display:flex!important,一般的
       // style.display='none'(無 !important)蓋不過去,物品不會真的被隱藏。
       // 用 setProperty 帶 'important' 才贏得過去;顯示時用 removeProperty 交回原本的

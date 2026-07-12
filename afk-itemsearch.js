@@ -82,6 +82,15 @@
     return wrap;
   }
 
+  // 搜尋欄寬度直接抓「物品欄容器」(.classic-inventory-shell)目前的實際寬度對齊,
+  // 不憑 CSS 猜測百分比(2026-07-11 使用者確認方向:抓物品欄容器寬度即可)。
+  function syncSearchWidth(div, box) {
+    var shell = div.querySelector('.classic-inventory-shell');
+    if (!shell || !box) return;
+    var w = shell.getBoundingClientRect().width;
+    if (w > 0) box.style.setProperty('width', w + 'px', 'important');
+  }
+
   // ---- 背包三分頁 -----------------------------------------------------------
   function ensureTabSearch() {
     TAB_KEYS.forEach(function (t) {
@@ -103,9 +112,20 @@
         var vp = div.querySelector('.classic-inventory-viewport');
         if (vp) vp.style.setProperty('padding-top', '0', 'important');   // 鈕搬走了,原本留給它的頂部空白一併收掉
       }
+      syncSearchWidth(div, box);
       filterChildren(div, q[t.key], box);
     });
   }
+
+  // 視窗尺寸改變(旋轉手機/縮放視窗)不會觸發 renderTabs,另外補一個 resize 監聽跟著重新對齊寬度
+  var _resizeRaf = null;
+  window.addEventListener('resize', function () {
+    if (_resizeRaf) return;
+    _resizeRaf = requestAnimationFrame(function () {
+      _resizeRaf = null;
+      try { ensureTabSearch(); } catch (e) {}
+    });
+  });
 
   if (typeof window.renderTabs === 'function' && !window.renderTabs.__afkISearch) {
     var _origTabs = window.renderTabs;

@@ -31,7 +31,7 @@
   var VER_KEY = 'afk_cloud2_version';        // 最後一次讀取/寫入成功時的雲端整包文件 version（樂觀鎖用）
   var HASH_KEY = 'afk_cloud2_hash';          // 對應 VER_KEY 的雲端內容雜湊
   var SYNCED_AT_KEY = 'afk_cloud2_synced_at';
-  var FETCH_TIMEOUT_MS = 12000;
+  var FETCH_TIMEOUT_MS = 22000;   // 🔧 Bug E:12 秒常在 Cloud Run 冷啟動時不夠(OAuth2 換 token + 多次 Drive API 往返疊加),拉長到 22 秒降低第一次上傳就逾時失敗的機率
 
   // ----- 自我檢查：核心掛點都在才啟用，否則安靜退出（遊戲照常運作） ----------
   if (typeof window.slotSummary !== 'function' ||
@@ -236,7 +236,7 @@
   // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
   // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選；
   // 倉庫（依模式共用）跟著它所屬的存檔位決定一起用哪一邊，不需要另外問。
-  flow.uploadAll = function (reason, onProgress) {
+  flow.uploadAll = function (reason, onProgress, _isRetry) {
     if (!cfg.hasPairing()) return Promise.resolve({ ok: false, reason: 'no-pairing' });
     if (typeof onProgress === 'function') onProgress(8, '打包本機存檔中…');
     var localDoc = payload.buildAllSlotsDoc();
@@ -285,7 +285,14 @@
         });
         return finalize();
       });
-    }).catch(function (err) { return handleErr(err, reason); });
+    }).catch(function (err) {
+      // 🔧 Bug E:第一次上傳常遇 Cloud Run 冷啟動,逾時/network 錯誤先靜默重試一次,使用者不會馬上看到「按一次失敗」
+      if (err && err.kind === 'network' && !_isRetry) {
+        if (typeof onProgress === 'function') onProgress(20, '連線逾時,重試中…');
+        return flow.uploadAll(reason, onProgress, true);
+      }
+      return handleErr(err, reason);
+    });
   };
 
   // 下載雲端整包文件。本機沒有的存檔位直接套用（純獲得，不會有損失）；本機已有且內容不同才是衝突，
