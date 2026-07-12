@@ -284,8 +284,35 @@
       document.body.classList.toggle('mlog-nocombat', noCombat);
       if (noCombat && document.body.classList.contains('mlog-combat')) setLog('sys');
       ensureLoadSelectSlotPicker();   // 選角畫面(手機)8 顆存檔位按鈕:面板一出現就補插+每次刷新 active/名稱,idempotent
+      ensureLoadArchOverlay();   // 選角畫面(手機)拱門疊圖(見下方 2026-07-13 註解),idempotent
     }
     setInterval(mirror, 300);
+
+    // 2026-07-13:選角畫面(手機)拱門畫框疊圖——見上方 CSS `#m-load-arch-overlay` 註解。
+    //   插在 #load-slot-grid 內部(inset:0 貼滿同容器),跟角色卡片共用同一個 background-size/
+    //   position 座標,拱門與角色天生對齊;只需建立一次,重複呼叫是 idempotent no-op。
+    function ensureLoadArchOverlay() {
+      var grid = document.getElementById('load-slot-grid');
+      if (!grid) return;
+      var ov = document.getElementById('m-load-arch-overlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'm-load-arch-overlay';
+        grid.appendChild(ov);
+      }
+      // 2026-07-13:用「容器實際寬度」算固定像素裁切(不用百分比),不受容器高度/裝置差異影響。
+      // 原圖(640×480)固定裁切窗:x=170~330(中間拱門柱,寬160px)、y 從 30px 起算(見上方 CSS
+      // 註解的量測記錄,30~250px 是安全的拱門+柱身暗色區,280px 起會碰到金色徽章裝飾)。
+      // 只套在拱門疊圖(load1.png)上——#load-slot-grid 本身已改純黑填色,不需要裁切背景圖。
+      var w = grid.getBoundingClientRect().width;
+      if (w > 0) {
+        var scale = w / 160;
+        var bgSize = Math.round(640 * scale) + 'px ' + Math.round(480 * scale) + 'px';
+        var bgPos = (-Math.round(170 * scale)) + 'px ' + (-Math.round(30 * scale)) + 'px';
+        ov.style.backgroundSize = bgSize;
+        ov.style.backgroundPosition = bgPos;
+      }
+    }
 
     // ---- 選角畫面(手機):素質表下方 8 顆存檔位按鈕(4個一排×兩排)---------------
     //   2026-07-12 使用者第三輪回饋:拿掉左右‹›逐格切換箭頭,改成一次列出全部 8 個存檔位、
@@ -1129,7 +1156,28 @@
       'body.m-mobile #load-select-panel:not(.hidden){display:flex !important;flex-direction:column !important;height:100dvh !important;min-height:100dvh !important;overflow:hidden !important;padding:0 !important;}',
       'body.m-mobile #load-art-stage{display:flex !important;flex-direction:column !important;flex:1 1 auto !important;min-height:0 !important;position:relative !important;width:100% !important;max-width:none !important;aspect-ratio:auto !important;height:auto !important;box-shadow:none !important;overflow:hidden !important;}',
       'body.m-mobile #load-select-bg,body.m-mobile #load-select-overlay,body.m-mobile #load-page-tabs{display:none !important;}',   /* 底圖整張含4格+下方文字框、疊加外框線、桌機「1/2」頁籤——手機都不適用,改走下面自建的裁切背景與 ‹› 箭頭 */
-      'body.m-mobile #load-slot-grid{flex:1 1 auto !important;min-height:0 !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;height:auto !important;display:block !important;background-image:url(public/assets/login/load.png);background-repeat:no-repeat;background-size:410% auto;background-position:33% 0%;overflow:hidden;}',
+      /* 🩹 2026-07-13 使用者回報:角色立繪來源圖(assets/start/*.png)沒有透明背景(純色底、無 alpha
+         channel),不管背景圖裁哪裡,角色圖自己的矩形範圍一定會蓋出一塊實色方框,跟背後場景圖對比
+         太強時會看起來「兩層貼紙疊在一起」。試過改選場景圖裡偏暗的區域裁切矇混過去,使用者不滿意
+         (拱門雕花糊成一片看不清楚、且裁切位置受容器高度影響會漂移,見下)。
+         ⚠ 2026-07-13 第二輪:改用「JS 算絕對像素」取代 background-position 百分比(避免容器高度
+         不同時裁切窗口垂直漂移,詳細量測見 ensureLoadArchOverlay())修好了裁切位置本身,但接著發現
+         `load1.png`(桌機 `#load-select-overlay` 原本就在用的「拱門畫框」半透明疊圖,拱門不透明、
+         中間鏤空)疊在 `load.png` 之上**毫無視覺差異**——因為兩張圖在柱子/拱門這段的雕花花紋根本
+         幾乎一樣(同一組素材的兩個版本,只差中間鏤空與否),疊上去等於重複畫兩次同樣的柱子,
+         開關疊圖前後截圖逐像素比對完全相同,證實 load1.png 在這個裁切位置沒有任何作用。
+         **正解(使用者釐清)**:桌機版有角色時之所以看起來自然、沒有黑方塊接縫,是因為桌機的
+         拱門「鏤空範圍內」本來就是純黑(跟角色立繪自己的黑底完全融合、色塊一樣就看不出接縫),
+         拱門雕花本身(不透明的部分)才有質感/顏色——不是靠場景圖也不是靠疊圖遮蓋,是「黑對黑天生
+         無縫」+「拱門雕花框在外圍露出」這兩件事各自負責。改成:**鏤空範圍直接用純黑填色**(跟
+         角色黑底同色系,不使用 load.png 場景圖裁切),`load1.png` 疊圖負責顯示拱門雕花本體(不透明
+         部分自然蓋在黑底外圍)——這樣角色黑底跟周圍黑色完全融合(不會再有方塊接縫),拱門雕花清楚
+         可見(不再跟任何場景圖搶對比度),兩個訴求分開處理、互不干擾。 */
+      'body.m-mobile #load-slot-grid{flex:1 1 auto !important;min-height:0 !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;height:auto !important;display:block !important;background:#040302;overflow:hidden;}',
+      /* 拱門雕花疊圖:獨立 div,插在 #load-slot-grid 內部、inset:0 貼滿同一個容器,z-index 蓋在
+         角色卡片之上——不透明的拱門雕花部分自然疊在角色黑底外圍,鏤空透明部分露出角色與底下純黑。
+         裁切座標沿用 ensureLoadArchOverlay() 算好的固定像素(x=170~330/y=30 起,見上方函式)。 */
+      '#m-load-arch-overlay{position:absolute;inset:0;z-index:5;pointer-events:none;background-image:url(public/assets/login/load1.png);background-repeat:no-repeat;}',
       'body.m-mobile .load-slot-card{display:none !important;position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;align-items:center !important;justify-content:center !important;}',
       'body.m-mobile .load-slot-card.selected{display:flex !important;}',
       'body.m-mobile .load-slot-card img{max-width:68% !important;max-height:82% !important;}',

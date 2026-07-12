@@ -18,6 +18,13 @@
  *    規則、不是 inline `style=""` 屬性,不會被 `[style*=...]` 選到,不衝突);用 `!important`
  *    蓋過 inline(原作者的 inline 沒加 `!important`,故本規則能贏)。何時可移除:原作者自己
  *    改成 2 欄,或改用 class 取代 inline style 時,選擇器不再命中,自動安全退場。
+ * F. 2026-07-13 使用者回報:選角畫面(#load-slot-grid)桌機版 4 個角色卡片,拱門裡面是純黑色
+ *    (原作 `load.png` 這張圖,拱門內本來就是黑色留白,只有拱門周圍雕花有場景);手機版
+ *    (afk-mobile.js)因為一次只顯示 1 張卡,已經另外把同一張圖放大裁切當背景、看起來像
+ *    角色站在城堡場景裡。桌機版比照做,但 4 張卡並排、用使用者選定的方向:**四格共用同一張
+ *    裁切後的場景圖**(不分別調每格),讓 4 個角色像站在同一片連續場景前。只在桌機生效
+ *    (`body:not(.m-mobile)`),避免跟 afk-mobile.js 自己那組 mobile 專用的 background-image
+ *    互相打架(兩者互斥,各自的 body class 選擇器天生不會同時命中)。
  *
  * 掛接:在 index.html 的 </body> 前加一行 <script src="afk-uilayout.js"></script>
  * (排在其他 afk-* 之後,純 CSS,無先後依賴)
@@ -32,7 +39,11 @@
     /* D:非狩獵中的日誌區塊固定高度縮小(原 340px→260px);狩獵中由原作者的 flex:1 規則接管,不受影響 */
     '#col-center #log-row{flex:0 0 260px;}' +
     /* E:潘朵拉黑市 4 欄→2 欄放大(見上方檔頭說明) */
-    '#interaction-content div[style*="repeat(4,minmax(0,1fr))"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}';
+    '#interaction-content div[style*="repeat(4,minmax(0,1fr))"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;}' +
+    /* F:選角畫面桌機版 4 格共用同一張裁切場景圖(見上方檔頭說明);只在非手機生效,避免跟
+       afk-mobile.js 的 mobile 專用 background-image 衝突 */
+    'body:not(.m-mobile) #load-slot-grid{background-image:url(public/assets/login/load.png);background-repeat:no-repeat;background-size:180% auto;background-position:50% 22%;}' +
+    'body:not(.m-mobile) .load-slot-card.empty,body:not(.m-mobile) .load-slot-card.filled{background:rgba(3,3,3,.32);}';
 
   function inject() {
     if (document.getElementById(STYLE_ID)) return;
