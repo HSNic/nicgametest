@@ -114,6 +114,20 @@
         box = makeBox(inputId, t.key, function () { filterChildren(div, q[t.key], box); });
         div.insertBefore(box, div.firstElementChild ? div.firstElementChild.nextSibling : null);
       }
+      // 2026-07-13:搜尋框前面若有「快速強化/快速廢品」操作列(也是 sticky,top:-12),搜尋框原本
+      // 寫死 top:0 會跟它疊在一起(兩者都吸頂到同一個位置,實測捲動後搜尋框被操作列蓋住)。改成
+      // 量測操作列目前的實際高度,讓搜尋框吸頂位置往下讓開。道具/武器/防具三分頁才有這個操作列;
+      // 倉庫搜尋框(makeBox 另一個呼叫點)前面沒有這層,不受影響。
+      // 每次都重新量測(不只在新建當下),因為操作列本身的高度會隨「快速強化/快速廢品是否啟用」
+      // 改變(不同版面高度不同);且量測延到 requestAnimationFrame,避開同一輪多個外掛 wrapper
+      // 陸續插入/調整 DOM 時讀到還沒定案的中間高度。
+      (function (theBox) {
+        requestAnimationFrame(function () {
+          var priorHeight = 0, p = theBox.previousElementSibling;
+          while (p) { priorHeight += p.offsetHeight; p = p.previousElementSibling; }
+          theBox.style.top = priorHeight + 'px';
+        });
+      })(box);
       // 排序切換鈕(↕):原作 decorateClassicInventoryTab 每次重建都在 .classic-inventory-shell 內生一個全新節點,
       // afk-classic-list.js 把它 CSS 定位成獨立一排;搬進搜尋框同一列(box),不佔獨立一排(使用者要求)。
       var sortWrap = div.querySelector('.classic-sort-wrap');

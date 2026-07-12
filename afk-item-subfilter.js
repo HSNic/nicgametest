@@ -39,7 +39,11 @@
     var s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent =
-      '.afk-subfilter-bar{display:flex;flex-wrap:wrap;gap:4px;padding:4px 2px;}' +
+      /* 2026-07-13:篩選列補第三層吸頂(前兩層——快速強化/廢品列、搜尋框——已各自 sticky)。
+         top 值不寫死:各分頁(道具/武器/防具)的快速操作列按鈕數不同、字級也可能因裝置縮放
+         不同,寫死 px 容易跟前兩層疊到或留縫。改在 buildBar() 用 JS 量測前面兩層目前的
+         實際高度加總、動態設成 inline style top(見下方),這裡只放不含 top 的共用樣式。 */
+      '.afk-subfilter-bar{position:sticky;z-index:4;background:#1e293b;display:flex;flex-wrap:wrap;gap:4px;padding:4px 2px;}' +
       '.afk-subfilter-btn{padding:2px 9px;font-size:12px;border-radius:999px;border:1px solid #475569;background:#1e293b;color:#cbd5e1;cursor:pointer;white-space:nowrap;}' +
       '.afk-subfilter-btn:hover{border-color:#94a3b8;}' +
       '.afk-subfilter-btn.active{background:#92400e;border-color:#f59e0b;color:#fde68a;font-weight:bold;}';
@@ -118,6 +122,20 @@
     });
     var shell = tabDiv.querySelector('.classic-inventory-shell');
     if (shell) tabDiv.insertBefore(bar, shell); else tabDiv.appendChild(bar);
+    stickBarBelowPriorLayers(bar);
+  }
+
+  // 篩選列的 sticky top = 它前面所有「已經吸頂的層」(快速操作列、搜尋框)目前的實際高度加總,
+  // 用量測代替寫死 px——三個分頁按鈕數/字級不同時都能自動對齊,不會疊到或留縫。延到
+  // requestAnimationFrame 才量測:同一輪還有其他外掛(afk-itemsearch 插搜尋框)接著調整
+  // DOM/高度,同步當下量到的可能是還沒定案的中間值,等這輪畫面 layout 完成後量才準。
+  function stickBarBelowPriorLayers(bar) {
+    requestAnimationFrame(function () {
+      var offset = 0;
+      var p = bar.previousElementSibling;
+      while (p) { offset += p.offsetHeight; p = p.previousElementSibling; }
+      bar.style.top = offset + 'px';
+    });
   }
 
   function applyOne(tabId, cat, invItems) {

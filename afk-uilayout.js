@@ -18,6 +18,10 @@
  *    規則、不是 inline `style=""` 屬性,不會被 `[style*=...]` 選到,不衝突);用 `!important`
  *    蓋過 inline(原作者的 inline 沒加 `!important`,故本規則能贏)。何時可移除:原作者自己
  *    改成 2 欄,或改用 class 取代 inline style 時,選擇器不再命中,自動安全退場。
+ * G. 2026-07-13 使用者回報:背包分頁「⚡快速強化/🗑️快速廢品」文字會換行,只有外掛自己的
+ *    「🧺批次販賣」不會換行——查 js/10-ui-tabs.js buildQuickHeader() 只給這兩顆按鈕 flex-1,
+ *    沒加 white-space:nowrap(批次販賣按鈕是 afk-batch-sell.js 自己的 class、已自帶
+ *    nowrap)。純 CSS 覆寫補上 nowrap,不改 DOM/邏輯。
  * F. 2026-07-13 使用者回報:選角畫面(#load-slot-grid)桌機版 4 個角色卡片,拱門裡面是純黑色
  *    (原作 `load.png` 這張圖,拱門內本來就是黑色留白,只有拱門周圍雕花有場景);手機版
  *    (afk-mobile.js)因為一次只顯示 1 張卡,已經另外把同一張圖放大裁切當背景、看起來像
@@ -43,7 +47,9 @@
     /* F:選角畫面桌機版 4 格共用同一張裁切場景圖(見上方檔頭說明);只在非手機生效,避免跟
        afk-mobile.js 的 mobile 專用 background-image 衝突 */
     'body:not(.m-mobile) #load-slot-grid{background-image:url(public/assets/login/load.png);background-repeat:no-repeat;background-size:180% auto;background-position:50% 22%;}' +
-    'body:not(.m-mobile) .load-slot-card.empty,body:not(.m-mobile) .load-slot-card.filled{background:rgba(3,3,3,.32);}';
+    'body:not(.m-mobile) .load-slot-card.empty,body:not(.m-mobile) .load-slot-card.filled{background:rgba(3,3,3,.32);}' +
+    /* G:快速強化/快速廢品按鈕文字不換行(見上方檔頭說明) */
+    'button[onclick^="toggleQuickEnhance"],button[onclick^="toggleQuickJunk"]{white-space:nowrap!important;}';
 
   function inject() {
     if (document.getElementById(STYLE_ID)) return;
