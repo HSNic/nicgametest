@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  var q = { wpn: '', arm: '', item: '', whInv: '', whStore: '' };   // 各清單的查詢字串(單一事實來源)
+  var q = { wpn: '', arm: '', item: '', wh: '' };   // 各清單的查詢字串(單一事實來源);wh=倉庫背包側+倉庫側共用一份(2026-07-12 使用者要求合併)
   var TAB_KEYS = [
     { key: 'wpn', tabId: 'tab-weapons' },
     { key: 'arm', tabId: 'tab-armors' },
@@ -56,15 +56,25 @@
     if (_whPendingRebuild) { _whPendingRebuild = false; if (typeof window.renderWarehouseNPC === 'function') { var d = document.getElementById('interaction-content'); if (d) window.renderWarehouseNPC(d); } }
   }
 
-  // 過濾 container 的「直接子元素」:textContent 含關鍵字才顯示。skipEl=搜尋框自己(不過濾)。
+  // 過濾清單列:textContent 含關鍵字才顯示。skipEl=搜尋框自己(不過濾)。
+  // 背包三分頁(武器/防具/道具)套用「橫列式外觀」(afk-classic-list.js)後,物品列實際上
+  // 包在更深一層的 .classic-inventory-shell > .classic-inventory-viewport 裡,不是 container
+  // 的直接子元素——要過濾的話得先找到這層 viewport,改掃它的子元素;倉庫清單(wh-inv-list/
+  // wh-store-list)沒有這層包裝,原本「直接子元素」的掃法仍適用,故 viewport 找不到時 fallback
+  // 掃 container 自己的直接子元素。
+  // 另外 afk-classic-list.js 對 `.classic-inventory-viewport > .list-item` 下了
+  // `display:flex!important`,一般的 `style.display='none'`(無 !important)蓋不過去,物品列
+  // 不會真的被隱藏,要用 setProperty 帶 'important' 才蓋得過去(比照 afk-item-subfilter.js 的作法)。
   function filterChildren(container, kw, skipEl) {
     if (!container) return;
     kw = norm(kw.trim());
-    for (var i = 0; i < container.children.length; i++) {
-      var el = container.children[i];
+    var scanRoot = container.querySelector(':scope > .classic-inventory-shell > .classic-inventory-viewport') || container;
+    for (var i = 0; i < scanRoot.children.length; i++) {
+      var el = scanRoot.children[i];
       if (el === skipEl || el.classList.contains('afk-isearch')) continue;
       if (el.dataset.afkKeep === '1') continue;   // 標記不過濾的列(快速操作頭部)
-      el.style.display = (!kw || norm(el.textContent).indexOf(kw) >= 0) ? '' : 'none';
+      var visible = !kw || norm(el.textContent).indexOf(kw) >= 0;
+      if (visible) el.style.removeProperty('display'); else el.style.setProperty('display', 'none', 'important');
     }
   }
 
@@ -147,20 +157,19 @@
     window.renderTabs = wrapped;
   }
 
-  // ---- 倉庫(各分類頁共用;背包側/倉庫側各自一個搜尋框、獨立過濾) ----------------
+  // ---- 倉庫(背包側/倉庫側共用同一個搜尋框,2026-07-12 使用者要求合併,同時過濾兩側) ----
+  var WH_INV_ID = 'wh-inv-list', WH_STORE_ID = 'wh-store-list', WH_SEARCH_ID = 'afk-isearch-wh';
   function ensureWhSearch() {
-    [
-      { listId: 'wh-inv-list', key: 'whInv', inputId: 'afk-isearch-whinv' },
-      { listId: 'wh-store-list', key: 'whStore', inputId: 'afk-isearch-whstore' }
-    ].forEach(function (c) {
-      var list = document.getElementById(c.listId);
-      if (!list) return;
-      var apply = function () { filterChildren(list, q[c.key], null); };
-      if (!document.getElementById(c.inputId) && list.parentNode) {
-        list.parentNode.insertBefore(makeBox(c.inputId, c.key, apply), list);   // 插在欄標題與清單之間(清單自己捲,搜尋框恆在)
-      }
-      apply();
-    });
+    var invList = document.getElementById(WH_INV_ID);
+    var storeList = document.getElementById(WH_STORE_ID);
+    if (!invList || !storeList) return;
+    var apply = function () { filterChildren(invList, q.wh, null); filterChildren(storeList, q.wh, null); };
+    if (!document.getElementById(WH_SEARCH_ID)) {
+      // 錨定在「背包側/倉庫側兩欄並排」的格線容器之前(不寫死巢狀層數,用 closest 找格線容器本身)。
+      var gridEl = invList.closest('.grid') || (invList.parentElement && invList.parentElement.parentElement);
+      if (gridEl && gridEl.parentNode) gridEl.parentNode.insertBefore(makeBox(WH_SEARCH_ID, 'wh', apply), gridEl);
+    }
+    apply();
   }
 
   if (typeof window.renderWarehouseNPC === 'function' && !window.renderWarehouseNPC.__afkISearch) {
