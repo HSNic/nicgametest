@@ -20,7 +20,6 @@
             { k: 'ear2',    x: 76.2, y: 17.6, w: 11.6, h: 9.1 },
             { k: 'ring3',   x: 39.7, y: 46.4, w: 10.6, h: 8.7 },
             { k: 'offwpn',  x: 51.8, y: 35.8, w: 11.5, h: 9.4 },
-            { k: 'pet',     x: 52.9, y: 53.4, w: 11.1, h: 9.1 },
             { k: 'arrow',   x: 83.9, y: 49.0, w: 11.7, h: 9.7 },
             { k: 'ring4',   x: 83.0, y: 59.4, w: 11.5, h: 9.5 },
             { k: 'shin',    x: 69.4, y: 45.6, w: 11.6, h: 9.1 },
@@ -203,11 +202,23 @@
                 img.onerror = function () { this.style.display = 'none'; };
                 if (typeof isRelic === 'function' && isRelic(data)) img.classList.add('relic-glow');   // 🏺 已裝備遺物：藍光呼吸＋星芒（與背包一致）
                 slot.appendChild(img);
-                if (item.en) {
+                if ((data.type === 'wpn' || data.type === 'arm' || data.type === 'acc') && !data.isArrow) {
+                    const equipped = document.createElement('span');
+                    equipped.className = 'equipment-slot-equipped';
+                    equipped.textContent = 'E';
+                    equipped.setAttribute('aria-hidden', 'true');
+                    slot.appendChild(equipped);
+                }
+                if ((Number(item.en) || 0) > 0) {
                     const badge = document.createElement('span');
                     badge.className = 'equipment-slot-enhance';
-                    badge.textContent = '+' + item.en;
+                    badge.textContent = '+' + capEn(item.en, data);
                     slot.appendChild(badge);
+                } else if ((item.cnt || 1) > 1) {
+                    const count = document.createElement('span');
+                    count.className = 'equipment-slot-count';
+                    count.textContent = (item.cnt || 1).toLocaleString();
+                    slot.appendChild(count);
                 }
                 slot.classList.add('tip-host');
                 slot.setAttribute('data-tip-uid', item.uid); slot.setAttribute('data-tip-src', 'eq');   // 🖱️ hover 即時顯示已裝備物品完整資訊 tooltip

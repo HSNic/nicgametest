@@ -1,6 +1,6 @@
 // ===== 🎯 DPS 統計（本圖效率統計用）=====
 // 以「HP-delta 歸因」量測各來源每秒輸出：在 tick 各攻擊階段前後快照在場怪 curHp，差值歸給該階段來源。
-// 來源：player（玩家·含自動施法/持續增益/中毒出血 DoT）、summon（玩家召喚/迷魅/幻術立方）、pet（項圈夥伴）、
+// 來源：player（玩家·含自動施法/持續增益/中毒出血 DoT）、summon（玩家召喚/迷魅/幻術立方）、pet（寵物）、
 //       per-ally（每個傭兵獨立·key=存檔槽 _slot）。累積傷害÷觀測秒數＝DPS。換地圖/重置歸零（auditReset→_dpsReset），非存檔。
 let _dps = { player: 0, summon: 0, pet: 0, allies: {} };
 let _dpsAllyTurn = false;   // alliesTick 逐傭兵量測期間為 true：令 _allyDamageMob 不重複計入（回合內輸出已被該傭兵 HP-delta 涵蓋），僅「反擊/居合」等回合外輸出才由 _allyDamageMob 直接歸因
@@ -42,7 +42,10 @@ function gameLoop() {
     if(elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS; // 上限保護
     _tickDebt += elapsed;
 
-    let n = Math.floor(_tickDebt / TICK_MS);
+    // Split long background catch-up into bounded batches. Processing the full five-minute
+    // allowance (3000 combat ticks) in one callback can freeze clicks and make saving appear stuck.
+    const MAX_TICKS_PER_LOOP = 100;
+    let n = Math.min(MAX_TICKS_PER_LOOP, Math.floor(_tickDebt / TICK_MS));
     _tickDebt -= n * TICK_MS;
     if(n <= 0) return;
 
@@ -322,6 +325,13 @@ function tick() {
 
         // --- 異常狀態處理（倒數、中毒 DoT），死亡則跳過 ---
         if (processMobStatusTick(m, i)) continue;
+        // 👑 戰鬥頭目：每 5 秒恢復 HP；近 5 秒曾被物理命中回 1%，否則回 5%。
+        if (m.boss && !m.siegeEnemy && m.race !== '建築' && state.ticks % 50 === 0 && m.curHp > 0 && m.curHp < m.hp) {
+            let recentPhysicalHit = m._lastPhysicalHitTick != null && state.ticks - m._lastPhysicalHitTick <= 50;
+            let regenPct = recentPhysicalHit ? 0.01 : 0.05;
+            m.curHp = Math.min(m.hp, m.curHp + Math.max(1, Math.floor(m.hp * regenPct)));
+            if (!state.ff) renderMobs();
+        }
         // 常駐被動：HP 未滿 100% 時回復（依等級 15 / 40），不受異常狀態影響；間隔由 regenEvery 決定(預設10 ticks=每1秒)
         if (m.regenHp && state.ticks % (m.regenEvery || 10) === 0 && m.curHp > 0 && m.curHp < m.hp) {
             m.curHp = Math.min(m.hp, m.curHp + m.regenHp);
@@ -402,7 +412,7 @@ function tick() {
     }
 
     if(!player.dead) { let _auraSnap = _dpsSnap(); try { relicAuraTick(); } catch(e){} let _auraDealt = _dpsDealt(_auraSnap); if(_auraDealt > 0) _dps.player += _auraDealt; }   // 🏺 蠅災的詛咒等 auraDmg：玩家階段週期全體固定魔傷（自帶快照→正確計入玩家 DPS·修 code-review#1）
-    if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
+    if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
     if(!player.dead) pledgeBlessTick();   // 生命的祝福：場上血盟怪物持續治療
     // 盟主祝福到期清理（每秒檢查；到期即移除並重算屬性）
     if(!player.dead && player.blessings && state.ticks % 10 === 0) {
@@ -445,70 +455,8 @@ function tick() {
     }
     // 🔧 誘捕倒數已併入 tick() 每秒區塊的統一 buff 遞減點
 
-    // 夥伴攻擊判定 (每20 ticks = 2秒)：每個夥伴消耗 =項圈數量 的肉，造成 =項圈數量 次屬性傷害
-    if (state.ticks % 20 === 0 && !player.dead && player.partners && player.partners.length > 0) {
-        // 賣出/丟棄項圈：自動解除沒有對應項圈的夥伴
-        player.partners = player.partners.filter(nm => {
-            if (petCollarCount(nm) > 0) return true;
-            logSys(`因為您丟棄或售出了項圈，夥伴【${nm}】已經離開了您。`);
-            return false;
-        });
-        let target = getTarget();
-        let cha = player.d.cha || 0;   // 誘捕夥伴：命中/傷害隨完整魅力提升（含超過60）；僅「項圈數量」另以60封頂
-        let pg = petGearBonus();   // 🦴 寵物裝備：夥伴額外傷害/命中（影響所有項圈夥伴）
-        if (target && target.curHp > 0 && player.partners.length > 0) {
-            _combatSrc = 'pet';   // ⚔️ 夥伴(項圈犬類)戰鬥訊息來源情境
-            let _dpsPetSnap = _dpsSnap();   // 🎯 DPS：夥伴階段起點快照
-            player.partners.forEach(nm => {
-                let pd = PET_DEF[nm]; if(!pd) return;
-                let hits = petCollarCount(nm);
-                for (let i = 0; i < hits; i++) {
-                    if (target.curHp <= 0) break;
-                    let meat = player.inv.find(it => it.id === 'new_item_143');
-                    if (!meat || meat.cnt <= 0) break;   // 沒有肉就停止
-                    meat.cnt--;
-                    if (meat.cnt <= 0) player.inv = player.inv.filter(it => it.id !== 'new_item_143');
-                    // 命中 = 玩家等級 + 魅力×hitChaMult + 偏移(+寵裝命中) - 怪物等級 + 怪物AC
-                    let hv = Math.max(1, Math.min(20, player.lv + Math.floor(cha * ((pd.hitChaMult || 1) * (hasMastery('k_royal_pet') ? 1.2 : 1))) + pd.hitOff + pg.hit - target.lv + mobEffAC(target) + (hasSummonCtrlRing() ? 5 : 0) + (typeof _relicPartnerHit === 'function' ? _relicPartnerHit(nm) : 0)));   // 🔧 召喚控制戒指：召喚物命中+5；👑 夥伴精通：魅力命中係數×1.2；🏺 遺物夥伴專屬命中（哈士奇的骨棒：哈士奇+6）
-                    let r = roll(1, 20);
-                    if (r === 20 || (r !== 1 && hv >= r) || (r === 19 && hasSummonCtrlRing())) {
-                        let dmg = Math.max(1, roll(1, Math.max(1, player.lv + pd.diceOff)) + Math.floor(cha * ((pd.chaMult || 1) * (hasMastery('k_royal_pet') ? 1.2 : 1))) + pg.dmg - (target.dr || 0));   // 👑 夥伴精通：魅力傷害係數×1.2
-                        dmg = Math.max(1, Math.floor(dmg * royalAllyMult()));   // 👑 王族魅力加成：項圈夥伴造成傷害 ×(1+魅力/100)（非王族＝×1）
-                        target.curHp -= dmg; target.justHit = pd.ele; mobWake(target);
-                        logCombat(`夥伴 [${nm}] 撕咬 <span class="${getMobColor(target.lv)}">${target.n}</span>，造成 ${dmg} 點${pd.eleName}屬性傷害！`, 'player-special');
-                    } else {
-                        logCombat(`夥伴 [${nm}] 的攻擊未命中。`, 'miss');
-                    }
-                    // 🐾 進化夥伴：攻擊時 10% 觸發 proc 法術（傷害＝玩家自身施法數值；必定命中、吃魔抗）
-                    // 🔧 依技能 target:"all" → 對全場敵人各自結算（各吃自身魔抗/DR）；單體技能僅打當前目標
-                    if (pd.proc && target.curHp > 0 && Math.random() < 0.10) {
-                        let _ps = DB.skills[pd.proc];
-                        if (_ps) {
-                            let _pts = (_ps.target === 'all') ? mapState.mobs.filter(m => m && m.curHp > 0) : [target];
-                            let _ptexts = [];
-                            _pts.forEach(_pm => {
-                                let _pdmg = petProcSpellDamage(pd.proc, _pm);
-                                if (_pdmg > 0) {
-                                    _pdmg = Math.max(1, Math.floor(_pdmg * royalAllyMult()));   // 👑 王族魅力加成：夥伴 proc 法術傷害 ×(1+魅力/100)
-                                    _pdmg = Math.max(1, Math.floor(_pdmg * _relicPetSkillMult()));   // 🏺 v3.1.80 馴獸師的訓狗棒：隊伍任一人裝備→夥伴技能傷害 ×1.5（多件不疊加）
-                                    _pm.curHp -= _pdmg; _pm.justHit = _ps.ele || pd.ele; mobWake(_pm);
-                                    _ptexts.push(`<span class="${getMobColor(_pm.lv)}">${_pm.n}</span> ${_pdmg}`);
-                                }
-                            });
-                            if (_ptexts.length) logCombat(`夥伴 [${nm}] 額外施展 <span class="text-pink-300 font-bold">${_ps.n}</span> → ${_ptexts.join('、')}`, 'player-special');
-                            _pts.forEach(_pm => { if (_pm.curHp <= 0) { let _ri = mapState.mobs.findIndex(m => m && m.uid === _pm.uid); if (_ri !== -1) killMob(_ri); } });
-                        }
-                    }
-                }
-            });
-            let idx = mapState.mobs.findIndex(m => m && m.uid === target.uid);
-            if (target.curHp <= 0 && idx !== -1) killMob(idx);
-            else renderMobs();
-            renderTabs();   // 肉數量變動需刷新
-            { let _petd = _dpsDealt(_dpsPetSnap); if (_petd > 0) _dps.pet += _petd; }   // 🎯 DPS：結算夥伴階段輸出
-            _combatSrc = null;   // ⚔️ 結束夥伴來源情境
-        }
-    }
+    // 🐾 v3.2.17 夥伴系統 v2：出戰寵物獨立行動（攻速/施法/喝水/復活皆在 petsTick 內·攻擊不再消耗肉）
+    if (typeof petsTick === 'function') { _combatSrc = 'pet'; try { petsTick(); } catch (e) {} _combatSrc = null; }
 }
 
 // 體能激發/能量激發：負重狀態下仍可自然恢復 HP、MP（身上任一 loadFreeRegen 增益生效即放行）
@@ -710,11 +658,13 @@ function spawnMob(idx) {
         }
     }
     
-    // 魔物追蹤：在追蹤地圖且追蹤有效期間，每次出怪 50% 固定機率改為被追蹤的怪物
+    // 魔物追蹤：在追蹤地圖且追蹤有效期間，每次出怪 50% 固定機率改為被追蹤的怪物（🏺 v3.2.17 裝備 小獵犬的追蹤鼻 → 70%）
     if(player.tracking && player.tracking.until > Date.now() && player.tracking.map === mapState.current
        && DB.maps[mapState.current] && DB.maps[mapState.current].includes(player.tracking.mob)
-       && DB.mobs[player.tracking.mob] && !DB.mobs[player.tracking.mob].boss && Math.random() < 0.5) {
-        mobId = player.tracking.mob;
+       && DB.mobs[player.tracking.mob] && !DB.mobs[player.tracking.mob].boss) {
+        let _trkRate = 0.5;
+        try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].trackBoost) { _trkRate = 0.7; break; } } } catch (e) {}
+        if (Math.random() < _trkRate) mobId = player.tracking.mob;
     }
     // 🔧 卡瑞（BOSS）：身上「同時」攜帶 飛龍的爪子/蜥蜴的角/水晶球/妖魔戰士護身符 時，
     //    於龍之谷地監6樓 1% 機率出現（場上無其他 BOSS 時才出現，且同時最多一隻）
@@ -841,7 +791,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     else if (forceHit) { hit = true; }   // 反擊：必定命中、必定非重擊
     else if (forceLand) { hit = true; if (rollHit === 20) heavy = true; }   // 居合：必定命中，rollHit20 仍自然重擊；不擦傷
     else if (rollHit === 20) { hit = true; heavy = true; }
-    else if (isCrush && rollHit >= 19 - Math.round(((_cw && _cw.heavyRatePct) || 0) / 5)) { hit = true; heavy = true; crush = true; }   // 重擊武器：骰19必定重擊（粉碎）；🏺 v3.1.80 風化的巨型方尖碑 heavyRatePct:10 → 骰17~19 亦重擊（每 5%＝1 面）
+    else if (isCrush && rollHit >= 19 - Math.round(((_cw && _cw.heavyRatePct) || 0) / 5) && (!player.classicMode || (_cw && _cw.classicOk) || rollHit !== 19)) { hit = true; heavy = true; crush = true; }   // 重擊武器：骰19必定重擊（粉碎）；🏺 v3.1.80 方尖碑 heavyRatePct:10 → 骰17~19 亦重擊（每 5%＝1 面）；🎮 v3.2.44 用戶拍板：經典模式只停「骰19」一般重擊特效——heavyRatePct 擴充段（如方尖碑 17~18）照樣重擊·classicOk 全放行
     else if (player.buffs && player.buffs.sk_elf_preciseshot > 0 && rollHit === 1) hit = true;   // 🏹 精準射擊：擲骰1由必定未命中→必定命中（最高命中率可達100%）
     else if (rollHit !== 1 && hitValue >= rollHit) hit = true;
     else if (rollHit === 19) { hit = true; graze = true; }   // 一般武器：擲到19本應未命中時 → 擦傷（傷害剩50%）
@@ -910,7 +860,13 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     if (player.statuses && player.statuses.broken > 0) _outDmg = Math.max(1, Math.floor(_outDmg * 0.8));   // 🐍 壞物術（特產易碎泥偶自傷）：期間玩家一般攻擊物理傷害 -20%
     let _dualX2 = false;   // ⚔️ 雙刀內建特性：一般攻擊命中(非擦傷) 5% 機率最終傷害×2（🎮 經典模式停用）
     if (_natRoll && !graze && !player.classicMode && getWeaponTags(_swingId).includes('雙刀') && Math.random() < 0.05) { _dualX2 = true; _outDmg = Math.max(1, _outDmg * 2); }
+    markBossPhysicalHit(target);
     return { dmg: _outDmg, hit: true, heavy: heavy, crit: isCrit, graze: graze, crush: crush, dualx2: _dualX2, ranged: isRanged };
+}
+
+// 最近一次「物理攻擊命中」時間；屬性武器仍屬物理，法術／奇古獸／DoT 不呼叫此函式。
+function markBossPhysicalHit(m) {
+    if (m && m.boss && typeof state !== 'undefined') m._lastPhysicalHitTick = state.ticks;
 }
 
 function consumeArrow() {
@@ -992,6 +948,7 @@ function procLightArrow(t) {
     d = Math.max(1, Math.floor(d * wpnEnFinalMult(player.eq.wpn)));   // 🔧 武器強化 +11~+20：最終傷害倍率（共鳴光箭比照奇古獸/物理武器；與 tooltip 顯示一致）
     d = Math.max(1, Math.floor(d * fragileMult(t)));   // 🔮 脆弱（白鳥5）
     if (hasMastery('m_resonance')) d = Math.max(1, d + 5);   // 🏅 共鳴精通：光箭傷害 +5
+    if (typeof equipSkillDmgMult === 'function') d = Math.max(1, Math.floor(d * equipSkillDmgMult(sk, 'sk_lightarrow')));   // 🏺 v3.2.42 稽核修：共鳴光箭也吃技能傷害倍率遺物（光束強化魔杖 skillDmgMult 自身 proc 原本不生效）
     d = Math.max(1, Math.floor(d * rlFuryMult()));   // 🔮 紅獅5/5＋😡狂怒5/5：最終傷害
     d = illusionMagicDmg(d, false);   // 🔮 幻覺2/5：共鳴光箭命中回MP（自動攻擊衍生→5件不加倍）
     t.curHp -= d;

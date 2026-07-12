@@ -192,6 +192,7 @@ function killMob(idx) {
     _sherineLootCtx = mob._sherine ? { boss: !!mob.boss, grace: !!mob._grace, mad: !!mob._sherineMad } : null;   // 🔮 席琳的世界：本次擊殺掉落套用 詞綴×3(瘋狂×5)／套裝效果判定（恩賜怪套裝機率×5、瘋狂再×3）
     _tradLootCtx = traditionalActive();   // 🏛️ 傳統模式：本次擊殺掉落的裝備隨機自帶強化值＋抑制施法卷軸（於 _sherineLootCtx 清除處一併關閉）
     _vfxLootCtx = true;   // ✨ VFX：本次擊殺掉落期間→gainItem 對潘朵拉權重=1 物品閃光
+    _lootMobInfo = { n: mob.n, lv: mob.lv };   // 🐾 本次擊殺掉落來源怪物→gainItem 顯示「怪名 給你 物品名 。」
     try {
     if(typeof auditTrackKill === 'function') auditTrackKill(mob);   // 統計：累計經驗/擊殺
     // 🔧 轉場建築（往上層的樓梯 / 遺忘之島傳送門）：擊敗即進入下一層/島，不顯示「擊敗了…」戰鬥訊息（race 建築且 noAutoTeleport，排除攻城塔/城門）
@@ -200,8 +201,12 @@ function killMob(idx) {
     // 🤝 v3.0.87 組隊經驗＝先加成再均分：怪物經驗 ×(1+partyExpBonusPct%) ÷ partyExpShareCount()（主玩家＋未倒地傭兵）＝每人一份。
     //   例（王族隊長+1 隊友）：1000 ×1.08 ÷2 ＝ 540／人；主玩家僅得一份（單人時＝全額·無加成）。🪆 魔法娃娃 expBonus% 仍加乘於主玩家該份。
     let _expShare = mob.exp * (1 + partyExpBonusPct() / 100) / partyExpShareCount();
-    player.exp += Math.floor(_expShare * getExpGainMult(player.lv) * (1 + dollFieldVal('expBonus') / 100));   // ⚠️v3.0.82 經典×0.5 已移除
+    let _petExpGain = Math.floor(_expShare * (1 + dollFieldVal('expBonus') / 100));   // 🐾 寵物複製玩家應得份額；玩家滿等不再使寵物經驗歸零
+    let _playerExpGain = Math.floor(_petExpGain * getExpGainMult(player.lv));   // ⚠️v3.0.82 經典×0.5 已移除；Lv100 玩家自身仍不獲得經驗
+    player.exp += _playerExpGain;
     checkLvUp();
+    // 🐾 寵物經驗：複製玩家本次應得份額後均分給出戰寵物；不受玩家 Lv100 經驗封頂影響（升級需求＝玩家表 1/4）
+    if (typeof petsGainExp === 'function') petsGainExp(_petExpGain);
     // 🤝 v3.0.86 協力傭兵各得「均分後的一份」（以自身等級計 getExpGainMult·滿等歸0·不減其他人）；經驗滿即「自動升級＋重算戰力（即時變強）」。_expGained 記受雇期間賺到的總量供解雇 delta-merge 回寫。（原 MERC_EXP_SHARE=0.5 制已廢）
     if (player.allies && player.allies.length && mob.exp) {
         player.allies.forEach(a => {
@@ -235,30 +240,9 @@ function killMob(idx) {
     }
     // 🦴 v3.1.71 用戶要求：取消「怪物直接掉落席琳遺骸」——遺骸唯一取得管道＝席琳結晶（NPC 伊奧兌換）／菈克希絲拆分舊詞綴裝備。
     //    原掉落機率公式已移轉到下方「席琳結晶」掉落（見該區塊）。
-	// 誘捕判定（誘捕上限改於「使用肉」時以 floor(魅力/7) 判定）
-    if (player.buffs.taming > 0) {
-        let collarDrop = null;
-        if (mob.n.includes("杜賓狗")) collarDrop = 'new_item_184';
-        else if (mob.n.includes("狼")) collarDrop = 'new_item_185';
-        else if (mob.n.includes("哈士奇")) collarDrop = 'new_item_collar_husky';
-        else if (mob.n.includes("牧羊犬")) collarDrop = 'new_item_238'; // 已改為編號
-
-        if (collarDrop) {   // 誘捕擊殺必定捕獲（100%）
-            gainItem(collarDrop, 1);
-            logSys(`<span class="text-green-300 font-bold">誘捕成功！獲得 ${DB.items[collarDrop].n}。</span>`);
-            player.buffs.taming = 0;
-        }
-    }
-    
-    // === 🐾 進化果實：擊敗屬性怪物 0.0001%×怪物等級 機率掉落對應屬性果實 ===
-    if (!_kbNoReward) {
-        let _fruitByEle = { water: 'new_fruit_rabbit', fire: 'new_fruit_fox', earth: 'new_fruit_beagle', wind: 'new_fruit_stbernard' };
-        let _fruitId = _fruitByEle[mob.e];
-        if (_fruitId && Math.random() < (0.000001 * (mob.lv || 1) * classicDropMult())) {   // 0.0001% × 怪物等級（🎮 經典×1/10）
-            gainItem(_fruitId, 1);
-            logSys(`<span class="text-green-300 font-bold">✦ 你從敵人殘骸中發現了 ${DB.items[_fruitId].n}！</span>`);
-        }
-    }
+    // 🐾 v3.2.17 誘捕捕捉：身上有對應誘捕狀態且擊殺對應動物 → 寵物保管獲得基本等級寵物並失去該狀態
+    //   （舊「肉→taming→項圈」與「屬性怪掉舊進化果實」已隨項圈系統移除；新進化果實改由亞丁諾斯製作）
+    if (typeof petCaptureOnKill === 'function') petCaptureOnKill(mob);
 
     // === 🔧 卡瑞：擊殺後扣除四樣任務道具各一個 ===
     if (mob.n === '卡瑞') {
@@ -301,10 +285,10 @@ function killMob(idx) {
     // === 野外＋血盟敵人：1% 機率額外掉落一件「攜帶物」（抽法同潘朵拉，裝備可能已強化）===
     if ((mob.wild && mob.race === '血盟') || mob.siegeEnemy) pledgeBonusDrop(mob);   // 野外血盟 或 攻城敵人：擊殺特殊掉寶
 
-    // === 🐉 三大龍：擊敗必得「幼龍蛋」（身上已有一枚則不再掉落，100%・不受經典掉率影響）===
+    // === 🐉 三大龍：擊敗必得「頑皮幼龍蛋」（身上已有一枚則不再掉落，100%・不受經典掉率影響）===
     if (['安塔瑞斯', '法利昂', '巴拉卡斯'].includes(mob.n) && !player.inv.some(i => i.id === 'item_dragon_egg')) {
         gainItem('item_dragon_egg', 1);
-        logSys('<span class="text-amber-300 font-bold">✦ 你從巨龍的殘骸中拾起了一顆「幼龍蛋」——它似乎在呼喚著什麼……</span>');
+        logSys('<span class="text-amber-300 font-bold">✦ 你從巨龍的殘骸中拾起了一顆「頑皮幼龍蛋」——它似乎在呼喚著什麼……</span>');
     }
 
     // === 怪物專屬掉落（依「怪物掉落資料.md」）：每樣物品各自獨立判定一次 ===
@@ -318,7 +302,9 @@ function killMob(idx) {
         if(trialDropBlocked(itemId)) return;   // 🔒 試煉兌換道具：僅本職擊殺才掉＋🔥 v3.0.78 須已接取對應試煉且未達需求數量
         if (typeof trialForced100 === 'function' && trialForced100(itemId)) { gainItem(itemId, 1); return; }   // 🔥 接取制試煉道具：通過閘門後 100% 掉落
         let _clMult = (mob.n === '卡瑞' && itemId === 'wpn_dragonslayer') ? 1 : trialItemDropMult(itemId);   // 🔧 v2.6.75 卡瑞·屠龍劍：經典模式仍維持 100%（獎勵已綁「擊殺消耗四任務道具」的成本·不受 ×1/10）
-        if(Math.random() < (ratePct * _dropBase * _clMult) / 100) gainItem(itemId, 1);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
+        let _relicX2 = 1;   // 🏺 v3.2.17 幸運暴走兔腳（遺物·需裝備）：遺物掉落機率 ×2
+        if (DB.items[itemId].relic) { try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].relicDropX2) { _relicX2 = 2; break; } } } catch (e) {} }
+        if(Math.random() < (ratePct * _dropBase * _clMult * _relicX2) / 100) gainItem(itemId, 1);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
     });
 
     // === 🔧 萬能藥稀有掉落：等級 40 以上、非血盟。一般敵人 0.01%；頭目 1%（排除夢幻之島頭目），擊殺後隨機掉落 6 種萬能藥之一 ===
@@ -402,6 +388,7 @@ function killMob(idx) {
         _sherineLootCtx = null;   // 🔮 掉落判定結束，清除上下文（try/finally：縱使中途拋例外也必清，杜絕 _tradLootCtx 殘留洩漏到兌換/任務/其他 forceNormal=false 獎勵）
         _tradLootCtx = false;     // 🏛️ 傳統模式掠奪上下文一併關閉
         _vfxLootCtx = false;      // ✨ VFX：擊殺掉落上下文一併關閉
+        _lootMobInfo = null;      // 🐾 掉落來源怪物上下文一併關閉（杜絕殘留洩漏到兌換/任務其他 gainItem）
     }
     // 🔧 架構#2：不在此處位移輸送帶（呼叫點可能正在迭代怪物陣列）。
     // tick 內的擊殺延後到 gameLoop 的 settleDeadMobs()；手動操作則立即清算。

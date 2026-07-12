@@ -32,7 +32,7 @@
     <title>放置天堂 - 蛇神降世</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=9bfb7372f6">
+    <link rel="stylesheet" href="css/style.css?v=27428662b5">
     <link rel="stylesheet" href="css/floating-ui.css?v=cef1e683d5">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -46,33 +46,23 @@
       <div id="login-art-stage">
         <img id="login-bg-image" src="public/assets/login/310.png" alt="登入畫面背景">
         <img id="login-anim-image" src="public/assets/login/273.png" alt="登入畫面動畫">
-        <!-- 🎨 2026-07-11 首頁登入畫面依使用者提供的 V17(game_ui_v17_create_buttons_3d_preview.html)參考稿改版:
-             左側資訊卡(#login-copy-panel)收納標題/副標/版號/免責聲明;右側按鈕面板(#main-menu)收納開始遊戲/開關/外掛入口。
-             #login-title-layer/#login-meta-layer/#login-version/#login-disclaimer 這些 id 全部保留(外掛 afk-skin.js
-             的品牌徽章、afk-mobile.js 的手機版覆寫都靠這些 id 錨定),只是外面多包一層 #login-copy-panel 卡片容器。 -->
-        <div id="login-copy-panel">
         <div id="login-title-layer" class="text-center">
             <h1 class="text-4xl font-bold text-yellow-400 mb-2">放置天堂 - 蛇神降世</h1>
             <p class="text-base text-slate-400">創造您的角色並開始冒險</p>
         </div>
+
+        <div id="main-menu" class="flex flex-col gap-5 items-center my-12">
+            <button onclick="openLoadSelect()" id="btn-start-menu" class="btn text-xl w-72 py-4 bg-blue-700 hover:bg-blue-600 border-blue-500">開始遊戲</button>
+            <button onclick="toggleVfxPref()" id="btn-vfx-toggle" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">✨ 戰鬥特效：開啟</button>
+            <button onclick="toggleVfxNumPref()" id="btn-vfxnum-toggle" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">🔢 傷害數字：開啟</button>
+            <p class="text-xs text-slate-500 -mt-2 w-72 text-center">效果較弱/卡頓的裝置可關閉戰鬥特效；「傷害數字」可獨立關閉、其餘特效保留（開始前設定，遊戲中不再提供）</p>
+        </div>
+
         <div id="login-meta-layer">
             <!-- 🏷️ 版本號（由 js/14 window.onload 依 GAME_VERSION 填入；此處 v2.4.0 僅為 JS 失效時的後備文字） -->
             <div id="login-version" class="text-center text-sm text-slate-300 font-medium tracking-wide select-none">v2.4.0</div>
             <div id="login-disclaimer" class="text-center text-xs text-slate-400 leading-relaxed mx-auto">本遊戲為非官方免費同人作品，絕無營利意圖；遊戲內圖片與音樂版權歸原權利方 NCSOFT 所有，其餘程式為獨立開發，嚴禁商業販售。</div>
         </div>
-        </div>
-
-        <div id="main-menu" class="flex flex-col gap-5 items-center my-12">
-            <!-- 🎨 2026-07-11 三畫面改版：採用原作者新版 2026071001 設計，主選單只留單一「開始遊戲」鈕，
-                 統一走視覺化角色選擇畫面(#load-select-panel)，該畫面內有「創新角色」鈕再進創角流程。 -->
-            <button onclick="openLoadSelect()" id="btn-start-menu" class="btn text-xl w-72 py-4 bg-blue-700 hover:bg-blue-600 border-blue-500">開始遊戲</button>
-            <!-- 🎨 2026-07-11 首頁 V17 改版：說明文字改用 data-desc + CSS ::after 顯示在按鈕內(粗體標題+小字說明兩行)。
-                 ⚠️ 不能用真的子元素(如 <small>)放說明文字——原作 js/09-vfx-render.js 的 _applyVfxPref() 每次
-                 都用 b.textContent 整個重寫這顆按鈕，任何 DOM 子節點都會被洗掉；CSS 生成內容(::after)不受影響。 -->
-            <button onclick="toggleVfxPref()" id="btn-vfx-toggle" data-desc="效果較弱或卡頓時，可關閉以提升流暢度" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">✨ 戰鬥特效：開啟</button>
-            <button onclick="toggleVfxNumPref()" id="btn-vfxnum-toggle" data-desc="可顯示或關閉，屬於實驗性功能" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">🔢 傷害數字：開啟</button>
-        </div>
-
       </div>
 
         <div id="slot-select-panel" class="hidden flex flex-col gap-4 items-center my-8 w-full">
@@ -81,8 +71,6 @@
             <button onclick="slotBackToMenu()" class="btn px-6 py-2 bg-slate-700 hover:bg-slate-600 text-base font-bold">返回</button>
         </div>
 
-        <!-- 🎨 2026-07-11 三畫面改版：視覺化角色選擇畫面(取代純文字存檔清單)，移植自原作者新版 2026071001，
-             逐幀走路動畫的存檔角色卡片、可翻頁(1-4/5-8)、選中顯示右側角色詳細資訊面板。 -->
         <div id="load-select-panel" class="hidden" aria-label="角色選擇">
           <div id="load-art-stage">
             <img id="load-select-bg" src="public/assets/login/load.png" alt="角色選擇背景" draggable="false">
@@ -118,13 +106,11 @@
           </div>
         </div>
 
-        <!-- 🎨 2026-07-11 三畫面改版：創角人物立繪置中＋左右各4顆職業圖示鈕的版面，移植自原作者新版 2026071001，
-             人物立繪改逐幀走路動畫(assets/start/<key>/<frame>.png，見 js/13-shop-save.js setCreationClassAnimation)。 -->
-        <div id="creation-panel" class="hidden" aria-label="創建角色">
+                <div id="creation-panel" class="hidden" aria-label="創建角色">
             <img id="creation-bg-image" src="public/assets/login/824.png" alt="創角背景" draggable="false">
 
             <section id="creation-class-desc-frame" aria-live="polite">
-                <h2 id="creation-class-title">王族</h2>
+                <h2 id="creation-class-title">王子</h2>
                 <div id="class-desc"></div>
             </section>
 
@@ -132,7 +118,7 @@
                 <img id="class-preview-img" src="assets/start/prince/714.png" alt="職業預覽" draggable="false">
             </div>
             <nav id="creation-class-list" aria-label="職業選擇">
-                <button onclick="selectClassBase('royal')" id="btn-class-base-royal" class="creation-class-btn class-left class-pos-1 active" type="button" title="王族"><img src="assets/logo/王族logo.png" alt="王族"></button>
+                <button onclick="selectClassBase('royal')" id="btn-class-base-royal" class="creation-class-btn class-left class-pos-1" type="button" title="王族"><img src="assets/logo/王族logo.png" alt="王族"></button>
                 <button onclick="selectClassBase('knight')" id="btn-class-base-knight" class="creation-class-btn class-left class-pos-2" type="button" title="騎士"><img src="assets/logo/騎士logo.png" alt="騎士"></button>
                 <button onclick="selectClassBase('mage')" id="btn-class-base-mage" class="creation-class-btn class-left class-pos-3" type="button" title="法師"><img src="assets/logo/法師logo.png" alt="法師"></button>
                 <button onclick="selectClassBase('elf')" id="btn-class-base-elf" class="creation-class-btn class-left class-pos-4" type="button" title="妖精"><img src="assets/logo/妖精logo.png" alt="妖精"></button>
@@ -143,10 +129,10 @@
             </nav>
 
             <div id="creation-gender-panel" aria-label="性別選擇">
-                <button onclick="selectGender('m')" id="btn-gender-m" class="creation-gender-btn active" type="button" title="男性">♂</button>
+                <button onclick="selectGender('m')" id="btn-gender-m" class="creation-gender-btn" type="button" title="男性">♂</button>
                 <button onclick="selectGender('f')" id="btn-gender-f" class="creation-gender-btn" type="button" title="女性">♀</button>
             </div>
-            <div id="stat-allocation" aria-label="能力配點">
+<div id="stat-allocation" aria-label="能力配點">
                 <div id="creation-pts">0</div>
                 <div class="creation-stat-control stat-str"><span id="c-str" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('str', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('str', 1)">+</button></div>
                 <div class="creation-stat-control stat-dex"><span id="c-dex" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('dex', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('dex', 1)">+</button></div>
@@ -161,9 +147,8 @@
                 <span>經典模式</span>
             </label>
             <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
-            <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始冒險</button>
+            <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始遊戲</button>
         </div>
-
     </div>
 
     <script>
@@ -227,7 +212,7 @@
 
             <!-- 🤝 協力傭兵隊伍面板（Phase 1：隊伍/技能設定分頁；無傭兵時自動隱藏，不佔版面） -->
             <div id="squad-panel" class="panel" style="display:none;">
-                <div class="panel-header flex items-center justify-center" style="user-select:none;"><span class="text-center">協力傭兵隊伍</span></div><!-- 🔧 v2.6.76 取消收合按鈕·面板恆展開（用戶要求） -->
+                <div class="panel-header flex items-center justify-center" style="user-select:none;"><span class="text-center">隊伍與夥伴</span></div><!-- 🔧 v2.6.76 取消收合按鈕·面板恆展開（用戶要求） -->
                 <div id="squad-body" class="p-3 flex flex-col gap-2">
                     <div class="flex gap-2">
                         <button id="squad-tab-btn-team" class="flex-1 py-1 text-sm font-bold rounded border" style="background:#334155;border-color:#475569;color:#cbd5e1;" onclick="switchSquadTab('team')">隊伍</button>
@@ -545,32 +530,34 @@
     })();
     </script>
 
-<script src="js/00-data.js?v=816da07a29"></script>
-<script src="js/01-drops-config.js?v=36ad4883df"></script>
-<script src="js/02-stats-recompute.js?v=e9ece49b74"></script>
-<script src="js/03-combat-core.js?v=c9d444c6cf"></script>
-<script src="js/04-combat-attack.js?v=6d5151aef4"></script>
-<script src="js/05-kill-progression.js?v=03d8936085"></script>
-<script src="js/06-status-allies.js?v=a5714d43fb"></script>
-<script src="js/07-skills-cast.js?v=2ddc2a2c0f"></script>
-<script src="js/08-items-equip.js?v=9e58976784"></script>
-<script src="js/09-vfx-render.js?v=b8f79aac8f"></script>
-<script src="js/10-ui-tabs.js?v=f140a3e971"></script>
-<script src="js/11-world-map.js?v=dd0c242197"></script>
-<script src="js/12-npc-quests.js?v=66722693f3"></script>
-<script src="js/13-shop-save.js?v=96087393c0"></script>
-<script src="js/14-craft-pandora.js?v=dc2414fba4"></script>
+    <script src="js/00-data.js?v=4fd45b6a8c"></script>
+<script src="js/01-drops-config.js?v=c441f407d6"></script>
+<script src="js/02-stats-recompute.js?v=de2e1cca71"></script>
+    <script src="js/03-combat-core.js?v=a5043c85d9"></script>
+    <script src="js/04-combat-attack.js?v=2551ef9834"></script>
+<script src="js/05-kill-progression.js?v=01c7fe5bcb"></script>
+    <script src="js/06-status-allies.js?v=92c6bae72d"></script>
+    <script src="js/07-skills-cast.js?v=2008b845d6"></script>
+<script src="js/08-items-equip.js?v=ebdb691680"></script>
+<script src="js/09-vfx-render.js?v=76bdc93872"></script>
+<script src="js/10-ui-tabs.js?v=7d6c0ee402"></script>
+<script src="js/11-world-map.js?v=b41fc63f14"></script>
+<script src="js/12-npc-quests.js?v=c810bf53f9"></script>
+<script src="js/13-shop-save.js?v=805e295d55"></script>
+<script src="js/14-craft-pandora.js?v=d8bbdd5873"></script>
 <script src="js/15-cards.js?v=cb0e3bee3d"></script>
-<script src="js/16-equip-book.js?v=78216e79fa"></script>
-<script src="js/18-misc-book.js?v=6db7f79af5"></script>
-<script src="js/17-audio.js?v=87a029bab5"></script>
-<script src="js/19-equipment-window.js?v=658967a99b"></script>
+<script src="js/16-equip-book.js?v=45290f2d29"></script>
+<script src="js/18-misc-book.js?v=cc8f8f7ce4"></script>
+<script src="js/17-audio.js?v=8e371ccd31"></script>
+<script src="js/19-equipment-window.js?v=ea8ee8596f"></script>
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
+    <script src="js/23-summons.js?v=90407c75f6"></script>
+    <script src="js/22-pets.js?v=168c0e4aa6"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline.js?v=20260712a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260712a"></script>
+<script src="afk-mobile.js"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-backnav.js?v=20260712a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -646,7 +633,7 @@
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-player-ring.js?v=20260708a"></script>
 <!-- 首頁「加掛版」品牌標記 + 外掛區外框(純視覺;需排在其他 afk-* 之後;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-skin.js?v=20260712a"></script>
+<script src="afk-skin.js"></script>
 <!-- 魔法娃娃「飄浮寵物」:取代原本滑鼠游標特效,改成冒險地圖戰鬥框左下角飄浮的寵物圖案(出發狩獵才顯示);需排在 afk-mobile.js 之後(完全接管 applyDollCursor);可獨立維護,原作者更新後重新加回此行即可 -->
 <script src="afk-doll-pet.js?v=20260708e"></script>
 </body>

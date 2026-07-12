@@ -77,7 +77,7 @@ const EQUIP_CAT_BONUS = {
     ring:   { stat: 'mpR',     val: 1,  label: 'MP自然恢復量 +1' },
     belt:   { stat: 'weight',  val: 20, label: '負重 +20' },
     ear:    { stat: 'mpR',     val: 1,  label: 'MP自然恢復量 +1' },
-    pet:    { stat: 'petHit',  val: 1,  label: '項圈夥伴命中率 +1' },
+    pet:    { stat: 'petHit',  val: 1,  label: '寵物命中率 +1' },
     doll:   { stat: 'allattr', val: 1,  label: '全屬性 +1' }   // 🪆 魔法娃娃全收集：六維各+1。實際套用在 js/02 Phase1(屬性須在換算衍生值前計入)；此處僅供收集冊顯示 label，equipCollectionBonus 對 allattr 做 no-op 避免 Phase3 重複套用
 };
 
@@ -118,6 +118,7 @@ function equipCatKey(id, d) {
         if (d.slot === 'boots') return 'boots';
         if (d.slot === 'gloves') return 'gloves';
         if (d.slot === 'shield') return 'shield';
+        if (d.slot === 'petarm') return 'pet';   // 🛡️ v3.2.37 寵物防具 → 寵物裝備分類
         return null;
     }
     if (d.type === 'acc') {
@@ -125,7 +126,7 @@ function equipCatKey(id, d) {
         if (d.slot === 'ring') return 'ring';
         if (d.slot === 'belt') return 'belt';
         if (d.slot === 'ear1' || d.slot === 'ear2' || d.slot === 'ear') return 'ear';
-        if (d.slot === 'pet') return 'pet';
+        if (d.slot === 'pet' || d.slot === 'petwpn') return 'pet';   // 🦴 v3.2.37 之牙改 slot:petwpn（寵物個別武器）
         if (d.slot === 'doll') return 'doll';
         return null;
     }
