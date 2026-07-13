@@ -331,8 +331,10 @@
       row.className = 'm-town-npc-row';
       row.innerHTML =
         '<span class="m-tnr-ic">' + icon + '</span>' +
-        '<span class="m-tnr-txt"><b class="m-tnr-name">' + name + '</b><span class="m-tnr-title">[' + title + ']</span>' +
-        '<span class="m-tnr-desc">' + (desc || '') + '</span></span>';
+        '<span class="m-tnr-txt">' +
+          '<span class="m-tnr-nametitle"><b class="m-tnr-name">' + name + '</b><span class="m-tnr-title">[' + title + ']</span></span>' +
+          '<span class="m-tnr-desc">' + (desc || '') + '</span>' +
+        '</span>';
       row.addEventListener('click', onClick);
       return row;
     }
@@ -1175,6 +1177,13 @@
 
       /* 三欄:滿寬,一次只顯示一欄,內部自行捲動 */
       'body.m-mobile .m-col-left,body.m-mobile .m-col-center,body.m-mobile .m-col-right{width:100% !important;max-width:none !important;flex:1 1 auto !important;min-height:0 !important;gap:8px !important;overflow:hidden;}',
+      // 2026-07-13 使用者實機回報:城鎮 NPC 清單(見 ensureTownNpcList)只有前幾格看得到、往下滑不動,
+      // 點不到清單下半段的 NPC。根因:上面這條 overflow:hidden 是給「地圖/戰鬥框固定比例、內容
+      // 絕不超出這一欄」的一般情況寫的；但城鎮地圖+清單合起來的高度可能遠超過這一欄本身的高度,
+      // 這條 overflow:hidden 就把清單下半段直接裁掉、連捲動都捲不到(不是清單本身不能捲,而是整欄
+      // 從外面就被切斷)。只在原作已上線地圖式 NPC(#town-npc-map 存在)時解除裁切、交給
+      // #game-screen 本來就有的 overflow-y:auto 一起捲動；其餘畫面(戰鬥/背包/隊伍)不受影響。
+      'body.m-mobile:has(#town-npc-map) .m-col-center{overflow:visible !important;}',
       /* 2026-07-08(待辦#8):背包分頁按鈕列(.tab-bar)跟下方內容(快速強化/快速廢品/物品清單)之間的間隙縮小,
          只調 .m-col-right(背包欄)、不動戰鬥/設定欄的間距(避免波及沒被抱怨的畫面)。 */
       'body.m-mobile .m-col-right{gap:4px !important;}',
@@ -1326,8 +1335,10 @@
       'body.m-mobile .m-town-npc-row:active{background:#334155;}',
       'body.m-mobile .m-town-npc-row .m-tnr-ic{font-size:22px;line-height:1;flex:0 0 auto;margin-top:1px;}',
       'body.m-mobile .m-town-npc-row .m-tnr-txt{display:flex;flex-direction:column;gap:1px;min-width:0;}',
-      'body.m-mobile .m-town-npc-row .m-tnr-name{color:#f1f5f9;font-size:15px;}',
-      'body.m-mobile .m-town-npc-row .m-tnr-title{color:#facc15;font-size:12px;margin-left:4px;}',
+      // 2026-07-13 使用者要求:名稱+類型同一行顯示(不換行),像「比特[雜貨商人]」
+      'body.m-mobile .m-town-npc-row .m-tnr-nametitle{display:flex;align-items:baseline;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;gap:4px;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-name{color:#f1f5f9;font-size:15px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-title{color:#facc15;font-size:12px;flex:0 0 auto;}',
       'body.m-mobile .m-town-npc-row .m-tnr-desc{color:#94a3b8;font-size:12px;line-height:1.4;margin-top:2px;}',
 
       /* 倉庫(warehouse NPC):金幣存取列 + 分類/一鍵列在手機窄寬下擠成一團 → 重排成整齊兩行。

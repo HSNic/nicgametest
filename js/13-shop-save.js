@@ -8,6 +8,13 @@ const ELF_ELE = {
 const ELF_SWITCH_COST = 500000;
 
 const SPECIAL_AREA_BG = {   // 特殊地圖：逐張對應背景
+    kent_outer: 'assets/area/1920x1080/肯特外門區.jpg',
+    kent_inner: 'assets/area/1920x1080/肯特內城.jpg',
+    ww_outer: 'assets/area/1920x1080/風木外門區.jpg',
+    ww_inner: 'assets/area/1920x1080/風木內城.jpg',
+    heine_outer: 'assets/area/1920x1080/海音外門區.jpg',
+    heine_inner: 'assets/area/1920x1080/海音內城.jpg',
+    rift_battle: 'assets/area/1920x1080/時空裂痕戰場.jpg',
     desert: 'assets/area/沙漠.jpg',   // 🏜️ 沙漠（野外·專屬背景·完整路徑直接用）
     // 🆕 新狩獵區背景（皆 area-fit 沙漠格式·需 1920×580 條狀圖·放 assets/area/）：
     crystal_cave1: 'assets/area/水晶洞穴.jpg', crystal_cave2: 'assets/area/水晶洞穴.jpg', crystal_cave3: 'assets/area/水晶洞穴.jpg',   // 💎 水晶洞穴（地監·3樓共用）
@@ -55,16 +62,32 @@ const SPECIAL_AREA_BG = {   // 特殊地圖：逐張對應背景
     pirate_wild: 'assets/area/古魯丁.jpg',          // 🏴‍☠️ 海賊島（野外·借用古魯丁背景）
     pirate_dungeon: 'assets/area/說話之島地監1樓.jpg' // 🏴‍☠️ 海賊島地監（借用說話之島地監1樓背景）
 };
-const CATEGORY_AREA_BG = { wild: 'assets/area/村莊周邊.jpg', dungeon: 'assets/area/地監.jpg', siege: 'castle.png', tower: 'assets/area/傲慢之塔.jpg', rift: 'Rift.png' };   // 🆕 野外/地監/傲慢之塔狩獵改 area-fit 沙漠格式新背景；siege/rift 暫維持 16:9 cover。🗼 塔狩獵=傲慢之塔.jpg，入口安全區另由 TOWN_AREA_BG.tower 保留 TowerofInsolence.png 不變；🏛️ 底比斯3圖另由 SPECIAL_AREA_BG 覆寫（底比斯沙漠.jpg／底比斯.jpg）
+const CATEGORY_AREA_BG = { wild: 'assets/area/村莊周邊.jpg', dungeon: 'assets/area/地監.jpg', siege: 'castle.png', tower: 'assets/area/傲慢之塔.jpg', rift: 'Rift.png' };   // 🆕 野外/地監/傲慢之塔狩獵使用 area-fit；攻城/裂痕有 SPECIAL_AREA_BG 新圖時同樣使用 area-fit，只有退回舊 castle.png/Rift.png 時維持舊版面。🗼 塔狩獵=傲慢之塔.jpg，入口安全區另由 TOWN_AREA_BG.tower 保留 TowerofInsolence.png 不變；🏛️ 底比斯3圖另由 SPECIAL_AREA_BG 覆寫（底比斯沙漠.jpg／底比斯.jpg）
 const AREA_BG_FIT = new Set(['assets/area/沙漠.jpg', 'assets/area/水晶洞穴.jpg', 'assets/area/地監.jpg', 'assets/area/火龍窟.jpg', 'assets/area/森林.jpg', 'assets/area/村莊周邊.jpg', 'assets/area/傲慢之塔.jpg', 'assets/area/洞窟.jpg', 'assets/area/象牙塔.jpg', 'assets/area/伊娃王國.jpg', 'assets/area/城鎮周邊.jpg', 'assets/area/歐瑞.jpg', 'assets/area/拉斯塔巴德.jpg', 'assets/area/軍王之室.jpg', 'assets/area/安塔瑞斯.jpg', 'assets/area/法利昂.jpg', 'assets/area/巴拉卡斯.jpg', 'assets/area/底比斯沙漠.jpg', 'assets/area/底比斯.jpg', 'assets/area/龍之谷.jpg', 'assets/area/說話之島港口.jpg', 'assets/area/遺忘之島.jpg', 'assets/area/夢幻之島.jpg', 'assets/area/艾爾摩.jpg', 'assets/area/地監深層.jpg', 'assets/area/象牙塔深層.jpg', 'assets/area/龍之谷地監深層.jpg', 'assets/area/古魯丁.jpg', 'assets/area/說話之島地監1樓.jpg']);   // 🏜️ 條狀比例(非16:9·1920×580)背景：用 contain+area-fit(框高鎖圖比例·無上下黑邊·省空間給戰鬥日誌)。所有新狩獵區背景都列於此→自動套沙漠格式。⚠️這些 jpg 需放 assets/area/（同沙漠.jpg）；未放檔時背景空白但版面/格式仍正確。日後新增條狀背景就把路徑加進來
-// ⚔️ v2.5.2：area-fit(怪物站立帶/2排·見 applyAreaBackground)改「預設全開、僅黑名單例外」。
-//   原本用白名單 AREA_BG_FIT＋圖比例 1920/580 判定→換成 16:9 背景圖時判不到→怪物退回 96px 變很小(打包版顯著)。
-//   現在：除了攻城(castle.png)/裂痕(Rift.png) 維持 16:9 置中，其餘所有狩獵區背景一律 area-fit→更換背景圖(任何比例)免再維護白名單。
+// ⚔️ v2.5.2：area-fit(怪物站立帶/2排·見 applyAreaBackground)改「預設全開、僅舊式背景例外」。
+//   新版攻城／裂痕 1920×1080 圖必須使用 area-fit，玩家、傭兵、寵物的戰鬥序列幀才會掛上戰鬥舞台。
+//   只有仍使用舊 castle.png／Rift.png 的地圖維持舊式置中版面。
 const AREA_BG_NOFIT = new Set(['castle.png', 'Rift.png']);
 const SPECIAL_TOWN_BG = { town_silent: 'silentcave.png' };                                        // 🔧 安全區逐張對應背景（沉默洞穴）
 const TOWN_AREA_BG = { village: 'village.png', castle: 'castle.png', tower: 'TowerofInsolence.png', rift: 'Rift.png' };   // 村莊畫面依分類（🗼 傲慢之塔入口；🌀 時空裂痕入口 Rift.png）
 // 🆕 同名背景圖：地圖顯示名稱(MAP_CATEGORIES 的 t) → 嘗試 assets/area/[名稱].jpg；探測結果快取(undefined=未探測、null=探測中、{found,fit}=結果)
 let _areaNameBgCache = {};
+// 🖼️ v3.2.80 高解析場景圖：assets/area/1920x1080/<名>.jpg＝新一批 1920×1080(16:9)全景圖。
+//   AREA_1920＝目前資料夾內既有檔名(單一真相·同步判定·無探測閃爍)。狩獵區同名圖＋fallback 圖，凡名稱在此集合者一律優先取 1920x1080 版；安全區走下方 TOWN_BG_1920 逐城對應。
+//   ⚠️日後新增 assets/area/1920x1080/ 的圖，檔名(不含 .jpg)務必加進本集合才會被採用（否則退回舊 assets/area/ 或分類 fallback）。
+const AREA_1920 = new Set(['亞丁城鎮','伊娃王國','傲慢之塔','傲慢之塔11~20樓','傲慢之塔1樓','傲慢之塔21~30樓','傲慢之塔2~10樓','傲慢之塔31~40樓','傲慢之塔41~50樓','傲慢之塔51~60樓','傲慢之塔61~70樓','傲慢之塔71~80樓','傲慢之塔81~90樓','傲慢之塔91~100樓','冥法軍王之室','冥法軍訓練場','古代巨人之墓','古魯丁','古魯丁地監1樓','古魯丁地監2樓','古魯丁地監3樓','古魯丁地監4樓','古魯丁地監5樓','古魯丁地監6樓','古魯丁地監7樓','國境要塞','地下通道1樓','地下通道2樓','地下通道3樓','地監','地監深層','城鎮周邊','夢幻之島','大洞穴隱遁者村莊地區','奇岩','奇岩地監1樓','奇岩地監2樓','奇岩地監3樓','奇岩地監4樓','奇岩城鎮','妖精森林周邊','妖精森林村莊','妖魔森林','威頓村莊','安塔瑞斯','安塔瑞斯棲息地','巴拉卡斯','巴拉卡斯巢穴','希培利亞','席琳神殿','底比斯','底比斯 歐西里斯祭壇','底比斯 沙漠','底比斯 金字塔內部','底比斯沙漠','拉斯塔巴德','拉斯塔巴德地下洞穴1樓','拉斯塔巴德地下洞穴2樓','拉斯塔巴德地下洞穴3樓','拉斯塔巴德正門','提卡爾 庫庫爾坎祭壇','提卡爾神廟地區','提卡爾神廟地區深處','新兵修練場','時空裂痕入口','暗影神殿','暗殺軍王之室','村莊周邊','格蘭肯神殿．長老之室','森林','歐瑞','歐瑞村莊','歐瑞雪原','歐瑞雪壁','水晶洞穴','水晶洞穴1樓','水晶洞穴2樓','水晶洞穴3樓','沉默洞穴','沉默洞穴周邊','沙漠','沙漠地監1樓','沙漠地監2樓','沙漠地監3樓','沙漠地監4樓','法令軍王之室','法利昂','法利昂洞穴','洞窟','海賊島','海賊島地監','海賊島村莊','海音','海音城鎮','火龍窟','炎魔謁見所','燃柳村莊','眠龍洞穴1樓','眠龍洞穴2樓','眠龍洞穴3樓','精靈墓穴','肯特','艾爾摩','艾爾摩激戰地','荒野','螞蟻洞穴1樓','螞蟻洞穴2樓','螞蟻洞窟1樓','螞蟻洞窟2樓','說話之島周邊','說話之島地監1樓','說話之島地監2樓','說話之島村莊','說話之島港口','象牙塔','象牙塔4樓','象牙塔5樓','象牙塔6樓','象牙塔7樓','象牙塔8樓','象牙塔深層','象牙塔（1~3樓）','貝希摩斯','軍王之室','遺忘之島','銀騎士地區','銀騎士村莊','鏡子森林','風木','魔族神殿','魔獸訓練場','魔獸軍王之室','黃昏山脈','黑魔法研究室','龍之谷','龍之谷地監1樓','龍之谷地監2樓','龍之谷地監3樓','龍之谷地監4樓','龍之谷地監5樓','龍之谷地監6樓','龍之谷地監深層']);
+['肯特外門區','肯特內城','風木外門區','風木內城','海音外門區','海音內城','時空裂痕戰場'].forEach(name => AREA_1920.add(name));
+function areaBg1920(name) { return (name && AREA_1920.has(name)) ? ('assets/area/1920x1080/' + name + '.jpg') : null; }   // 名稱→1920 路徑(存在才回傳)
+function upgradeAreaPath(path) { if (!path) return path; let m = /^assets\/area\/([^\/]+)\.jpg$/.exec(path); return (m && AREA_1920.has(m[1])) ? ('assets/area/1920x1080/' + m[1] + '.jpg') : path; }   // 舊 assets/area/<名>.jpg fallback 路徑就地升級到 1920×1080(若有新圖)；非此格式(如 castle.png)原樣
+// 🏙️ v3.2.80 安全區逐城 1920×1080 背景(town id → 檔名)：命名差異(村/村莊/城鎮/full-width括號)以此表精準對應；未列者(攻城城堡 town_*_castle 等)退回舊 assets/background 通用圖
+const TOWN_BG_1920 = {
+    town_aden: '亞丁城鎮', town_giran: '奇岩城鎮', town_heine: '海音城鎮', town_oren: '歐瑞村莊',
+    town_kent_castle: '肯特城', town_windwood_castle: '風木城', town_heine_castle: '海音城',
+    town_elf: '妖精森林村莊', town_talking: '說話之島村莊', town_gludio: '燃柳村莊', town_witon: '威頓村莊',
+    town_hyperia: '希培利亞', town_silver_knight: '銀騎士村莊', town_ivory_tower: '象牙塔（1~3樓）',
+    town_sherine: '席琳神殿', town_silent: '沉默洞穴', town_behemoth: '貝希摩斯', town_flame_audience: '炎魔謁見所',
+    town_pride: '傲慢之塔1樓', town_rift: '時空裂痕入口', town_pirate_village: '海賊島村莊'
+};
 function mapDisplayName(v) { for (let _c in MAP_CATEGORIES) { let _e = MAP_CATEGORIES[_c].find(x => x.v === v); if (_e) return _e.t; } return null; }
 function applyAreaBackground() {
     let cur = mapState.current, cat = mapCategoryOf(cur);
@@ -79,26 +102,30 @@ function applyAreaBackground() {
         let _nm = mapDisplayName(cur);
         if (!_nm && cur === 'windwood_dungeon') _nm = '風木地監';   // 🏰 風木地監＝動態城堡區(不在 MAP_CATEGORIES)：手動指定同名圖名→優先探測 assets/area/風木地監.jpg、不存在則退回 fbImg(地監.jpg)
         if (!_nm && HIDDEN_AREA_BG[cur]) _nm = HIDDEN_AREA_BG[cur];   // 🏛️ 隱藏狩獵區域(不在 MAP_CATEGORIES)：背景＝對應母地圖樓層圖（無生物研究室→象牙塔4樓…惡魔封印室→象牙塔8樓、巨蟻女皇棲息地→螞蟻洞穴2樓）；探測 assets/area/<樓層>.jpg，不存在退回 SPECIAL_AREA_BG（母圖通用背景）
-        let _c = _nm ? _areaNameBgCache[cur] : null;
-        if (_c && _c.found) { useSrc = `assets/area/${_nm}.jpg`; useFit = _c.fit; }   // 已知存在→直接用(條狀比例 1920/580→area-fit)
+        let _s1920 = areaBg1920(_nm);   // 🖼️ v3.2.80 新版 1920×1080 同名場景圖(同步判定·優先於舊資料夾/分類 fallback)
+        if (_s1920) { useSrc = _s1920; useFit = true; }
         else {
-            if (_nm && _areaNameBgCache[cur] === undefined) {   // 首次探測：背景先走 fallback，同名圖若載入成功則切換並快取
-                _areaNameBgCache[cur] = null;   // pending
-                let _probe = new Image(), _id = cur;
-                _probe.onload = function(){ _areaNameBgCache[_id] = { found: true, fit: true }; if (mapState.current === _id) applyAreaBackground(); };   // 🆕 v2.5.2：同名背景圖一律 area-fit（不再依圖比例·16:9/條狀皆套怪物站立帶）
-                _probe.onerror = function(){ _areaNameBgCache[_id] = { found: false }; };
-                _probe.src = `assets/area/${_nm}.jpg`;
+            let _c = _nm ? _areaNameBgCache[cur] : null;
+            if (_c && _c.found) { useSrc = `assets/area/${_nm}.jpg`; useFit = _c.fit; }   // 舊資料夾同名圖(1920×580 條狀等·無新版時退此)
+            else {
+                if (_nm && _areaNameBgCache[cur] === undefined) {   // 首次探測舊資料夾：背景先走 fallback，同名圖若載入成功則切換並快取
+                    _areaNameBgCache[cur] = null;   // pending
+                    let _probe = new Image(), _id = cur;
+                    _probe.onload = function(){ _areaNameBgCache[_id] = { found: true, fit: true }; if (mapState.current === _id) applyAreaBackground(); };   // 🆕 v2.5.2：同名背景圖一律 area-fit（不再依圖比例·16:9/條狀皆套怪物站立帶）
+                    _probe.onerror = function(){ _areaNameBgCache[_id] = { found: false }; };
+                    _probe.src = `assets/area/${_nm}.jpg`;
+                }
+                if (fbImg) { let _fb = upgradeAreaPath(fbImg); useSrc = _fb.indexOf('/') >= 0 ? _fb : `assets/background/${_fb}`; useFit = !AREA_BG_NOFIT.has(fbImg); }   // ⚔️ 預設 area-fit，僅舊 castle.png/Rift.png 例外；🖼️ fallback 圖亦經 upgradeAreaPath 升級 1920×1080(若有新圖)
             }
-            if (fbImg) { useSrc = fbImg.indexOf('/') >= 0 ? fbImg : `assets/background/${fbImg}`; useFit = !AREA_BG_NOFIT.has(fbImg); }   // ⚔️ v2.5.2：預設 area-fit、僅攻城/裂痕(AREA_BG_NOFIT)例外
         }
         if (useSrc) { bv.style.backgroundImage = `url("${useSrc}")`; bv.style.backgroundSize = useFit ? 'cover' : ''; bv.classList.toggle('area-fit', useFit); bv.classList.add('has-bg'); }   // 🖥️ 條狀比例背景改 cover＋area-fit(戰鬥框由 flex 吃滿地圖面板·背景滿版置中裁切)、其餘清空 inline 回退 CSS 的 cover
         else { bv.style.backgroundImage = ''; bv.style.backgroundSize = ''; bv.classList.remove('area-fit'); bv.classList.remove('has-bg'); }
     }
     let tv = document.getElementById('town-view');
     if (tv) {
-        let timg = SPECIAL_TOWN_BG[cur] || TOWN_AREA_BG[cat] || null;   // 安全區逐張優先，否則依分類(村莊/城堡)
-        if (timg) { tv.style.backgroundImage = `${ov(0.7)}, url("assets/background/${timg}")`; tv.classList.add('has-bg'); }
-        else { tv.style.backgroundImage = ''; tv.classList.remove('has-bg'); }
+        // 🏘️ v3.2.84 城鎮改地圖式 NPC 後，場景背景改由 #town-npc-map(800×450·自帶 _townMapBg) 承載
+        //   → town-view 不再鋪舊的半透明底圖與 has-bg 圓角框（移除城鎮舊 assets/background 底圖與框架，只保留新區域）
+        tv.style.backgroundImage = ''; tv.classList.remove('has-bg');
     }
 }
 function applyElfBorder() {
@@ -1063,6 +1090,11 @@ function saveGame() {
     // 死亡狀態不寫檔：避免把 player.dead=true 存進去，導致下次讀檔卡在死亡狀態而不出怪。
     // 死亡期間沒有可保存的進度，保留上一份「存活」存檔即可。
     if (player && player.dead) return false;
+    // 🛡️ v3.3.14 防「空殼玩家覆蓋既有存檔」資料遺失：標題／載入畫面的 player 是 cls:null 的空殼（尚未載入/創建角色）。
+    //    5 分鐘自動存檔計時器（startGameTimers）在「返回主選單」後不會被清除、beforeunload／寵物名冊 dirty 也可能觸發 saveGame，
+    //    這些背景觸發會把空殼 player 寫進 currentSlot（預設 1）→ 毀掉該格真正的角色（顯示為 null／Lv.1／預設王族／資料不完整）。
+    //    無 cls＝不是進行中的遊戲角色 → 一律拒寫，確保空殼永遠不覆蓋既有存檔。（真正的角色必有職業；創角於選職業後才 saveGame，不受影響。）
+    if (!player || !player.cls) return false;
     try {
     if (typeof sanitizeState === 'function') sanitizeState();   // 🛡️ 寫檔前合理性夾擠：把 runtime(Console)改出的不可能數值夾回合法範圍，連同簽章一起固化、不讓作弊值被存檔/匯出
     // 收集目前的自動化設定 UI 狀態（🛡️ 僅在 UI 已同步時重建；否則沿用記憶體中既有 config）
@@ -1079,21 +1111,14 @@ function saveGame() {
         setHpConvert: document.getElementById('set-hp-convert') ? document.getElementById('set-hp-convert').value : '',
         setHpSkill: document.getElementById('set-hp-skill') ? document.getElementById('set-hp-skill').value : '',
         setHaste: document.getElementById('set-haste').checked,
-        setAutoBuyHaste: document.getElementById('set-auto-buy-haste').checked,
         setBrave: document.getElementById('set-brave').checked,
-        setAutoBuyBrave: document.getElementById('set-auto-buy-brave').checked,
         setBlue: document.getElementById('set-blue').checked,
-        setAutoBuyBlue: document.getElementById('set-auto-buy-blue').checked,
         setCautious: document.getElementById('set-cautious').checked,
-        setAutoBuyCautious: document.getElementById('set-auto-buy-cautious').checked,
         setElfcookie: document.getElementById('set-elfcookie').checked,
-        setAutoBuyElfcookie: document.getElementById('set-auto-buy-elfcookie').checked,
         setPoly: document.getElementById('set-poly').checked,
-        setAutoBuyPoly: document.getElementById('set-auto-buy-poly').checked,
         setMagicbarrier: document.getElementById('set-magicbarrier').checked,
         setTeleport: document.getElementById('set-teleport').checked,
-        setAutoBuyTeleport: document.getElementById('set-auto-buy-teleport').checked,
-        setAutoBuyArrow: document.getElementById('set-auto-buy-arrow').checked,
+        setAutoBuyArrow: document.getElementById('set-auto-buy-arrow').checked,   // 🧪 v3.3.15 各藥水/卷軸「自動購買」已併入「自動使用」→移除獨立收集；弓箭自動購買維持
         autoBuffSkills: {} // 用來儲存動態生成的法術 Buff
     };
     
@@ -1176,6 +1201,9 @@ function purgeOrphanItems() {
 
 function loadGame() {
     _uiConfigReady = false;   // 🛡️ 審計#1：載入期間 DOM 仍是上一個畫面/預設值，禁止 saveGame 以它重建 config
+    // 🐾 v3.3.16 換角色前：先把上一角色未存的寵物進度 flush 進共用桶，再失效記憶體快取→新角色 petRoster() 從桶重載（防跨角色髒鏡像互洗裝備/出戰）。
+    try { if (typeof _petRosterDirty !== 'undefined' && _petRosterDirty && player && player.cls && typeof petRosterSave === 'function') petRosterSave(); } catch (e) {}
+    try { if (typeof _petRosterKey !== 'undefined') _petRosterKey = null; } catch (e) {}
     let _u = _saveUnwrap(_lzGet('lineage_idle_save_' + currentSlot));   // 🛡️ 解存檔簽章（舊明文存檔 signed:false 照常載入）
     if (_u.signed && !_u.ok) { alert('此存檔的完整性校驗未通過，可能已被外部修改，無法載入。\n可在載入畫面點「復原備份」還原，或改用未被修改的存檔。'); return; }   // 🛡️ 簽章不符＝被竄改：拒絕載入
     let s = _u.payload;
@@ -1405,21 +1433,14 @@ function loadGame() {
             
             // 藥水與卷軸開關
             if (c.setHaste !== undefined) document.getElementById('set-haste').checked = c.setHaste;
-            if (c.setAutoBuyHaste !== undefined) document.getElementById('set-auto-buy-haste').checked = c.setAutoBuyHaste;
             if (c.setBrave !== undefined) document.getElementById('set-brave').checked = c.setBrave;
-            if (c.setAutoBuyBrave !== undefined) document.getElementById('set-auto-buy-brave').checked = c.setAutoBuyBrave;
             if (c.setBlue !== undefined) document.getElementById('set-blue').checked = c.setBlue;
-            if (c.setAutoBuyBlue !== undefined) document.getElementById('set-auto-buy-blue').checked = c.setAutoBuyBlue;
             if (c.setCautious !== undefined) document.getElementById('set-cautious').checked = c.setCautious;
-            if (c.setAutoBuyCautious !== undefined) document.getElementById('set-auto-buy-cautious').checked = c.setAutoBuyCautious;
             if (c.setElfcookie !== undefined) document.getElementById('set-elfcookie').checked = c.setElfcookie;
-            if (c.setAutoBuyElfcookie !== undefined) document.getElementById('set-auto-buy-elfcookie').checked = c.setAutoBuyElfcookie;
             if (c.setPoly !== undefined) document.getElementById('set-poly').checked = c.setPoly;
-            if (c.setAutoBuyPoly !== undefined) document.getElementById('set-auto-buy-poly').checked = c.setAutoBuyPoly;
             if (c.setMagicbarrier !== undefined) document.getElementById('set-magicbarrier').checked = c.setMagicbarrier;
             if (c.setTeleport !== undefined) document.getElementById('set-teleport').checked = c.setTeleport;
-            if (c.setAutoBuyTeleport !== undefined) document.getElementById('set-auto-buy-teleport').checked = c.setAutoBuyTeleport;
-            if (c.setAutoBuyArrow !== undefined) document.getElementById('set-auto-buy-arrow').checked = c.setAutoBuyArrow;
+            if (c.setAutoBuyArrow !== undefined) document.getElementById('set-auto-buy-arrow').checked = c.setAutoBuyArrow;   // 🧪 v3.3.15 各藥水/卷軸「自動購買」勾選已移除（併入自動使用）→不再還原
             
             // 動態魔法 Buff 設定還原
             if (c.autoBuffSkills) {

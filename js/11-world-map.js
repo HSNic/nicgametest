@@ -1152,12 +1152,12 @@ function changeMap(force) {
     
     if (mapState.current.startsWith('town_')) {
         document.getElementById('battle-view').classList.add('hidden');
-        document.getElementById('combat-log-panel').classList.add('hidden');
+        document.getElementById('combat-log-panel').classList.remove('hidden');   // 🏘️ v3.2.86 城鎮版面比照狩獵區：戰鬥/系統日誌一樣顯示於下方，填滿地圖下方空間
         document.getElementById('town-view').classList.remove('hidden');
         document.getElementById('town-view').classList.add('flex');
-        
-        // 🎯 核心修復：進入村莊時，讓面板自動填滿剩下的空間，並限制高度讓內部產生捲軸
-        mapPanel.classList.add('flex-1', 'overflow-hidden');
+
+        // 🏘️ v3.2.86 城鎮框改與狩獵區「完全一致」：地圖面板依內容(800×450)自適高度、不再 flex-1 撐滿→背景不被撐大（與狩獵分支同樣 remove flex-1）
+        mapPanel.classList.remove('flex-1', 'overflow-hidden');
         
         // 設定村莊名稱
         let tData = DB.towns[mapState.current];
@@ -1179,17 +1179,16 @@ function changeMap(force) {
         player.statuses = { stun: 0, freeze: 0, stone: 0, poison: 0, poisonDmg: 0, poisonTick: 0, burn: 0, burnDmg: 0, burnTick: 0, scald: 0, scaldDmg: 0, scaldTick: 0, bleed: 0, bleedDmg: 0, bleedTick: 0, sleep: 0, silence: 0, paralyze: 0, magicseal: 0, armorBreak: 0, slowAtk: 0, cleave: 0 };   // 🔧 補齊 armorBreak/slowAtk/cleave，與初始定義一致
         updateUI();
         
-        logSys(`--- 你來到了安全的 ${tName} ---`);
-        
         // 關閉可能開啟著的互動面板，渲染 NPC 列表
         closeNpcInteraction();
         renderTownNPCs(mapState.current);
     } else {
+        try { closeNpcInteraction(); } catch (e) {}   // 🗼 v3.2.89 離開安全區→關閉可能開著的 NPC 浮動視窗(position:fixed 不會隨 town-view 隱藏·如傲慢之塔入口)
         document.getElementById('battle-view').classList.remove('hidden');
         document.getElementById('combat-log-panel').classList.remove('hidden');
         document.getElementById('town-view').classList.add('hidden');
         document.getElementById('town-view').classList.remove('flex');
-        
+
         // 🎯 核心修復：離開村莊回到戰鬥時，恢復原本的面板設定
         mapPanel.classList.remove('flex-1', 'overflow-hidden');
         try { applyAreaBackground(); } catch(e){}   // ⚡ v2.6.49 立即套用狩獵區 area-fit(1920/580 條狀)＋背景，避免等到下一次 updateUI(下一 tick·最多~100ms)才變換→切村↔狩獵時戰鬥區解析度延遲跳動（村莊分支已於下方 updateUI() 即時處理·此分支原本漏呼故有延遲）
@@ -1203,7 +1202,6 @@ function changeMap(force) {
             KING_ROOMS[mapState.current].bosses.forEach((bid, k) => spawnMob(k));
             mapState.spawnAt = [null, null, null, null, null];
         }
-        logSys(`--- 你走向了新的區域 ---`);
         renderMobs();
     }
     syncMapSelectors();   // 切換完成後，同步分類選單與地圖選單為目前所在地圖
@@ -1407,9 +1405,13 @@ function renderHanNPC(div) {
 }
 
 function renderTownNPCs(townId) {
+    renderTownNPCMap(townId);   // 🏘️ v3.2.83 城鎮 NPC 改為地圖式動態站位（與狩獵框同尺寸·散佈景深·hover 名字·點擊開功能）
     let container = document.getElementById('town-npc-container');
     container.innerHTML = '';
-    
+    // 🗼🌀 v3.2.89 底部入口按鈕全取消：傲慢之塔／時空裂痕的進入選單改成地圖上的「告示 NPC」，點擊才跳浮動視窗（見 renderTownNPCMap）
+    container.classList.add('hidden');
+    return;
+    /* 🗄️ 舊城鎮 NPC 卡片清單（保留原始碼·不再執行）：
     let townData = DB.towns[townId];
     if (!townData || !townData.npcs) return;
 
@@ -1456,6 +1458,7 @@ function renderTownNPCs(townId) {
     // 🗼 傲慢之塔入口：NPC 之下顯示「進入傲慢之塔 / 挑戰排名模式」較大按鈕與紀錄
     if (townId === 'town_pride') renderPrideEntrance(container);
     if (townId === 'town_rift') renderRiftEntrance(container);   // 🌀 時空裂痕入口：進入/領獎按鈕＋時間排名
+    */
 }
 
 // 🗼 傲慢之塔入口：攀登與排名模式的大按鈕＋紀錄面板
@@ -1506,7 +1509,7 @@ function interactNPC(npcId, townId) {
         return;
     }
 
-    document.getElementById('town-npc-container').classList.add('hidden');
+    // 🏘️ v3.2.88 NPC 功能改浮動視窗(position:fixed·z 高於地圖)：不再隱藏地圖，視窗直接浮在動態 NPC 之上（比照倉庫）
     document.getElementById('town-interaction-container').classList.remove('hidden');
     document.getElementById('town-interaction-container').classList.add('flex');
     
@@ -1593,6 +1596,7 @@ function interactNPC(npcId, townId) {
     } else if (npc.type === 'warehouse') {
         renderWarehouseNPC(contentDiv);   // 🔧 v2.6.77 正常情況已在 interactNPC 開頭早退開浮動倉庫；此分支僅剩 openWarehouseWindow 不存在時的舊式後備
     } else if (npc.id === 'npc_baowu') {
+        try { if (typeof _petRosterResync === 'function') _petRosterResync(); } catch (e) {}   // 🔄 開啟寵物保管前先與共用桶同步（顯示別角色最新裝備/出戰狀態·防過期鏡像）
         renderPetStorageNPC(contentDiv);
     } else if (npc.id === 'npc_isba') {
         renderIsbaTravel(contentDiv);
@@ -1613,5 +1617,308 @@ function interactNPC(npcId, townId) {
 function closeNpcInteraction() {
     document.getElementById('town-interaction-container').classList.add('hidden');
     document.getElementById('town-interaction-container').classList.remove('flex');
-    document.getElementById('town-npc-container').classList.remove('hidden');
+    { let _m = document.getElementById('town-npc-map'); if (_m) _m.classList.remove('hidden'); }   // 🏘️ v3.2.83 關閉功能視窗→重新顯示地圖
+    // NPC 底列容器：僅傲慢之塔／時空裂痕入口有內容(進入按鈕)才顯示，一般城鎮維持收合
+    { let _c = document.getElementById('town-npc-container'); if (_c) _c.classList.toggle('hidden', !_c.children.length); }
 }
+
+// ================= 🏘️ v3.2.83 城鎮 NPC 地圖系統 =================
+// 依 Downloads/NPC 資料夾轉出的站立序列幀(assets/npc/<gfx>/idle_N.png·單一面向鏡頭方向)，
+// 在與狩獵框同尺寸(800×450)的城鎮地圖上，以「散佈景深」動態排列 NPC；hover 顯示名字、點擊沿用 interactNPC 開啟功能。
+// 有名字的 NPC → 專屬 sprite；未命名者 → 依功能借用同類 sprite，並保證同城鎮不重複長相。
+// 🏘️ v3.2.90 NPC 一律以「原始圖片尺寸」渲染（不設 height·1:1 像素·mul 欄位停用）；天堂原生比例＝人形約 20×55px·巨型NPC(安特/炎魔系/高崙)本來就大隻
+// sprite 目錄表：key(通常＝gfx) → { g:資料夾, f:幀數, mul?:高度倍率, tint?:CSS filter }
+const NPC_SPR = {
+    '1045': { g: '1045', f: 8 }, '51': { g: '51', f: 4 }, '237': { g: '237', f: 6 }, '261': { g: '261', f: 4 },
+    '902': { g: '902', f: 6 }, '866': { g: '866', f: 6 }, '847': { g: '847', f: 6, mul: 1.35 }, '1762': { g: '1762', f: 8, mul: 1.1 },
+    '1788': { g: '1788', f: 6 }, '2524': { g: '2524', f: 8 }, '118': { g: '118', f: 4 }, '31': { g: '31', f: 4, mul: 0.8 }, '31b': { g: '31b', f: 3, mul: 0.8 },
+    '457': { g: '457', f: 6 }, '54': { g: '54', f: 3 }, '460': { g: '460', f: 6 }, '875': { g: '875', f: 12 },
+    '98': { g: '98', f: 6 }, '949': { g: '949', f: 6 }, '100': { g: '100', f: 6 }, '854': { g: '854', f: 16, mul: 0.72 },
+    '854q': { g: '854', f: 16, mul: 0.86, tint: 'sepia(.55) saturate(1.7) hue-rotate(-18deg) brightness(1.12) drop-shadow(0 3px 2px rgba(0,0,0,.55))' },
+    '916': { g: '916', f: 6 }, '920': { g: '920', f: 7 }, '918': { g: '918', f: 6 }, '864': { g: '864', f: 6, mul: 1.05 },
+    '727': { g: '727', f: 6 }, '914': { g: '914', f: 6 }, '1256': { g: '1256', f: 8 }, '1307': { g: '1307', f: 8 },
+    '1049': { g: '1049', f: 6 }, '1305': { g: '1305', f: 8 }, '1314': { g: '1314', f: 6 }, '1768': { g: '1768', f: 8 },
+    '1254': { g: '1254', f: 6 }, '1276': { g: '1276', f: 21 }, '1278': { g: '1278', f: 13 }, '1766': { g: '1766', f: 13 },
+    '3858': { g: '3858', f: 12 }, '1222': { g: '1222', f: 8 }, '2538': { g: '2538', f: 10, mul: 1.3 }, '2540': { g: '2540', f: 10, mul: 1.3 },
+    '1148': { g: '1148', f: 1 }, '1149': { g: '1149', f: 1 },   // 🗼🌀 v3.2.89 傲慢之塔／時空裂痕 入口告示（點擊開浮動視窗）
+    '2725': { g: '2725', f: 1 },   // 🌳 v3.2.90 迷幻森林之母＝妖精石像（用戶提供 NPC/迷幻森林之母/2725-0·88×96 單幀）
+    '3227': { g: '3227', f: 12 }, '3225': { g: '3225', f: 12 },   // 👑 v3.2.91 依詩蒂＝公主(3227)／特羅斯＝王子(3225)·職業動畫 dir5 站立(12f)
+    // 🆕 v3.3.7 指定名稱 NPC 專屬外型（body＋真實影子 sprite）＋女性外型池新增 6804
+    '1839': { g: '1839', f: 9 }, '2813': { g: '2813', f: 9 }, '2794': { g: '2794', f: 9 }, '2829': { g: '2829', f: 11 },
+    '2801': { g: '2801', f: 8 }, '2820': { g: '2820', f: 15 }, '6899': { g: '6899', f: 12 }, '6757': { g: '6757', f: 12 },
+    '6690': { g: '6690', f: 12 }, '6804': { g: '6804', f: 12 }
+};
+// 有名字的 NPC → 專屬 sprite（＋依功能固定共用者：魔物追蹤/城堡護衛已於下方 role 邏輯處理）
+const NPC_SPR_FIXED = {
+    npc_isba: '1045', npc_gilen: '237', npc_joel: '261', npc_elpin: '902', npc_narupa: '866', npc_ent: '847',
+    npc_zeus_golem: '1762', npc_keluya: '1788', npc_imp: '2524', npc_basin: '118', npc_brabo: '31b', npc_mother: '2725', npc_ladal: '457',
+    npc_falin: '460', npc_pan: '875', npc_pandora: '98', npc_linda: '949', npc_gunter: '100', npc_elf: '854',
+    npc_elfqueen: '854q', npc_robinson: '916', npc_elion: '920', npc_wh_elf: '918', npc_rekne: '864', npc_ryan: '727',
+    npc_nalien: '914', npc_flame_shadow: '2538', npc_flame_aide: '2540', npc_flame_smith: '1768',
+    npc_esti: '3227', npc_tros: '3225',   // 👑 v3.2.91 血盟 依詩蒂＝公主動畫(f_royal)／特羅斯＝王子動畫(m_royal)·全城鎮通用
+    // 🆕 v3.3.7 指定名稱 NPC 專屬外型（用戶提供 Downloads/NPC/<名>·避免與通用池撞臉）：
+    npc_kupu: '1839', npc_rabiani: '1307', npc_runde: '2813', npc_kang: '2794', npc_brudica: '2829',
+    npc_skvati: '2801', npc_saedia: '2820', npc_shenien: '6899', npc_bartel: '6757', npc_sphere: '6690',
+    // 魔物追蹤三兄弟共用 cray；港口/寵物保管等亦可指定
+    npc_obel: '1049', npc_hert: '1049', npc_diren: '1049'
+};
+// 依 NPC.type 的通用 sprite 池（未命名者依序取「同城鎮尚未使用」的第一個）
+const NPC_SPR_POOL = {
+    shop: ['1256', '1307'],
+    craft: ['1314', '1768', '1305'],
+    quest: ['1254', '1278', '1766', '3858', '1276'],
+    exchange: ['1049', '1256'],
+    pledge: ['3858', '1766'],
+    bless: ['1788'], pray: ['918'], mastery: ['1222'], synth: ['1307'], skill: ['237'], travel: ['1045'], petstore: ['54']
+};
+// 依 type 的單一固定 sprite（每城鎮至多一個→恆不重複）
+const NPC_SPR_ROLE = { warehouse: '54', ally: '51', castleguard: '1222' };
+// 全域後備順序（池與 role 都耗盡時取用；人形/商販在前、怪物型在後，避免奇怪配對）
+const NPC_SPR_FALLBACK = ['1256', '1307', '1314', '1768', '1305', '1254', '1278', '1766', '3858', '1276',
+    '237', '261', '902', '1045', '457', '460', '727', '914', '916', '918', '920', '949', '100', '118', '1788', '1222', '1049', '54',
+    '866', '875', '1762', '864', '2524', '2538', '2540', '31', '847', '854'];
+// 👩 v3.2.98 依 NPC 名字性別配對外型（用戶指示：女性名套女性外型、男性名套男性外型）
+//   NPC_SPR_FEMALE＝「外型明顯女性」的 sprite key（女角優先取、男角一律跳過）；918 端莊袍＝中性不列入。
+const NPC_SPR_FEMALE = new Set(['98', '949', '1307', '3858', '854q', '3227', '866', '864', '6804']);
+//   女角專屬取用順序（端莊女裝在前）；男角改走原池但跳過上面的女性外型。6804＝v3.3.7 用戶新增女性外型
+const NPC_SPR_FEMALE_POOL = ['949', '1307', '3858', '98', '6804'];
+//   依名字判定為女性的城鎮 NPC（未列者＝男性/中性·走原邏輯並避開女性外型）。⚠️新增女性名 NPC 補這裡。
+const NPC_FEMALE_IDS = new Set([
+    'npc_shenien', 'npc_yuria', 'npc_lachesis', 'npc_moliya', 'npc_moli', 'npc_saedia',
+    'npc_brudica', 'npc_sherine', 'npc_io', 'npc_masha', 'npc_doll_merchant',
+    'npc_lumiel'   // 🚺 v3.3.6 海音 琉米埃爾＝女性外型
+]);
+
+function _npcSpriteKey(npc, usedSet) {
+    if (NPC_SPR_FIXED[npc.id]) return NPC_SPR_FIXED[npc.id];
+    if (NPC_SPR_ROLE[npc.type]) return NPC_SPR_ROLE[npc.type];   // 倉庫/協力/城堡護衛：每城鎮唯一
+    let fem = NPC_FEMALE_IDS.has(npc.id);
+    if (fem) {   // 👩 女角優先取女性外型：起點依名字 id 決定論偏移→跨城鎮不會全是同一個女裝、同城鎮仍靠 used 去重
+        let off = 0, L = NPC_SPR_FEMALE_POOL.length;
+        for (let i = 0; i < npc.id.length; i++) off = (off + npc.id.charCodeAt(i)) % L;
+        for (let n = 0; n < L; n++) { let k = NPC_SPR_FEMALE_POOL[(off + n) % L]; if (!usedSet.has(k) && NPC_SPR[k]) return k; }
+    }
+    let pool = NPC_SPR_POOL[npc.type] || [];
+    if (pool.length) {   // 🎲 v3.3.7 依名字決定論偏移起點→同型別 NPC 不再全取 pool[0]（降低單一外型跨城鎮過度重複；用完仍靠 used 去重、跳過女性外型）
+        let po = 0, PL = pool.length;
+        for (let i = 0; i < npc.id.length; i++) po = (po + npc.id.charCodeAt(i)) % PL;
+        for (let n = 0; n < PL; n++) { let k = pool[(po + n) % PL]; if (!usedSet.has(k) && NPC_SPR[k] && (fem || !NPC_SPR_FEMALE.has(k))) return k; }   // 男角跳過女性外型
+    }
+    for (const k of NPC_SPR_FALLBACK) if (!usedSet.has(k) && NPC_SPR[k] && (fem || !NPC_SPR_FEMALE.has(k))) return k;
+    for (const k of NPC_SPR_FALLBACK) if (!usedSet.has(k) && NPC_SPR[k]) return k;   // 真的用光→放寬(含女性外型)避免沒圖
+    return '1256';
+}
+
+let _npcFrameCache = {};
+function _npcFrames(key) {
+    if (_npcFrameCache[key]) return _npcFrameCache[key];
+    let cat = NPC_SPR[key], arr = [];
+    if (cat) for (let i = 0; i < cat.f; i++) { let im = new Image(); im.src = 'assets/npc/' + cat.g + '/idle_' + i + '.png'; arr.push(im); }
+    _npcFrameCache[key] = arr;
+    return arr;
+}
+
+// 🏘️ v3.2.90 逐城手工站位表（依 1920×1080 背景圖逐張檢視空地標定·%座標＝腳點·避開建築/牆面/水面/樓梯/柱台）
+//   順序＝由中央往外；NPC 數超過表長時回繞並向右下微移。未列城鎮(3攻城城堡=無專屬圖)走 fallback 置中帶。
+const TOWN_NPC_SPOTS = {
+    town_silver_knight: [[44, 56], [56, 56], [50, 67], [38, 66], [62, 66], [44, 78], [58, 78], [33, 72], [67, 76], [50, 60]],
+    town_talking: [[36, 45], [46, 48], [30, 56], [40, 58], [50, 60], [34, 68], [44, 70], [52, 74], [38, 82], [48, 84], [28, 78], [52, 52], [30, 38], [42, 36]],
+    town_elf: [[38, 44], [50, 42], [62, 46], [32, 52], [44, 52], [56, 52], [68, 54], [36, 62], [48, 62], [60, 62], [30, 70], [42, 70], [54, 70], [66, 66], [72, 60], [26, 60]],
+    town_giran: [[30, 50], [30, 62], [38, 78], [48, 80], [58, 78], [62, 56], [64, 46], [40, 34], [50, 34], [58, 38], [26, 72], [56, 86]],
+    town_heine: [[36, 40], [46, 42], [56, 42], [30, 52], [42, 54], [54, 56], [64, 40], [36, 62], [48, 62], [26, 38]],
+    town_aden: [[34, 45], [44, 48], [52, 44], [30, 58], [42, 60], [52, 60], [38, 36], [48, 36], [26, 50], [46, 70]],
+    town_oren: [[38, 42], [48, 44], [56, 40], [34, 55], [46, 58], [56, 55], [40, 68], [52, 68], [30, 66], [62, 62]],
+    town_gludio: [[48, 50], [42, 58], [55, 55], [38, 45], [58, 45]],
+    town_witon: [[38, 42], [48, 42], [58, 44], [34, 55], [46, 58], [56, 58], [40, 68], [52, 68], [64, 48], [30, 66]],
+    town_hyperia: [[42, 48], [52, 48], [46, 60], [56, 58], [38, 56], [50, 68], [44, 38], [56, 40]],
+    town_ivory_tower: [[40, 48], [50, 44], [58, 48], [36, 58], [46, 58], [56, 58], [42, 70], [52, 70], [62, 64], [32, 66], [64, 40], [46, 36]],
+    town_sherine: [[62, 40], [70, 38], [66, 50], [48, 62], [40, 66], [56, 62], [34, 70]],
+    town_silent: [[42, 46], [52, 44], [60, 48], [38, 56], [48, 58], [58, 58], [44, 68], [56, 66], [34, 64], [62, 40]],
+    town_behemoth: [[36, 50], [48, 48], [42, 62], [54, 60], [32, 62], [58, 50], [46, 72]],
+    town_flame_audience: [[30, 50], [48, 46], [38, 66], [56, 58], [26, 60], [60, 48], [44, 76]],
+    town_pirate_village: [[42, 42], [52, 40], [46, 54], [56, 52], [38, 56], [50, 66], [58, 64]],
+    town_pride: [[44, 48], [54, 48], [40, 58], [50, 60], [58, 56], [46, 68]],
+    town_rift: [[50, 56], [44, 62], [58, 60], [40, 50], [60, 50]],
+    // 🏰 v3.3.9 三攻城城堡（用戶新補背景圖·依圖避開牆壁/水池/柱子/王座/側房家具）
+    town_kent_castle: [[44, 40], [56, 40], [42, 48], [58, 48], [47, 54], [55, 54], [45, 60], [57, 60]],   // 🏰 v3.3.10 王座在頂端中央→NPC 上移聚集近王座(盟主另由 override 釘王座前地毯)·避兩側房/立柱
+    town_windwood_castle: [[40, 42], [56, 42], [43, 50], [55, 50], [48, 48]],   // 🏰 v3.3.10 祭壇在頂端中央→NPC 上移近祭壇(中央十字綠毯上緣)
+    town_heine_castle: [[55, 40], [63, 39], [54, 49], [62, 48], [50, 44], [67, 44]]   // 🏰 v3.3.10 王座在頂端中央(反射水池後)→NPC 上移聚集近王座·守在水渠右側石地(避水池/水渠·盟主 override 釘階台前)
+};
+// 🌳 v3.2.92 逐 NPC 站位覆蓋（少數巨型 NPC 佔位過大會遮住鄰居點擊→釘固定角落）：townId → { npcId: [x%, y%(腳點)] }
+//   安特(spr 847)＝110×145px 巨樹人·放正中央會蓋住兩側 NPC 的點擊熱區→改釘右上角(y=43 使 145px 身體＋名牌完整落在 450px 地圖內不被裁)
+const TOWN_NPC_POS_OVERRIDE = {
+    // 安特(847·110×145)釘右上角；精靈女皇(854·11×19極小)原站在迷幻森林之母(2725·88×96 石像)正上方被 100% 蓋住→移到安特讓出的中央空位(可點)
+    town_elf: { npc_ent: [84, 43], npc_elfqueen: [48, 62] },
+    // 🌲 v3.3.6 海音 琉米埃爾原站位 [30,52] 踩到中央大樹(石花壇)→左移到樹左側空地
+    town_heine: { npc_lumiel: [23, 52] },
+    // 🏰 v3.3.10 三城堡盟主(依詩蒂/特羅斯·只顯示其一)釘在王座/祭壇前中央·其餘主要 NPC 由 TOWN_NPC_SPOTS 上移聚集靠近；兩 id 同座標(擇一顯示)
+    town_kent_castle: { npc_esti: [50, 35], npc_tros: [50, 35] },      // 肯特城：王座頂端中央(藍地毯上緣)
+    town_windwood_castle: { npc_esti: [48, 35], npc_tros: [48, 35] },  // 風木城：祭壇頂端中央(綠十字毯上緣)
+    town_heine_castle: { npc_esti: [48, 35], npc_tros: [48, 35] }      // 海音城：王座前階台(水池右側石地·避水渠)
+};
+function _townNpcLayout(n, townId) {
+    if (n <= 0) return [];
+    let spots = TOWN_NPC_SPOTS[townId];
+    let out = [];
+    if (spots && spots.length) {
+        for (let i = 0; i < n; i++) {
+            let s = spots[i % spots.length], wrap = Math.floor(i / spots.length);
+            out.push({ x: Math.min(92, s[0] + wrap * 3), y: Math.min(90, s[1] + wrap * 2) });   // 回繞時往右下微移避免完全重疊
+        }
+        return out;
+    }
+    // fallback（無專屬圖的攻城城堡等）：置中格狀
+    let cols = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * 1.7))));
+    let rows = Math.ceil(n / cols);
+    let per = [], rem = n, left = rows;
+    for (let r = 0; r < rows; r++) { let c = Math.ceil(rem / left); per.push(c); rem -= c; left--; }
+    let colStep = 15, rowStep = 16, yc = 60, idx = 0;
+    for (let r = 0; r < rows; r++) {
+        let m = per[r];
+        let y0 = yc + (r - (rows - 1) / 2) * rowStep;
+        for (let j = 0; j < m; j++, idx++) {
+            let x = 50 + (j - (m - 1) / 2) * colStep + ((idx * 37) % 5 - 2) * 0.35;
+            let y = y0 + ((idx * 29) % 3 - 1) * 0.3;
+            out.push({ x: Math.max(8, Math.min(92, x)), y: Math.max(22, Math.min(90, y)) });
+        }
+    }
+    return out;
+}
+
+// 城鎮地圖背景：沿用 TOWN_BG_1920/SPECIAL_TOWN_BG/TOWN_AREA_BG 解析，但用較淡遮罩(場景清楚)
+function _townMapBg(townId) {
+    let cat = (typeof mapCategoryOf === 'function') ? mapCategoryOf(townId) : null;
+    let ov = 'linear-gradient(rgba(15,23,42,.12), rgba(15,23,42,.30))';
+    try {
+        if (typeof TOWN_BG_1920 !== 'undefined' && TOWN_BG_1920[townId])
+            return ov + ', url("assets/area/1920x1080/' + TOWN_BG_1920[townId] + '.jpg")';
+        let timg = ((typeof SPECIAL_TOWN_BG !== 'undefined') && SPECIAL_TOWN_BG[townId])
+            || ((typeof TOWN_AREA_BG !== 'undefined') && cat && TOWN_AREA_BG[cat]) || null;
+        if (timg) return ov + ', url("assets/background/' + timg + '")';
+    } catch (e) {}
+    return 'linear-gradient(#334155, #1e293b)';
+}
+
+let _townNpcSprites = [];
+function renderTownNPCMap(townId) {
+    let map = document.getElementById('town-npc-map');
+    if (!map) return;
+    map.classList.remove('hidden');
+    map.innerHTML = '';
+    _townNpcSprites = [];
+    try { map.style.backgroundImage = _townMapBg(townId); } catch (e) {}
+    let td = DB.towns[townId];
+    if (!td) return;
+    // 與舊卡片清單相同的可見性過濾
+    let vis = (td.npcs || []).filter(npc => {
+        if (SIEGE_CASTLES.includes(townId)) {   // 🏰 v3.3.9 三座攻城城堡皆只顯示玩家所屬血盟盟主(依詩蒂/特羅斯)，不兩者並列(原漏 town_heine_castle)
+            if (npc.id === 'npc_esti' && player.bloodPledge !== 'esti') return false;
+            if (npc.id === 'npc_tros' && player.bloodPledge !== 'tros') return false;
+        }
+        if (npc.darkOnly && player.cls !== 'dark') return false;
+        if (npc.classicHide && player.classicMode) return false;
+        return true;
+    });
+    // 🗼🌀 v3.2.89 傲慢之塔／時空裂痕：入口告示改成地圖上的可點 NPC（_spr 專屬圖·_float 專屬點擊→浮動視窗）
+    if (townId === 'town_pride') vis.push({ id: '_pride_entrance', n: '傲慢之塔', title: '入口', _spr: '1148', _float: 'pride' });
+    if (townId === 'town_rift') vis.push({ id: '_rift_entrance', n: '時空裂痕', title: '入口', _spr: '1149', _float: 'rift' });
+    if (!vis.length) return;
+    let pos = _townNpcLayout(vis.length, townId);
+    let ovr = TOWN_NPC_POS_OVERRIDE[townId] || {};
+    let used = new Set();
+    // 🔒 v3.2.99 先把所有「專屬/固定/角色」sprite 佔位，避免池分配的 NPC 搶走稍後才出現的固定 NPC 的圖
+    //   （例：肯特城堡 奧貝勒固定 1049，若 伊賽馬利 先抽到 1049 就會撞臉；先預留固定圖 → 池分配自動避開）
+    vis.forEach(npc => { let fk = npc._spr || NPC_SPR_FIXED[npc.id] || NPC_SPR_ROLE[npc.type]; if (fk) used.add(fk); });
+    vis.forEach((npc, i) => {
+        let key = npc._spr || _npcSpriteKey(npc, used); used.add(key);
+        let cat = NPC_SPR[key] || NPC_SPR['1256'];
+        let ov = ovr[npc.id];
+        let p = ov ? { x: ov[0], y: ov[1] } : (pos[i] || { x: 50, y: 60 });
+        let el = document.createElement('div');
+        el.className = 'town-npc';
+        el.style.left = p.x + '%'; el.style.top = p.y + '%'; el.style.zIndex = Math.round(p.y * 10);
+        el.innerHTML =
+            '<div class="tn-label"><span class="tn-name">' + npc.n + '</span><span class="tn-title">' + npc.title + '</span></div>' +
+            '<img class="tn-shadow" src="assets/npc/' + cat.g + '/idle_s_0.png" alt="" onerror="this.remove()">' +   // 🌑 v3.3.5 真實影子 sprite(body gfx+1·共畫布疊本體對齊)；無影子 npc(老sprite影子烙進本體/告示)→404 remove→本體自帶影子照顯
+            '<img class="tn-body"' + (cat.tint ? (' style="filter:' + cat.tint + '"') : '') + ' src="assets/npc/' + cat.g + '/idle_0.png" alt="">';
+        if (npc._float === 'pride') el.onclick = () => openTownFloatWindow('傲慢之塔', '排名挑戰', renderPrideEntrance);
+        else if (npc._float === 'rift') el.onclick = () => openTownFloatWindow('時空裂痕', '進入', renderRiftEntrance);
+        else el.onclick = () => interactNPC(npc.id, townId);
+        map.appendChild(el);
+        let bodyImg = el.querySelector('.tn-body');
+        bodyImg.addEventListener('load', _scheduleTownLabelResolve, { once: true });   // 🏷️ 圖片載入拿到真實高度後再排名牌
+        _townNpcSprites.push({ img: bodyImg, frames: _npcFrames(key), phase: (i * 3) % 8, last: -1 });
+    });
+    // 🏷️ v3.2.92 名牌常駐開關：跟隨戰鬥日誌「狀態」鈕(_showMobStatus)·開→所有 NPC 名字常駐頭頂；關→僅 hover
+    map.classList.toggle('show-labels', (typeof _showMobStatus === 'undefined') ? true : !!_showMobStatus);
+    _scheduleTownLabelResolve();
+}
+
+// 🗼🌀 v3.2.89 開啟城鎮浮動視窗並注入任意內容（傲慢之塔／時空裂痕入口共用·與 interactNPC 同一個 #town-interaction-container 浮動視窗）
+function openTownFloatWindow(name, title, renderFn) {
+    if (typeof _activePanel !== 'undefined') _activePanel = null;
+    let c = document.getElementById('town-npc-container'); if (c) c.classList.add('hidden');
+    let tic = document.getElementById('town-interaction-container');
+    if (!tic) return;
+    tic.classList.remove('hidden'); tic.classList.add('flex');
+    document.getElementById('interaction-npc-name').innerText = name || '';
+    document.getElementById('interaction-npc-title').innerText = title ? ('[' + title + ']') : '';
+    let content = document.getElementById('interaction-content');
+    content.innerHTML = '';
+    try { if (typeof renderFn === 'function') renderFn(content); } catch (e) {}
+}
+
+// 🏷️ v3.2.92 名牌防重疊：常駐名牌開啟時，逐一把互相重疊的名字往上抬離(仍在頭頂之上·不超出地圖頂端)
+//   幾何用 getBoundingClientRect(已含舞台縮放)·抬升量換算回 CSS px(÷scale) 再寫入 margin-bottom
+function _resolveTownLabelOverlap() {
+    try {
+        let map = document.getElementById('town-npc-map');
+        if (!map || map.classList.contains('hidden') || !map.classList.contains('show-labels')) return;
+        let scale = (map.getBoundingClientRect().width / (map.offsetWidth || 800)) || 1;
+        let mapTop = map.getBoundingClientRect().top;
+        let labels = [].slice.call(map.querySelectorAll('.town-npc .tn-label'));
+        if (!labels.length) return;
+        labels.forEach(l => { l.style.marginBottom = ''; });   // 先歸零(回 CSS 預設 5px)再量測
+        let entries = labels.map(l => ({ l, r: l.getBoundingClientRect() })).filter(e => e.r.width > 0);
+        entries.sort((a, b) => a.r.top - b.r.top);   // 由上而下：越高者當錨點，下方者往上讓
+        let placed = [];
+        for (let e of entries) {
+            let r = e.l.getBoundingClientRect();
+            let left = r.left, right = r.right, top = r.top, bottom = r.bottom, guard = 0;
+            while (guard++ < 30) {
+                let hit = placed.find(p => left < p.right - 1 && right > p.left + 1 && top < p.bottom - 1 && bottom > p.top + 1);
+                if (!hit) break;
+                let lift = (bottom - hit.top) + 4;
+                if (top - lift < mapTop + 2) {   // 再抬會超出地圖頂端→抬到極限就停(寧可微疊也不裁掉)
+                    let maxLift = top - (mapTop + 2);
+                    if (maxLift > 0) { top -= maxLift; bottom -= maxLift; }
+                    break;
+                }
+                top -= lift; bottom -= lift;
+            }
+            placed.push({ left, right, top, bottom });
+            let shift = r.top - top;
+            if (shift > 0.5) e.l.style.marginBottom = (5 + shift / scale) + 'px';
+        }
+    } catch (err) {}
+}
+let _townLabelResolveT = null;
+function _scheduleTownLabelResolve() {
+    if (_townLabelResolveT) return;
+    _townLabelResolveT = setTimeout(() => { _townLabelResolveT = null; _resolveTownLabelOverlap(); }, 70);
+}
+
+function _townNpcAnimTick() {
+    let tv = document.getElementById('town-view');
+    if (!tv || tv.classList.contains('hidden')) return;
+    let map = document.getElementById('town-npc-map');
+    if (!map || map.classList.contains('hidden')) return;
+    if (!_townNpcSprites.length) return;
+    let t = Date.now();
+    for (const s of _townNpcSprites) {
+        if (!s.frames || !s.frames.length) continue;
+        let fi = (Math.floor(t / 125) + s.phase) % s.frames.length;
+        if (fi !== s.last) { s.last = fi; let fr = s.frames[fi]; if (fr && fr.src) s.img.src = fr.src; }
+    }
+}
+setInterval(_townNpcAnimTick, 125);   // 8fps 站立循環

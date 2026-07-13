@@ -569,6 +569,10 @@ d.mr += (baseMr + bonusMr);
     d.spdMult = spdMult;   // 速度倍率（受加速/勇敢藥水/精靈餅乾/變身影響），供自動施法間隔使用
     d.aspd = d.aspd * spdMult;
 
+    // 🐾 馴獸師的飼料袋（allLures）：裝備時視為持有全部誘捕狀態；petCaptureOnKill 讀 player._allLures（不消耗、卸下即失效）
+    p._allLures = false;
+    for (let _lk in p.eq) { let _li = p.eq[_lk]; if (_li) { let _ld = DB.items[_li.id]; if (_ld && _ld.allLures) { p._allLures = true; break; } } }
+
     // ===== 🔧 負重系統：上限=(floor((3力+2體)/5)+1)×50；腰帶/負重強化提供額外上限；依%套用攻速懲罰 =====
     {
         let _wbase = (Math.floor((3 * d.str + 2 * d.con) / 5) + 1) * 50;

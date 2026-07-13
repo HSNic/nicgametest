@@ -834,7 +834,7 @@ function autoActions() {
             let item = player.inv.find(i => i.id === cfg.pot);
             if(item) {
                  useItem(item.uid, true);
-            } else if (document.getElementById(cfg.buyId) && document.getElementById(cfg.buyId).checked) {
+            } else {   // 🧪 v3.3.15 自動使用＝自動購買合併：勾選使用且缺貨→自動買一瓶再用（不再需要獨立「自動購買」勾選；魔法屏障卷軸亦同）
                  let price = shopPrice(DB.items[cfg.pot].p);   // 攻城獲勝 8 折亦適用
                  if(player.gold >= price) {
                      player.gold -= price;
@@ -851,9 +851,8 @@ function autoActions() {
         if (tChk && tChk.checked && mapState.mobs.some(m => m && m.boss && !m.noAutoTeleport) && !isSiegeArea(mapState.current) && !PURE_BOSS_MAPS.includes(mapState.current) && !state.prideClimb && !state.oblivion && !state.riftRun && (state._manualTpUntil == null || (state.ticks || 0) >= state._manualTpUntil)) {   // 🕒 手動瞬移後 5 秒內不自動瞬移/自動購買；攻城區與純BOSS房(安塔瑞斯/法利昂/巴拉卡斯)：BOSS為目標，不自動瞬移；🔧 卡瑞(noAutoTeleport)不觸發自動瞬移；🗼 傲慢之塔攀登中不自動瞬移；🌀 時空裂痕不自動瞬移逃離頭目
             let item = player.inv.find(i => i.id === 'scroll_teleport');
             if (!item) {
-                let buyChk = document.getElementById('set-auto-buy-teleport');
                 let _tpCost = shopPrice(DB.items.scroll_teleport.p);   // 攻城獲勝 8 折亦適用
-                if (buyChk && buyChk.checked && player.gold >= _tpCost) {
+                if (player.gold >= _tpCost) {   // 🧪 v3.3.15 自動使用＝自動購買合併：勾選瞬移且缺貨→自動買一張
                     player.gold -= _tpCost;
                     gainItem('scroll_teleport', 1, true, true);
                     item = player.inv.find(i => i.id === 'scroll_teleport');

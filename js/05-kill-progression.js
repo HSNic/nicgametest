@@ -680,6 +680,7 @@ function enterRiftMap() {   // 仿 enterPrideFloor 的戰鬥進場（不走 chan
         document.getElementById('town-view').classList.add('hidden');
         document.getElementById('town-view').classList.remove('flex');
         mapPanel.classList.remove('flex-1', 'overflow-hidden');
+        try { applyAreaBackground(); } catch (e) {}
         logSys('<span class="font-bold" style="color:#c4b5fd;">--- 🌀 你撕開時空，踏入了裂痕…… ---</span>');
         renderMobs();
         syncMapSelectors();

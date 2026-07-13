@@ -442,6 +442,24 @@ function enemyAttackSummon(mob, s) {
     }
     renderSummonPanel();
 }
+// 🧙 v3.2.82 怪物攻擊型魔法作用於召喚物（applyMobMagicToPet 的精簡鏡像）：召喚物無狀態系統→只吃「傷害型」魔法(sk.dmg)·純 CC/DoT 狀態技對其無效（守衛 !sk.dmg 直接 return，故 castMobMagic 全體 AOE 分支對召喚物呼叫此函式時純狀態自然略過）。
+function applyMobMagicToSummon(mob, sk, s) {
+    if (!mob || mob.curHp <= 0 || !sk || !sk.dmg || !s || s._downed || (s.hp || 0) <= 0) return;
+    const d = _sumDeriveAny(s) || {};
+    const mr = d.mr || 0, dr = d.dr || 0;
+    const shMul = (mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1);
+    let baseM = roll(sk.dmg[0], sk.dmg[1]);
+    let extra = (sk.db || 0) + (sk.dbLv ? (mob.lv || 0) * (sk.dbLvMult || 1) : 0);
+    let dmg = sk.fixedDmg ? (baseM + extra) : (Math.floor((baseM + extra) * mrMult(mr)) - dr);
+    dmg = Math.max(1, Math.floor(Math.max(1, dmg * shMul) * (typeof teamDmgReduceMult === 'function' ? teamDmgReduceMult() : 1)));
+    dmg = Math.max(1, Math.floor(dmg * riftDamageMult()));
+    s.hp -= dmg;
+    _petAnimAct(s, 'hurt');
+    logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，對 <span class="text-purple-300">${s.form}</span> 造成 ${dmg} 點魔法傷害。`, 'enemy');
+    if (sk.vamp || sk.vampFull) { let heal = sk.vampFull ? dmg : roll(sk.vamp[0], sk.vamp[1]); mob.curHp = Math.min(mob.hp, mob.curHp + heal); }
+    if (s.hp <= 0) { s.hp = 0; s._downed = true; s._diedAt = Date.now(); _petAnimAct(s, 'death'); logCombat(`<span class="text-purple-300">${s.form}</span> 倒下消散了。`, 'magic', 'summon'); }
+    renderSummonPanel();
+}
 
 // ---------- 四、隊伍面板召喚物清單（每隻血量＋重新施放）----------
 let _sumPanelSig = '';
