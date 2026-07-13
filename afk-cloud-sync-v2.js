@@ -379,8 +379,13 @@
       // 批次衝突總覽：每列一格存檔位 + 三顆選擇鈕(本機/雲端/略過，不用下拉選單)
       '.afk-cloud2-batch-row{background:#111c30;border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:10px;}',
       '.afk-cloud2-batch-choice-group{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
-      '.afk-cloud2-batch-btn{flex:1 1 28%;min-height:38px;padding:6px 8px;font-size:12.5px;opacity:.5;}',
+      '.afk-cloud2-batch-btn{flex:1 1 28%;min-height:38px;padding:6px 8px;font-size:12.5px;opacity:.55;}',
       '.afk-cloud2-batch-btn.is-active{opacity:1;box-shadow:0 0 0 2px #fff;}',
+      // 三顆選擇鈕改用各自直覺色系(本機=藍／雲端=青／略過=中性灰),避免跟原本共用的深灰次要色分不出來
+      '.afk-cloud2-batch-btn[data-choice="local"]{background:#1e40af;border-color:#3b82f6;}',
+      '.afk-cloud2-batch-btn[data-choice="cloud"]{background:#0e7490;border-color:#22d3ee;}',
+      '.afk-cloud2-batch-btn[data-choice="skip"]{background:#334155;border-color:#64748b;}',
+      '.afk-cloud2-new-badge{display:inline-block;background:#16a34a;color:#fff;font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px;vertical-align:1px;}',
       '#afk-cloud2-toast-wrap{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99998;display:flex;flex-direction:column;gap:10px;width:min(92vw,460px);pointer-events:none;}',
       '#afk-cloud2-toast-wrap .afk-cloud2-toast{pointer-events:auto;background:rgba(15,23,42,.98);border:1px solid #475569;border-left:5px solid #38bdf8;border-radius:10px;padding:14px 18px;box-shadow:0 10px 34px rgba(0,0,0,.65);color:#f1f5f9;font-size:15px;font-weight:600;line-height:1.55;word-break:break-word;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease;}',
       '#afk-cloud2-toast-wrap .afk-cloud2-toast.in{opacity:1;transform:translateY(0);}',
@@ -418,10 +423,13 @@
       var rows = conflicts.map(function (c) {
         var ls = payload.summarize(c.localObj);
         var rs = payload.summarize(c.remoteObj);
+        var lsNewer = !!(ls && rs && ls.ts && rs.ts && ls.ts > rs.ts);
+        var rsNewer = !!(ls && rs && ls.ts && rs.ts && rs.ts > ls.ts);
+        var newBadge = ' <span class="afk-cloud2-new-badge">新</span>';
         return '<div class="afk-cloud2-batch-row" data-batch-slot="' + esc(c.slot) + '" data-selected="skip">' +
           '<div class="afk-cloud2-card-title">存檔 ' + esc(c.slot) + '</div>' +
-          '<div class="afk-cloud2-card-line">📱 本機：' + (ls ? esc(ls.cls) + ' Lv.' + esc(String(ls.lv)) + (ls.name ? '　' + esc(ls.name) : '') : '（無資料）') + '</div>' +
-          '<div class="afk-cloud2-card-line">☁️ 雲端：' + (rs ? esc(rs.cls) + ' Lv.' + esc(String(rs.lv)) + (rs.name ? '　' + esc(rs.name) : '') : '（無資料）') + '</div>' +
+          '<div class="afk-cloud2-card-line">📱 本機：' + (ls ? esc(ls.cls) + ' Lv.' + esc(String(ls.lv)) + (ls.name ? '　' + esc(ls.name) : '') + '　' + esc(fmtTsShort(ls.ts)) + (lsNewer ? newBadge : '') : '（無資料）') + '</div>' +
+          '<div class="afk-cloud2-card-line">☁️ 雲端：' + (rs ? esc(rs.cls) + ' Lv.' + esc(String(rs.lv)) + (rs.name ? '　' + esc(rs.name) : '') + '　' + esc(fmtTsShort(rs.ts)) + (rsNewer ? newBadge : '') : '（無資料）') + '</div>' +
           '<div class="afk-cloud2-batch-choice-group">' +
             '<button type="button" class="afk-cloud2-btn afk-cloud2-batch-btn" data-choice="local">用本機</button>' +
             '<button type="button" class="afk-cloud2-btn afk-cloud2-btn-secondary afk-cloud2-batch-btn" data-choice="cloud">用雲端</button>' +

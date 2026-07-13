@@ -12,8 +12,8 @@
  *   回饋:
  *   (a) 該位置疊一個擴散衝擊環(比核心飄字本身更誇張的爆擊視覺)。
  *   (b) 全螢幕短暫紅色閃光遮罩(節流:同時間爆擊很多下也不會連續閃到眼花)。
- *   (c) 戰場畫面(#battle-view)輕微震動(重用核心已有的 .vfx-shake class,跟怪物施法
- *       震動 vfxCastShake 走同一套動畫語言,不是自創)。
+ *   (c) 該筆爆擊數字本身疊加紅色光暈(2026-07-13 改版:原本是 #battle-view 輕微震動,
+ *       使用者反映畫面晃動不舒服,改成只讓數字本身發紅光、畫面不動)。
  *
  *   尊重玩家現有的「戰鬥特效」開關(window.__vfxOff):開關關掉時,這裡也不會加碼。
  *
@@ -34,7 +34,9 @@
       '.afk-critfx-flash{position:fixed;inset:0;z-index:9998;pointer-events:none;background:radial-gradient(ellipse at center, rgba(255,59,48,.26) 0%, rgba(255,59,48,0) 68%);animation:afkCritFlash .32s ease-out forwards;}' +
       '@keyframes afkCritFlash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}' +
       '.afk-critfx-burst{position:absolute;border-radius:50%;pointer-events:none;border:3px solid #ff3b30;box-shadow:0 0 14px #ff3b30,0 0 26px rgba(255,59,48,.6);transform:translate(-50%,-50%) scale(.2);animation:afkCritBurst .5s cubic-bezier(.15,.7,.3,1) forwards;}' +
-      '@keyframes afkCritBurst{0%{opacity:.95;transform:translate(-50%,-50%) scale(.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}';
+      '@keyframes afkCritBurst{0%{opacity:.95;transform:translate(-50%,-50%) scale(.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}' +
+      // 爆擊數字紅光暈:只加強文字陰影,不掛動畫(避免跟核心 vfxCrit 的 animationend 監聽搶著提早移除節點)
+      '.afk-critfx-glow{text-shadow:0 0 8px #ff3b30,0 0 16px rgba(255,59,48,.9),0 0 28px rgba(255,59,48,.65),0 1px 2px rgba(0,0,0,.95)!important;}';
     document.head.appendChild(s);
   }
 
@@ -56,13 +58,10 @@
     setTimeout(function () { if (ring.parentNode) ring.remove(); }, 700);
   }
 
-  function screenShake() {
-    var bv = document.getElementById('battle-view');
-    if (!bv) return;
-    bv.classList.remove('vfx-shake');
-    void bv.offsetWidth;   // 強制重排,讓移除/加回 class 能重新觸發動畫(比照核心 vfxCastShake 的寫法)
-    bv.classList.add('vfx-shake');
-    bv.addEventListener('animationend', function () { bv.classList.remove('vfx-shake'); }, { once: true });
+  // 傷害數字本身疊加紅色光暈:只加 class(靜態陰影,不掛動畫),核心自己的 vfxCrit 動畫
+  // 跑完把整個節點移除時,這個 class 自然一起消失,不需要額外清除。
+  function glowNumber(el) {
+    el.classList.add('afk-critfx-glow');
   }
 
   var _lastFlashTs = 0;
@@ -72,11 +71,11 @@
       var x = parseFloat(el.style.left) || 0;
       var y = parseFloat(el.style.top) || 0;
       burstAt(layer, x, y);
+      glowNumber(el);
       var now = Date.now();
       if (now - _lastFlashTs > FLASH_MIN_GAP_MS) {
         _lastFlashTs = now;
         screenFlash();
-        screenShake();
       }
     } catch (e) {}
   }
