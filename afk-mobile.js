@@ -1194,8 +1194,13 @@
 
       /* 底部導覽列:遊戲本體 .m-col-left/.m-col-center/.m-col-right 各自帶 order:1~3(它自己響應式版面用),
          而這裡沒指定 order 時瀏覽器預設 0,會比欄位內容更早排(視覺上被擠到 #m-status 正下方、跑到頂部)。
-         給一個夠大的 order 值,確保無論核心欄位用到多少 order 都排在它們之後,固定貼在畫面最下方。 */
-      'body.m-mobile #m-nav{display:flex !important;flex:0 0 auto !important;order:99 !important;height:56px;background:#0f172a;border-top:1px solid #334155;}',
+         給一個夠大的 order 值,確保無論核心欄位用到多少 order 都排在它們之後,固定貼在畫面最下方。
+         2026-07-13 使用者回報:村莊NPC對話視窗(#town-interaction-container)內容較長時,底部導覽列
+         會被擠出可視範圍、要滑到最底才看得到——根因是 #m-nav 只是 #game-screen(fixed+overflow-y:auto)
+         這個直向 flex 欄裡「排最後」的一般子元素,內容一長,整欄變高,#m-nav 自然被推到內容最下面,
+         要捲到底才會出現(而不是真的被別的東西蓋住,是「要捲很久才能看到」)。補 position:sticky+bottom:0,
+         讓它在 #game-screen 捲動時永遠貼在可視畫面最下方,不受內容多寡影響。 */
+      'body.m-mobile #m-nav{display:flex !important;flex:0 0 auto !important;order:99 !important;height:56px;background:#0f172a;border-top:1px solid #334155;position:sticky !important;bottom:0 !important;z-index:60 !important;}',
       'body.m-mobile #m-nav button{flex:1;background:transparent;border:none;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:inherit;touch-action:manipulation;}',   /* touch-action:manipulation:取消 iOS 雙擊縮放的 300ms 等待 → click 在 touchend 當下就發,不會被 mirror/戰鬥重排插隊取消(iPhone 要按多下才有反應的根因) */
       'body.m-mobile #m-nav button.m-active{color:#fcd34d;background:#1e293b;}',
       'body.m-mobile #m-nav button:active{background:#334155;}',

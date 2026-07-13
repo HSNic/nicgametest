@@ -69,8 +69,8 @@
   // 2026-07-13(修正搜尋/子分類篩選互相覆寫閃爍):cat 有帶(武器/防具/道具三分頁才有)時,
   // 同時檢查 afk-item-subfilter.js 的子分類篩選狀態,兩者取交集——不管哪支外掛的重繪收尾
   // 最後執行,算出來的顯示/隱藏都已經是最終正確結果,不會有一方蓋掉另一方、下一輪又被修回來
-  // 的兩階段跳動。也順手排除 .afk-subfilter-bar 本身(先前沒排除,打關鍵字時子分類篩選列
-  // 的按鈕文字對不上關鍵字也會被搜尋誤隱藏,是同一段程式碼裡發現的另一個小 bug,一併修掉)。
+  // 的兩階段跳動。子分類篩選選單現在改插在 .afk-isearch 搜尋框那一排裡面(見
+  // afk-item-subfilter.js buildBar),已經被下面的 `.afk-isearch` 排除整排掃到,不必再額外排除。
   function filterChildren(container, kw, skipEl, cat) {
     if (!container) return;
     kw = norm(kw.trim());
@@ -82,7 +82,6 @@
     for (var i = 0; i < scanRoot.children.length; i++) {
       var el = scanRoot.children[i];
       if (el === skipEl || el.classList.contains('afk-isearch')) continue;
-      if (el.classList.contains('afk-subfilter-bar')) continue;
       if (el.dataset.afkKeep === '1') continue;   // 標記不過濾的列(快速操作頭部)
       var kwOk = !kw || norm(el.textContent).indexOf(kw) >= 0;
       var subOk = true;

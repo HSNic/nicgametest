@@ -120,6 +120,20 @@
         avail: function () { return !!(window.AFK_MOBNAME && typeof window.AFK_MOBNAME.setOn === 'function'); },
         get: function () { return window.AFK_MOBNAME.isOn(); },
         set: function (on) { AFK_MOBNAME.setOn(on); }
+      },
+      {
+        key: 'pet', label: '🐾 顯示寵物',
+        sub: '關閉後隊伍面板不顯示出戰寵物卡片,冒險地圖也不顯示魔法娃娃飄浮寵物',
+        avail: function () { return typeof window.showPet === 'function' && typeof window.hidePet === 'function'; },
+        get: function () { return window.isPetVisible(); },
+        set: function (on) { on ? showPet() : hidePet(); }
+      },
+      {
+        key: 'summon', label: '🧚 顯示招喚獸',
+        sub: '關閉後隊伍面板不顯示召喚物卡片',
+        avail: function () { return typeof window.showSummon === 'function' && typeof window.hideSummon === 'function'; },
+        get: function () { return window.isSummonVisible(); },
+        set: function (on) { on ? showSummon() : hideSummon(); }
       }
     ];
   }

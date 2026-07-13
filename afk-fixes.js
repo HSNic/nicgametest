@@ -499,5 +499,65 @@
     } catch (e) { console.warn('[AFK-fixes] 快速強化/廢品勾選防跳位 安裝失敗,已略過:', e); }
   })();
 
+  /* --------------------------------------------------------------------------
+   * 修正#11:renderSquadPanel 編輯「HP<n%喝水」輸入框時不被重繪打斷(桌機 / 手機皆然)
+   *
+   * 問題:寵物 / 傭兵卡片的「HP<n%喝水」輸入框(petSetPotPct / setAllyPotHp)長在
+   *   renderSquadPanel()(js/10-ui-tabs.js)重建出來的 DOM 裡。戰鬥中寵物 / 傭兵血魔量
+   *   幾乎每個 tick(100ms)都在變 → sigTeam 簽章改變 → 整段 #squad-tab-team innerHTML
+   *   被重建,使用者正在編輯的 <input> 節點被整個換成新節點 → 失焦 / 視覺跳動 / 輸入被
+   *   打斷還原成舊值(手機尤其明顯:鍵盤還開著,輸入框卻突然消失重生,體感是「一直跳」)。
+   * 解法:比照修正#1(renderTabs select-guard)同一手法——偵測焦點落在 #squad-tab-team /
+   *   #squad-tab-skill 內的 <input> 上時,延後該次 renderSquadPanel;輸入框失焦(blur /
+   *   change)後再補跑一次,追上延後期間的血魔變動。延後期間血 / 魔條數字會暫停更新一兩拍,
+   *   使用者編輯完就恢復,無副作用。
+   * 何時可移除:原作者把 renderSquadPanel 改成「只局部更新血魔條、不整段 innerHTML 重建」
+   *   時,本段即成多餘,可整段刪掉(抓不到 renderSquadPanel 會自動略過,不弄壞遊戲)。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    var PANEL_SEL = '#squad-tab-team,#squad-tab-skill';
+
+    function inputFocusedInSquad() {
+      var ae = document.activeElement;
+      return !!(ae && ae.tagName === 'INPUT' && ae.closest && ae.closest(PANEL_SEL));
+    }
+
+    function install() {
+      if (typeof window.renderSquadPanel !== 'function' || window.renderSquadPanel.__squadInputGuard) return true;
+      var orig = window.renderSquadPanel;
+      var pending = false;
+
+      var guarded = function () {
+        if (typeof state !== 'undefined' && state && state.ff) return orig.apply(this, arguments);
+        try { if (inputFocusedInSquad()) { pending = true; return; } } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+      guarded.__squadInputGuard = true;
+      window.renderSquadPanel = guarded;
+
+      function flush() {
+        if (!pending || inputFocusedInSquad()) return;
+        pending = false;
+        orig.call(window);
+      }
+      function onInputDone(e) {
+        var t = e.target;
+        if (t && t.tagName === 'INPUT' && t.closest && t.closest(PANEL_SEL)) setTimeout(flush, 0);
+      }
+      document.addEventListener('change', onInputDone, true);
+      document.addEventListener('blur', onInputDone, true);
+
+      console.log('[AFK-fixes] renderSquadPanel 喝水%輸入框編輯防重繪 已掛上');
+      return true;
+    }
+
+    try {
+      if (!install()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+        else setTimeout(install, 0);
+      }
+    } catch (e) { console.warn('[AFK-fixes] renderSquadPanel 輸入框編輯防重繪 安裝失敗,已略過:', e); }
+  })();
+
   console.log('[AFK-fixes] hooks OK — 通用修正外掛已啟用。');
 })();

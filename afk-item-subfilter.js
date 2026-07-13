@@ -1,5 +1,10 @@
 /*
- * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(按鈕組,仿共用倉庫;2026-07-08 曾短暫改成下拉選單,使用者反映不好用,改回按鈕組)
+ * afk-item-subfilter.js — 道具/武器/防具三個分頁加子分類篩選(下拉選單,插在搜尋框右邊)
+ *
+ * 2026-07-08 曾短暫改成下拉選單,使用者反映不好用,改回按鈕組;2026-07-13 使用者再次
+ *   明確要求改回下拉選單——這次不是單純換皮,而是把原本「獨立一整排、換行佔位」的按鈕組
+ *   合併進 afk-itemsearch.js 的搜尋框同一排(放搜尋框右邊),讓出來的那排空間可以多顯示
+ *   幾格物品,方向跟上次單純按鈕→下拉不同,故不算重工同一個決定。
  *
  * 背景:js/10-ui-tabs.js(原作者本體,不可修改)的 renderTabs(force) 只把物品分流到
  *   tab-weapons/tab-armors/tab-items 三個分頁容器,沒有子分類篩選 UI;子分類的分類邏輯
@@ -40,14 +45,10 @@
     var s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent =
-      /* 2026-07-13:篩選列補第三層吸頂(前兩層——快速強化/廢品列、搜尋框——已各自 sticky)。
-         top 值不寫死:各分頁(道具/武器/防具)的快速操作列按鈕數不同、字級也可能因裝置縮放
-         不同,寫死 px 容易跟前兩層疊到或留縫。改在 buildBar() 用 JS 量測前面兩層目前的
-         實際高度加總、動態設成 inline style top(見下方),這裡只放不含 top 的共用樣式。 */
-      '.afk-subfilter-bar{position:sticky;z-index:4;background:#1e293b;display:flex;flex-wrap:wrap;gap:4px;padding:4px 2px;}' +
-      '.afk-subfilter-btn{padding:2px 9px;font-size:12px;border-radius:999px;border:1px solid #475569;background:#1e293b;color:#cbd5e1;cursor:pointer;white-space:nowrap;}' +
-      '.afk-subfilter-btn:hover{border-color:#94a3b8;}' +
-      '.afk-subfilter-btn.active{background:#92400e;border-color:#f59e0b;color:#fde68a;font-weight:bold;}';
+      /* 2026-07-13:改成下拉選單、併進搜尋框同一排(afk-itemsearch.js 的 .afk-isearch),
+         不再是獨立一整排,吸頂/寬度都交給 .afk-isearch 既有規則,這裡只放選單本身樣式。 */
+      '.afk-subfilter-select{flex:0 0 auto;max-width:104px;padding:5px 4px;font-size:12px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#cbd5e1;font-family:inherit;outline:none;}' +
+      '.afk-subfilter-select:focus{border-color:#b89243;}';
     document.head.appendChild(s);
   }
 
@@ -101,42 +102,38 @@
     return buckets;
   }
 
+  // 下拉選單插進 afk-itemsearch.js 建立的搜尋框那一排(.afk-isearch,id 為 afk-isearch-<key>
+  // 的 input 之父層),排在輸入框右邊、整理排序鈕(↕)左邊(使用者要求「放搜尋欄位右邊」)。
+  // 找不到搜尋框(afk-itemsearch.js 沒裝上/尚未建立)時 fallback 成插在物品清單容器前面,
+  // 不強求一定要合併,優雅降級。
   function buildBar(tabId, cat) {
     var tabDiv = document.getElementById(tabId);
     if (!tabDiv) return;
     injectStyle();
     var options = subCatOptions(cat);
-    var bar = document.createElement('div');
-    bar.className = 'afk-subfilter-bar';
-    var html = '<button type="button" data-sub="" class="afk-subfilter-btn' + (!_subFilterState[cat] ? ' active' : '') + '">全部</button>';
-    html += options.map(function (o) {
-      return '<button type="button" data-sub="' + o.key + '" class="afk-subfilter-btn' + (_subFilterState[cat] === o.key ? ' active' : '') + '">' + o.name + '</button>';
+    var sel = document.createElement('select');
+    sel.className = 'afk-subfilter-select';
+    var optHtml = '<option value="">全部</option>';
+    optHtml += options.map(function (o) {
+      return '<option value="' + o.key + '">' + o.name + '</option>';
     }).join('');
-    bar.innerHTML = html;
-    bar.addEventListener('click', function (ev) {
-      var btn = ev.target.closest('[data-sub]');
-      if (!btn) return;
-      _subFilterState[cat] = btn.getAttribute('data-sub') || '';
-      var buckets = categorizedInv();
-      bar.querySelectorAll('.afk-subfilter-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
-      applyOne(tabId, cat, buckets[cat]);
+    sel.innerHTML = optHtml;
+    sel.value = _subFilterState[cat] || '';
+    sel.addEventListener('change', function () {
+      _subFilterState[cat] = sel.value || '';
+      applyOne(tabId, cat, categorizedInv()[cat]);
     });
-    var shell = tabDiv.querySelector('.classic-inventory-shell');
-    if (shell) tabDiv.insertBefore(bar, shell); else tabDiv.appendChild(bar);
-    stickBarBelowPriorLayers(bar);
-  }
 
-  // 篩選列的 sticky top = 它前面所有「已經吸頂的層」(快速操作列、搜尋框)目前的實際高度加總,
-  // 用量測代替寫死 px——三個分頁按鈕數/字級不同時都能自動對齊,不會疊到或留縫。延到
-  // requestAnimationFrame 才量測:同一輪還有其他外掛(afk-itemsearch 插搜尋框)接著調整
-  // DOM/高度,同步當下量到的可能是還沒定案的中間值,等這輪畫面 layout 完成後量才準。
-  function stickBarBelowPriorLayers(bar) {
-    requestAnimationFrame(function () {
-      var offset = 0;
-      var p = bar.previousElementSibling;
-      while (p) { offset += p.offsetHeight; p = p.previousElementSibling; }
-      bar.style.top = offset + 'px';
-    });
+    var isearchInput = document.getElementById('afk-isearch-' + CAT_TO_ISEARCH_KEY[cat]);
+    var searchBox = isearchInput ? isearchInput.parentElement : null;
+    if (searchBox) {
+      // 排在輸入框後面、排序鈕(.classic-sort-wrap,若存在)前面
+      var sortWrap = searchBox.querySelector('.classic-sort-wrap');
+      searchBox.insertBefore(sel, sortWrap || null);
+    } else {
+      var shell = tabDiv.querySelector('.classic-inventory-shell');
+      if (shell) tabDiv.insertBefore(sel, shell); else tabDiv.appendChild(sel);
+    }
   }
 
   // 2026-07-13(修正搜尋/子分類篩選互相覆寫閃爍):同時檢查 afk-itemsearch.js 的搜尋關鍵字,
@@ -169,7 +166,7 @@
     TAB_CONFIG.forEach(function (cfg) {
       var tabDiv = document.getElementById(cfg.tabId);
       if (!tabDiv) return;
-      if (tabDiv.querySelector('.afk-subfilter-bar')) return;   // 篩選列還在→這次沒有重建,篩選狀態不受影響,跳過
+      if (tabDiv.querySelector('.afk-subfilter-select')) return;   // 篩選選單還在→這次沒有重建,篩選狀態不受影響,跳過
       if (!buckets) buckets = categorizedInv();
       buildBar(cfg.tabId, cfg.cat);
       applyOne(cfg.tabId, cfg.cat, buckets[cfg.cat]);

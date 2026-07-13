@@ -155,5 +155,68 @@
   wrapped.__afkDollPetWrapped = true;
   window.applyDollCursor = wrapped;
 
+  /* --------------------------------------------------------------------------
+   * 「顯示寵物 / 顯示招喚獸」開關(2026-07-13 待辦#5,供 afk-quickpanel.js 省電模式串接)
+   *
+   * 「顯示寵物」同時控制兩處寵物相關畫面:①本檔的飄浮娃娃寵物(refreshVisibility 額外
+   *   檢查此開關)②隊伍面板裡的出戰寵物卡片(js/22-pets.js renderPetTeamHTML)。
+   * 「顯示招喚獸」控制隊伍面板裡的召喚物卡片(js/23-summons.js renderSummonTeamHTML)。
+   * 兩者渲染結果都只是純字串塞進 #squad-tab-team.innerHTML,沒有專屬 class 可選——
+   *   故在這裡包一層 wrapper class(afk-pet-team-wrap / afk-summon-team-wrap)方便 CSS
+   *   顯示/隱藏,不改內容本身。用 CSS class 開關(而非改字串內容重建)可以立即生效,
+   *   不需要等下一次 renderSquadPanel 重繪。
+   * 找不到對應原作函式(改版/改名)就整組略過,不影響其餘功能。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    var PET_KEY = 'afk_pet_visible', SUMMON_KEY = 'afk_summon_visible';
+
+    function readPref(key) { try { return localStorage.getItem(key) !== '0'; } catch (e) { return true; } }
+    function writePref(key, on) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {} }
+
+    function applyBodyClass() {
+      document.body.classList.toggle('afk-hide-pet', !readPref(PET_KEY));
+      document.body.classList.toggle('afk-hide-summon', !readPref(SUMMON_KEY));
+      refreshVisibility();   // 飄浮娃娃寵物也要跟著「顯示寵物」開關走
+    }
+
+    function wrapTeamHtmlFn(fnName, wrapClass) {
+      var orig = window[fnName];
+      if (typeof orig !== 'function' || orig.__afkVisWrapped) return false;
+      var wrapped = function () {
+        var html = orig.apply(this, arguments);
+        return html ? '<div class="' + wrapClass + '">' + html + '</div>' : html;
+      };
+      wrapped.__afkVisWrapped = true;
+      window[fnName] = wrapped;
+      return true;
+    }
+
+    function injectVisCss() {
+      if (document.getElementById('afk-pet-summon-vis-style')) return;
+      var s = document.createElement('style');
+      s.id = 'afk-pet-summon-vis-style';
+      s.textContent = 'body.afk-hide-pet .afk-pet-team-wrap{display:none !important;}body.afk-hide-summon .afk-summon-team-wrap{display:none !important;}';
+      document.head.appendChild(s);
+    }
+
+    function install() {
+      injectVisCss();
+      wrapTeamHtmlFn('renderPetTeamHTML', 'afk-pet-team-wrap');
+      wrapTeamHtmlFn('renderSummonTeamHTML', 'afk-summon-team-wrap');
+      applyBodyClass();
+    }
+    try {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+      else install();
+    } catch (e) { console.warn('[AFK-doll-pet] 顯示寵物/召喚獸開關安裝失敗,已略過:', e); }
+
+    window.isPetVisible = function () { return readPref(PET_KEY); };
+    window.showPet = function () { writePref(PET_KEY, true); applyBodyClass(); };
+    window.hidePet = function () { writePref(PET_KEY, false); applyBodyClass(); };
+    window.isSummonVisible = function () { return readPref(SUMMON_KEY); };
+    window.showSummon = function () { writePref(SUMMON_KEY, true); applyBodyClass(); };
+    window.hideSummon = function () { writePref(SUMMON_KEY, false); applyBodyClass(); };
+  })();
+
   console.log('[AFK-doll-pet] hooks OK');
 })();
