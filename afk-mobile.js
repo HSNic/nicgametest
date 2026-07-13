@@ -286,8 +286,37 @@
       ensureLoadSelectSlotPicker();   // 選角畫面(手機)8 顆存檔位按鈕:面板一出現就補插+每次刷新 active/名稱,idempotent
       ensureLoadArchOverlay();   // 選角畫面(手機)拱門疊圖(見下方 2026-07-13 註解),idempotent
       ensureTownNpcList();   // 城鎮 NPC 條列式選單(手機;見下方 2026-07-13 稍晚註解),idempotent(簽章沒變就不重建)
+      capEquipmentPanelHeight();   // 裝備視窗高度上限(手機;見下方 2026-07-14 註解),idempotent
     }
     setInterval(mirror, 300);
+
+    // 2026-07-14 使用者回報:裝備分頁畫面過小時,下半段裝備格子看不到、也滑不下去。追出根因後
+    // 先用 CSS 固定值(100vh-130px)當高度上限試過——太粗略:130px 是隨便假設「上面留白大概這麼
+    // 多」,但實際上面留白(狀態列+分頁按鈕格,#tab-content-panel 的 top 位置)遠比 130px 多
+    // (實測約 267px),算出來的上限還是超出畫面。改成直接量測 #tab-content-panel 目前實際的
+    // 螢幕座標,精確算出「從它開始、到畫面最下方(扣掉底部導覽列)還剩多少空間」,設成
+    // max-height(不影響 css/floating-ui.css 原本的 height 計算,max-height 疊加封頂即可)。
+    // 每 300ms 跟著 mirror() 重算一次,版面(分頁切換/視窗縮放)變動也會自動跟上。
+    function capEquipmentPanelHeight() {
+      var host = document.getElementById('tab-content-panel');
+      if (!host || !host.classList.contains('equipment-panel-host')) return;
+      var NAV_H = 56, BUFFER = 12, MIN_H = 300;
+      var hostTop = host.getBoundingClientRect().top;
+      var maxH = Math.max(MIN_H, Math.floor(window.innerHeight - hostTop - NAV_H - BUFFER));
+      // ⚠ 踩過:一開始用 max-height 疊加封頂,結果沒有生效(#tab-content-panel 是 flex-1 的 flex
+      // 子項,實測 max-height 對它的算出來的實際高度沒有影響,原因不明)。改成寫進 CSS 變數
+      // --afk-eq-max-h,讓上面那條 height:min(var(--equipment-panel-height),var(--afk-eq-max-h))
+      // 規則的 min() 直接吃到我們算出來的精確值——這條路徑實測有效(min() 本身就會正確生效)。
+      var cur = parseFloat(getComputedStyle(host).getPropertyValue('--afk-eq-max-h')) || 0;
+      if (Math.abs(cur - maxH) > 2) {
+        host.style.setProperty('--afk-eq-max-h', maxH + 'px');
+        // js/19-equipment-window.js 的 #equipment-window 高度是開啟/resize 那一刻才讀
+        // #tab-content-panel 目前的 rect 算的(fitEquipmentWindowToViewport,監聽 window resize
+        // 事件觸發),不會自己偵測到我們剛剛調整的變數——補發一個 resize 事件讓它重新讀取、
+        // 重新排版,裝備視窗的實際高度才會跟著我們封頂後的容器高度一起變小。
+        try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+      }
+    }
 
     // 2026-07-13:選角畫面(手機)拱門畫框疊圖——見上方 CSS `#m-load-arch-overlay` 註解。
     //   插在 #load-slot-grid 內部(inset:0 貼滿同容器),跟角色卡片共用同一個 background-size/
@@ -384,6 +413,19 @@
           openTownFloatWindow('時空裂痕', '進入', renderRiftEntrance);
         }));
       }
+      // 2026-07-14 使用者回報:清單往下滑到底,底部導覽列會蓋住最後一段(NPC數量多的城鎮如銀騎士村
+      // 7位最明顯)。根因追了兩輪才找到:清單是靠 .m-col-center 的 overflow:visible 溢出畫出來的
+      // (見上面 CSS 那條大註解),但 #game-screen 的 scrollHeight 是「所有子元素墨水溢出範圍」算出來的
+      // 固定值,不會因為調它自己的 padding-bottom 而變大(用 JS 量測動態調整 padding-bottom 試過,
+      // 完全沒有效果——因為 padding 只會在 .m-col-center 那個 flex:1 的框「內部」重新分配空間,
+      // 不會讓已經溢出框外的溢出範圍變大,scrollHeight 早就被溢出內容的絕對高度鎖住了)。
+      // 真正有效的解法:溢出範圍是「清單本身的墨水延伸多遠」決定的,所以直接在清單最後面插入一個
+      // 「看不見但真的佔位」的 spacer(不是調外層 padding),它本身就是清單溢出內容的一部分,
+      // scrollHeight 自然就會把這塊空間算進去,#game-screen 才捲得到、導覽列才不會蓋住最後一位NPC。
+      var spacer = document.createElement('div');
+      spacer.setAttribute('aria-hidden', 'true');
+      spacer.style.cssText = 'flex:0 0 auto;height:72px;';   // 72px:導覽列 56px + 一點緩衝
+      container.appendChild(spacer);
       container.classList.remove('hidden');
     }
 
@@ -1012,7 +1054,34 @@
       // 兩者高度對不上,吸頂的偏移量算出來的位置比實際版面低了一截，才會空一段又蓋到下面。
       // 這裡不需要吸頂效果(#m-status 本來就固定在最上方看得到目前分頁),直接關掉 sticky。
       'body.m-mobile #col-right > .tab-bar{position:static !important;top:auto !important;}',
-      'body.m-mobile #tab-content-panel{flex:1 1 auto !important;height:auto !important;min-height:0 !important;}',   /* 背包欄:原生 height:70vh 害底部留空 → 還原撐滿 */
+      // 2026-07-14 使用者回報:套用原作v3.3.27後,裝備欄手機版樣式跑掉(格子位置對不齊角色底圖、
+      // 版面被裁切)。根因:原作新版把裝備視窗改成「內嵌到 #tab-content-panel」,靠 CSS 變數
+      // --equipment-panel-height 動態撐高這個容器(css/floating-ui.css 的 #tab-content-panel.equipment-panel-host
+      // 規則),但下面這條我們自己的規則(body.m-mobile #tab-content-panel{height:auto!important})
+      // 選擇器優先度剛好比原作那條高(多了 body.m-mobile 這層),兩邊都用 !important、我們的贏 →
+      // 高度被鎖死在 auto,原作要撐高的效果失效,裝備格子跟著跑位。
+      // 解法:裝備視窗開啟時(容器會被原作加上 .equipment-panel-host)讓出來,交還高度控制權給原作新版
+      // 的內嵌樣式;其他分頁(能力/技能/道具/武器/防具/自動販賣等)不受影響、行為不變。
+      'body.m-mobile #tab-content-panel:not(.equipment-panel-host){flex:1 1 auto !important;height:auto !important;min-height:0 !important;}',   /* 背包欄:原生 height:70vh 害底部留空 → 還原撐滿(裝備視窗開啟時排除,見上方註解) */
+      // 2026-07-14 使用者再回報:裝備分頁在手機畫面過小時,下半段裝備格子(長靴/戒指3/4/魔法娃娃…)
+      // 看不到、也滑不下去。根因:--equipment-panel-height 是原作純粹「用寬度換算高度」算出來的
+      // (寬 × 408/183 的固定比例,約 2.23 倍),沒有考慮手機實際可視高度還剩多少——寬螢幕變窄的
+      // 手機(寬:高比例比 183:408 更「方」)算出來的高度會比實際能顯示的空間還高。而 #equipment-window
+      // 本身是 position:fixed(見 css/floating-ui.css),不屬於頁面任何可捲動的版面流程,超出畫面
+      // 的部分無法用「滑」的方式捲到——不是清單那種「捲動範圍算錯」,是這個視窗本身完全沒有捲動
+      // 機制。解法:①幫 #tab-content-panel(裝備視窗開啟時的高度來源)加上「不超過可視高度」的
+      // 上限(scoped 在 .equipment-panel-host,不影響其他分頁);#equipment-window 的高度是 JS 讀
+      // #tab-content-panel 目前的實際高度即時算的(見 js/19-equipment-window.js
+      // fitEquipmentWindowToViewport),容器高度被我們這樣封頂後,視窗高度會自動跟著封頂,不用碰
+      // 那支 JS。②把 #equipment-window 原本的 overflow:hidden 改 auto,超出上限的部分改用滑動
+      // 看,不會整段消失看不到。
+      // --afk-eq-max-h 由下方 capEquipmentPanelHeight() 精確量測後設定(容器實際 top 位置到畫面
+      // 最下方扣掉導覽列還剩多少空間),取代原本 calc(100vh-130px) 這種固定假設值——130px 是隨便
+      // 猜的「上面留白大概這麼多」,實測容器實際 top 位置遠比這個多(約 267px),固定值算出來的
+      // 上限還是會超出畫面;量出來之前先給 100vh 保底(容器還沒建立/量測時,行為等同原作,不會
+      // 更差)。
+      'body.m-mobile #tab-content-panel.equipment-panel-host{height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;min-height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;}',
+      'body.m-mobile .equipment-window.equipment-window-embedded{overflow-y:auto !important;-webkit-overflow-scrolling:touch;}',
       'body.m-mobile #automation-panel{flex:1 1 auto !important;}',   /* 設定欄:原生 flex:none 害填不滿 → 還原撐滿 */
       'body.m-mobile #automation-panel > div:last-child{max-height:none !important;}',   /* 解除原生 220px 內捲上限,讓內容隨欄高自然捲動 */
 
@@ -1194,13 +1263,26 @@
 
       /* 底部導覽列:遊戲本體 .m-col-left/.m-col-center/.m-col-right 各自帶 order:1~3(它自己響應式版面用),
          而這裡沒指定 order 時瀏覽器預設 0,會比欄位內容更早排(視覺上被擠到 #m-status 正下方、跑到頂部)。
-         給一個夠大的 order 值,確保無論核心欄位用到多少 order 都排在它們之後,固定貼在畫面最下方。
-         2026-07-13 使用者回報:村莊NPC對話視窗(#town-interaction-container)內容較長時,底部導覽列
-         會被擠出可視範圍、要滑到最底才看得到——根因是 #m-nav 只是 #game-screen(fixed+overflow-y:auto)
-         這個直向 flex 欄裡「排最後」的一般子元素,內容一長,整欄變高,#m-nav 自然被推到內容最下面,
-         要捲到底才會出現(而不是真的被別的東西蓋住,是「要捲很久才能看到」)。補 position:sticky+bottom:0,
-         讓它在 #game-screen 捲動時永遠貼在可視畫面最下方,不受內容多寡影響。 */
-      'body.m-mobile #m-nav{display:flex !important;flex:0 0 auto !important;order:99 !important;height:56px;background:#0f172a;border-top:1px solid #334155;position:sticky !important;bottom:0 !important;z-index:60 !important;}',
+         2026-07-13 使用者回報:村莊NPC對話視窗內容較長時,底部導覽列會被擠出可視範圍——當時改成
+         position:sticky+bottom:0。2026-07-14 使用者再回報:切到城鎮NPC地圖式清單(#town-npc-map)
+         往下滑,導覽列會跟著滑到清單中間、沒有貼在畫面最下方。追出根因:sticky 的「貼底」範圍只在
+         它自身所在的 flex 容器(.m-col-center 那個直行欄)裡有效,而 .m-col-center 是 flex:1 1 auto
+         (撐滿「扣掉狀態列/導覽列後的剩餘空間」,不是撐滿內容本身);NPC清單變高時只解除了
+         overflow:hidden 讓內容視覺溢出這個固定框(見上面 :has(#town-npc-map) 那條),框本身的版面
+         高度沒有跟著長高,#m-nav 的 sticky 貼底範圍還是照那個「沒長高的框」算,結果貼在清單中間、
+         不是畫面最下方。這類「巢狀 flex 各自 auto/fill 撐出來的高度到底以誰為準」很容易再踩雷,
+         改成完全跳出這層巢狀 flex 版面——直接 position:fixed 貼在整個瀏覽器視窗最下方(跟畫面裡任何
+         flex 欄的高度計算都無關,永遠精確貼底);同時把 #game-screen 的可捲動內容底部留出跟導覽列
+         等高的空間(padding-bottom),避免捲到底時最後一段內容被固定導覽列蓋住看不到。 */
+      // #m-nav 改 fixed 後不再佔用 flex 版面空間,所有手機畫面(戰鬥/背包/隊伍/設定…)都要留一份
+      // 跟導覽列等高的底部留白,否則畫面內容會被蓋住 56px。
+      'body.m-mobile #game-screen{padding-bottom:56px !important;box-sizing:border-box !important;}',
+      // 城鎮NPC地圖式清單(#town-npc-map,見上面 overflow:visible 那條)實測發現 overflow:visible
+      // 溢出的內容,#game-screen 量出來的 scrollHeight 會少算一截(NPC越多城鎮少算越多,不是固定值),
+      // 固定補一個猜測值容易補少(仍蓋住)或補多(浪費空間)。改成 JS 精確量測補償,見下方
+      // ensureTownNpcList() 呼叫的 fixTownNpcScrollPadding()——每次清單重繪都重新量測、動態調整
+      // #game-screen 的 padding-bottom,不夠才補、夠了就維持基本的 56px。
+      'body.m-mobile #m-nav{display:flex !important;position:fixed !important;left:0 !important;right:0 !important;bottom:0 !important;width:100% !important;height:56px;background:#0f172a;border-top:1px solid #334155;z-index:60 !important;}',
       'body.m-mobile #m-nav button{flex:1;background:transparent;border:none;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:inherit;touch-action:manipulation;}',   /* touch-action:manipulation:取消 iOS 雙擊縮放的 300ms 等待 → click 在 touchend 當下就發,不會被 mirror/戰鬥重排插隊取消(iPhone 要按多下才有反應的根因) */
       'body.m-mobile #m-nav button.m-active{color:#fcd34d;background:#1e293b;}',
       'body.m-mobile #m-nav button:active{background:#334155;}',

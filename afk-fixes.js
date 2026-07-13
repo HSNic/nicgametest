@@ -559,5 +559,58 @@
     } catch (e) { console.warn('[AFK-fixes] renderSquadPanel 輸入框編輯防重繪 安裝失敗,已略過:', e); }
   })();
 
+  /* --------------------------------------------------------------------------
+   * 修正#12(2026-07-14 待辦「離線結算變慢與404圖片請求優化」):村莊 NPC 影子圖(.tn-shadow,
+   * assets/npc/<id>/idle_s_0.png)重複 404 請求
+   *
+   * 背景:原作 renderTownNPCMap()(js/11-world-map.js)每次進城鎮/切城鎮都會重建 NPC 站位,
+   *   每個 NPC 站位都插一張 <img class="tn-shadow" src="assets/npc/<id>/idle_s_0.png"
+   *   onerror="this.remove()">——沒有影子圖的 NPC(職業動畫/舊圖/告示牌)每次重建都會
+   *   重新 404 一次,不像怪物動畫(js/09-vfx-render.js 的 _mobAnimCache)/職業戰鬥動畫
+   *   (_morphBattleCache)有探測過就不再試的快取。批次結算連續切換 8 個存檔位、每個角色
+   *   進自己的城鎮時都會重觸發,主控台跳出大量重複 404。
+   * 解法:用一個記憶體 Set 記住「這次分頁已經 404 過的完整圖片網址」(含 querystring,
+   *   重新整理頁面就清空、不寫 localStorage);renderTownNPCMap() 執行完後,對剛插入的
+   *   .tn-shadow 逐一比對——已知 404 過的直接移除,不讓瀏覽器重新發送請求。
+   *   跟怪物動畫快取同一個精神,只是原作沒幫這塊做、外掛層補上,不動 js/11 本體。
+   * 找不到 renderTownNPCMap 就安靜略過,不影響其餘功能。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    var badShadowUrls = {};
+
+    document.addEventListener('error', function (e) {
+      var t = e.target;
+      if (t && t.tagName === 'IMG' && t.classList && t.classList.contains('tn-shadow')) {
+        var src = t.getAttribute('src');
+        if (src) badShadowUrls[src] = true;
+      }
+    }, true);
+
+    function install() {
+      if (typeof window.renderTownNPCMap !== 'function' || window.renderTownNPCMap.__afkShadowCacheWrapped) return false;
+      var orig = window.renderTownNPCMap;
+      var wrapped = function () {
+        var ret = orig.apply(this, arguments);
+        try {
+          document.querySelectorAll('.tn-shadow').forEach(function (img) {
+            var src = img.getAttribute('src');
+            if (src && badShadowUrls[src]) img.remove();   // 已知 404 過的網址,直接移除、不再發請求
+          });
+        } catch (e) {}
+        return ret;
+      };
+      wrapped.__afkShadowCacheWrapped = true;
+      window.renderTownNPCMap = wrapped;
+      console.log('[AFK-fixes] 村莊NPC影子圖404快取 已掛上');
+      return true;
+    }
+    try {
+      if (!install()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+        else setTimeout(install, 0);
+      }
+    } catch (e) { console.warn('[AFK-fixes] 村莊NPC影子圖404快取 安裝失敗,已略過:', e); }
+  })();
+
   console.log('[AFK-fixes] hooks OK — 通用修正外掛已啟用。');
 })();

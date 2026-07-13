@@ -40,6 +40,7 @@ function playerAttack() {
     
     let _mainHardSkin = mobHardSkin(target);   // 🏅 穿透精通用：主目標被扣減前的硬皮值
     let result = getPhysicalDmg(dice, target, wpn, arrowData, false, false, _sureHit, _sureCrit);   // 🔮 麗人 5/5：必中（可自然重擊/爆擊）；🔧 迴避精通：必中且必爆
+    if (!result.hit && wpn && wpn.missGrazeRate && Math.random() * 100 < wpn.missGrazeRate) result = getPhysicalDmg(dice, target, wpn, arrowData, false, false, false, false, player.eq.wpn, true);   // 🏺 水精靈王的撫摸：未命中時 30% 改判為擦傷（50% 傷害、不爆擊）
 
     if (result.hit) {
         try { playSfx(result.crit ? 'crit' : 'attack'); } catch(e){}   // 🔊 音效：普攻命中→普攻聲、爆擊→爆擊聲
@@ -128,6 +129,7 @@ function playerAttack() {
         if (wpn && wpn.eleBonusDmg && target.e === wpn.eleBonusDmg.ele) result.dmg += (wpn.eleBonusDmg.add || 0);   // 🏺 兇殘惡鬼的毒牙：對特定屬性敵人額外固定傷害 +N（如對風屬性+10）
         if (wpn && wpn.immParalyzeBonusDmg && (target.boss || target.immParalyze || target.immStun)) result.dmg += wpn.immParalyzeBonusDmg;   // 🏺 屍毒之針：對免疫麻痺（頭目/免疫）目標額外固定傷害 +N
         target.curHp -= result.dmg;
+        if (target.curHp > 0 && wpn && wpn.hitEchoMagic && Math.random() * 100 < (wpn.hitEchoMagic.rate || 0)) { let _he = wpn.hitEchoMagic; target.curHp -= result.dmg; target.justHit = _he.ele || 'magic'; target._spellHurt = true; mobWake(target); logCombat(`<span class="font-bold" style="color:#fb923c;text-shadow:0 0 6px #dc2626;">【爆破】</span>烈焰爆開，額外造成 ${result.dmg} 點火屬性魔法傷害。`, 'player-special'); }   // 🏺 火精靈王的爆焰：命中 10% 追加等同本擊的火魔傷
         if (target.curHp > 0) consumeStrawCurse(target);   // 🐍 詛咒稻草人：受到攻擊時額外扣 80 水魔傷（每次消耗 1 層·最多 3 層）
         if (result.dmg > 0) { try { playMobHurt(target); } catch(e){} }   // 🔊 音效：怪物受傷（依怪名對應；全域節流）
         if (player._setDragonblood2 && result.dmg > 0) player.hp = Math.min(player.mhp, player.hp + Math.max(1, Math.floor(result.dmg * (player.hp < player.mhp * 0.5 ? 0.05 : 0.01))));   // 🐉 龍血2/5：造成物理傷害吸血1%（自身HP<50%→5%）
@@ -748,7 +750,10 @@ function bombFlowerExplode(who) {
         if (t.curHp <= 0) { let ri = mapState.mobs.findIndex(m => m && m.uid === uid); if (ri !== -1) killMob(ri); }
         hitAny = true;
     });
-    let self = Math.max(1, Math.floor(base * coef));   // 對自己（自傷·不經 MR/剋制/dr）
+    // 反噬屬於火屬性魔法傷害：玩家與傭兵皆套用自身 MR、火屬性抗性；不套用對敵剋制與物理 DR。
+    let selfMrFactor = mrMult(_w.d.mr || 0);
+    let selfFireFactor = Math.max(0, Math.min(1, 1 - effResistPct(_w.d.resFire || 0) / 100));
+    let self = Math.max(1, Math.floor(base * coef * selfMrFactor * selfFireFactor));
     if (_w === player) { player.hp -= self; logCombat(`<span class="font-bold" style="color:#fca5a5;">【爆彈花蕊】</span>爆裂反噬，你受到 ${self} 點火屬性魔法傷害。`, 'player'); }
     else { _w.curHp -= self; logCombat(`<span class="font-bold" style="color:#fca5a5;">【爆彈花蕊】</span>爆裂反噬，協力·${_w._allyName} 受到 ${self} 點火屬性魔法傷害。`, 'enemy'); }   // 🩹 v3.1.76 傭兵自傷扣 curHp（倒地由呼叫端既有檢查結算）
     if (hitAny && !state.ff) renderMobs();
@@ -940,6 +945,7 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
         }
         if(player.d.hurtExplode > 0 && totalDmg > 0) { bombFlowerExplode(); if(player.hp <= 0) { killPlayer(); return; } }   // 💥 遺物 爆彈花蕊：受物理傷害時爆裂（自傷可致死→補死亡結算）
         if(totalDmg > 0) _relicOnDamageHeal();   // 🏺 遺物 白螞蟻蛋殼：受擊自癒（5 秒節流·可救回 <=0 血）
+        if(totalDmg > 0 && player.hp > 0) hurtRapidfireProc();   // 🏺 地精靈王的抗拒：受物理傷害時強制連射（經典亦可）
 
         let atkMsg = `${mobInsightPrefix}<span class="${getMobColor(mob.lv)}">${mob.n}</span> 擊中你，造成 ${totalDmg} 點傷害。`;
         if(heavy) atkMsg += " (重擊!)";
@@ -1130,6 +1136,7 @@ function enemyAttackAlly(mob, ally) {
     }
     if ((d.hurtExplode || 0) > 0 && totalDmg > 0) bombFlowerExplode(ally);   // 💥 v3.1.76 爆彈花蕊（傭兵）：受物理傷害爆裂（自傷扣 curHp·倒地由下方檢查結算）
     if (totalDmg > 0) _allyRelicOnDamageHeal(ally);   // 🏺 v3.1.76 白螞蟻蛋殼（傭兵）：受擊自癒（每傭兵獨立冷卻·可救回 <=0 血）
+    if (totalDmg > 0 && ally.curHp > 0 && typeof allyRapidfire === 'function') allyRapidfire(ally, true, true);   // 🏺 地精靈王的抗拒（傭兵）：受擊強制連射，經典亦可
     if (ally.curHp <= 0) { ally.curHp = 0; ally._downed = true; ally._reviveCd = 150; logCombat(`<span class="text-amber-400 font-bold">協力傭兵 ${ally._allyName} 倒下了！（可用返生術立即復活，或 15 秒後自動使用復活卷軸，或回村免費復活）</span>`, 'enemy', 'enemy'); try { renderSquadPanel(); } catch (e) {} }
 }
 
@@ -1296,6 +1303,7 @@ function applyMobMagicToAlly(mob, sk, ally) {
         if (ally._setIron5 && ally.eq && ally.eq.wpn && ally._ironSweepTick !== state.ticks) { ally._ironSweepTick = state.ticks; allyIronGuardSweep(ally, '受擊'); }   // 🆕 v2.6.14 #5c：鐵衛5/5 受擊橫掃
         if ((d.hurtExplode || 0) > 0 && dmg > 0) bombFlowerExplode(ally);   // 💥 v3.1.76 爆彈花蕊（傭兵）：受魔法傷害亦爆裂（鏡像玩家 js/04）
         if (dmg > 0) _allyRelicOnDamageHeal(ally);   // 🏺 v3.1.76 白螞蟻蛋殼（傭兵）：受魔法傷害亦自癒（物理/魔法共用每傭兵冷卻）
+        if (dmg > 0 && ally.curHp > 0 && typeof allyRapidfire === 'function') allyRapidfire(ally, true, true);   // 🏺 地精靈王的抗拒（傭兵）：受魔法傷害時強制連射
         if (ally.curHp <= 0) { ally.curHp = 0; ally._downed = true; ally._reviveCd = 150; logCombat(`<span class="text-amber-400 font-bold">協力傭兵 ${ally._allyName} 倒下了！（可用返生術立即復活，或 15 秒後自動使用復活卷軸，或回村免費復活）</span>`, 'enemy'); try { renderSquadPanel(); } catch (e) {} }
         return;
     }
@@ -1692,6 +1700,7 @@ function applyMobMagic(mob, sk) {
         }
 
         if(player.d.hurtExplode > 0 && dmg > 0) bombFlowerExplode();   // 💥 遺物 爆彈花蕊：受魔法傷害時亦爆裂（自傷由下方死亡檢查結算）
+        if (dmg > 0 && player.hp > 0) hurtRapidfireProc();   // 🏺 地精靈王的抗拒：受魔法傷害時強制連射（經典亦可）
         if(player.hp <= 0) killPlayer();
         else updateUI();
     }

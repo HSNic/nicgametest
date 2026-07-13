@@ -63,7 +63,11 @@
     // 跟名稱文字裡本來就有的「+14」「(43)」重複顯示，桌機/手機都拿掉(只隱藏這兩個 class，
     // 不動同樣底層 CSS 但用在裝備視窗 js/19 的 .equipment-slot-*，那邊沒人反映重複)。
     + '.classic-icon-corner-value{display:none!important;}'
-    + '.classic-equipped-badge{display:none!important;}';
+    + '.classic-equipped-badge{display:none!important;}'
+    // 2026-07-14 使用者要求:整理背包選單的「分類整理」是本體按鈕(js/10-ui-tabs.js,不可改原始碼)，
+    // 只隱藏這一顆(保留品質整理/名稱整理/自動整理勾選框)，選擇器命中的是本體渲染出來的
+    // <button data-sort="category">，原作若改版拿掉這顆按鈕，選擇器自動失效不影響其他功能。
+    + '.classic-sort-menu [data-sort="category"]{display:none!important;}';
 
   function inject() {
     if (document.getElementById(STYLE_ID)) return true;

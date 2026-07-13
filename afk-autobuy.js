@@ -2,6 +2,12 @@
  * afk-autobuy.js — 外掛自動購買:在「自動買銀箭」下方加一個「外掛」框,提供
  *   ① 肉耗盡時自動購買        (寵物項圈每 2 秒消耗 = 總項圈數 的肉,沒肉夥伴就停手)
  *   ② 自動購買魔法卷軸(魔法屏障) (原版只有自動「施放」、沒有自動「補貨」,卷軸用完屏障就斷)
+ *   ③ 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:提前補貨門檻(1~20,下拉選擇)——
+ *     離線快速結算(afk-offline.js fastConsumeOne/fastRefill)原本只在「完全斷貨」才補,
+ *     常常補貨的那一拍剛好跟不上、整段退回慢速全模擬。這裡新增的門檻讓afk-offline.js
+ *     提前判斷「庫存低於這個數字就先補」,適用範圍:治癒藥水(目前選定那瓶)、藍色藥水、
+ *     增益藥水(加速/勇敢/謹慎/精靈餅乾)、變身卷軸、瞬間移動卷軸。批量本身(補貨買多少)
+ *     使用者要求直接固定改成250,不做成可調整UI(常數見afk-offline.js的FAST_REFILL_BATCH)。
  *
  * 設計:完全不改原作者程式碼。
  *   - UI:把一個自製框注入到原設定面板「自動買銀箭」那張卡片下方(找 #set-auto-buy-arrow 定位)。
@@ -34,6 +40,9 @@
 
   var LS_PREFIX = 'afk_autobuy_';          // 實際鍵為 afk_autobuy_<base>_<slot>(per 存檔位)
 
+  var POTION_THRESHOLD_KEY = 'potion_threshold';
+  var POTION_THRESHOLD_DEFAULT = 5;        // 提前補貨門檻預設值(1~20 下拉可調整)
+
   // ----- 自我檢查:核心全域都在才啟用 -------------------------------------
   if (typeof window.tick !== 'function' ||
       typeof window.shopPrice !== 'function' ||
@@ -58,6 +67,23 @@
     return v;
   }
   function prefSet(base, on) { try { if (validSlot()) { localStorage.setItem(prefKey(base), on ? '1' : '0'); _prefCache[base + '_' + currentSlot] = !!on; } } catch (e) {} }
+
+  // 提前補貨門檻(數字 1~20,非勾選框):跟上面 prefOn/prefSet 分開一套,存的是數字不是布林值。
+  function potionThreshold() {
+    if (!validSlot()) return POTION_THRESHOLD_DEFAULT;
+    var k = POTION_THRESHOLD_KEY + '_' + currentSlot;
+    if (k in _prefCache) return _prefCache[k];
+    var v; try { v = parseInt(localStorage.getItem(prefKey(POTION_THRESHOLD_KEY)), 10); } catch (e) { v = NaN; }
+    if (!(v >= 1 && v <= 20)) v = POTION_THRESHOLD_DEFAULT;
+    _prefCache[k] = v;
+    return v;
+  }
+  function potionThresholdSet(v) {
+    v = Math.max(1, Math.min(20, parseInt(v, 10) || POTION_THRESHOLD_DEFAULT));
+    try { if (validSlot()) { localStorage.setItem(prefKey(POTION_THRESHOLD_KEY), String(v)); _prefCache[POTION_THRESHOLD_KEY + '_' + currentSlot] = v; } } catch (e) {}
+  }
+  // 供 afk-offline.js 的 fastRefillThreshold() 讀取,不必知道這裡的存檔細節
+  window.__afkAutobuyPotionThreshold = potionThreshold;
 
   function invCount(id) {
     var c = 0, inv = (typeof player !== 'undefined' && player && player.inv) ? player.inv : [];
@@ -121,16 +147,24 @@
     var box = document.createElement('div');
     box.id = 'afk-autobuy-box';
     box.className = 'bg-slate-800 p-3 rounded-lg border border-amber-600';
+    var thresholdOptions = '';
+    for (var n = 1; n <= 20; n++) thresholdOptions += '<option value="' + n + '">' + n + '</option>';
     box.innerHTML =
       '<div class="text-sm text-amber-400 mb-2 border-b border-slate-700 pb-1 font-bold">🔌 外掛</div>' +
       '<div class="flex flex-col gap-2 text-sm">' +
         '<label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-auto-buy-meat" class="w-4 h-4"><span class="text-rose-300">自動購買肉（' + (MEAT_BUNDLE_AMT * MEAT_BUNDLES) + '）</span></label>' +
         '<label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-auto-buy-magicbarrier" class="w-4 h-4"><span class="text-cyan-300">自動購買魔法卷軸(魔法屏障)（' + SCROLL_REFILL + '）</span></label>' +
+        '<label class="flex items-center gap-2"><span class="text-emerald-300">離線快速結算·藥水提前補貨門檻</span>' +
+          '<select id="afk-autobuy-potion-threshold" class="bg-slate-900 border border-slate-600 text-white rounded py-0.5 px-1 text-sm">' + thresholdOptions + '</select>' +
+        '</label>' +
+        '<span class="text-slate-500 text-xs">庫存低於這個數字就先補貨(不用等真的用完),適用治癒/藍色/增益藥水與變身/瞬移卷軸,每次補貨固定買250個。</span>' +
       '</div>';
     card.parentNode.insertBefore(box, card.nextSibling);
 
     bindChange('set-auto-buy-meat', 'meat');
     bindChange('set-auto-buy-magicbarrier', 'magicbarrier');
+    var thSel = document.getElementById('afk-autobuy-potion-threshold');
+    if (thSel) thSel.addEventListener('change', function () { potionThresholdSet(thSel.value); });
     restoreForSlot();   // 注入當下若已在遊戲中(熱重載/外掛後載)也立即還原該角色設定
     return true;
   }
@@ -146,8 +180,10 @@
   function restoreForSlot() {
     var m = document.getElementById('set-auto-buy-meat');
     var s = document.getElementById('set-auto-buy-magicbarrier');
+    var t = document.getElementById('afk-autobuy-potion-threshold');
     if (m) m.checked = prefOn('meat');
     if (s) s.checked = prefOn('magicbarrier');
+    if (t) t.value = String(potionThreshold());
   }
 
   // 載入存檔 / 新建角色後,currentSlot 已確定 → 還原該角色的勾選 UI

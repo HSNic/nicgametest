@@ -156,15 +156,17 @@
   window.applyDollCursor = wrapped;
 
   /* --------------------------------------------------------------------------
-   * 「顯示寵物 / 顯示招喚獸」開關(2026-07-13 待辦#5,供 afk-quickpanel.js 省電模式串接)
+   * 「顯示寵物 / 顯示招喚獸」開關(2026-07-13 待辦#5,供 afk-quickpanel.js 省電模式串接;
+   * 2026-07-14 待辦「裝備欄UI與共用倉庫七項問題分析#2」修正方向)
    *
-   * 「顯示寵物」同時控制兩處寵物相關畫面:①本檔的飄浮娃娃寵物(refreshVisibility 額外
-   *   檢查此開關)②隊伍面板裡的出戰寵物卡片(js/22-pets.js renderPetTeamHTML)。
-   * 「顯示招喚獸」控制隊伍面板裡的召喚物卡片(js/23-summons.js renderSummonTeamHTML)。
-   * 兩者渲染結果都只是純字串塞進 #squad-tab-team.innerHTML,沒有專屬 class 可選——
-   *   故在這裡包一層 wrapper class(afk-pet-team-wrap / afk-summon-team-wrap)方便 CSS
-   *   顯示/隱藏,不改內容本身。用 CSS class 開關(而非改字串內容重建)可以立即生效,
-   *   不需要等下一次 renderSquadPanel 重繪。
+   * 只控制「戰場地圖上會實際走動的寵物/召喚獸圖像」(js/22-pets.js #pet-layer,寵物與
+   * 召喚物v2共用同一個圖層渲染)——**不隱藏隊伍面板的寵物/召喚物卡片**(使用者 2026-07-14
+   * 明訂:卡片不可隱藏,只隱藏戰場走動圖像)。2026-07-13 原本的版本把隊伍卡片
+   * (renderPetTeamHTML/renderSummonTeamHTML)也包了 wrapper class 一起藏,方向錯了,
+   * 已拿掉那段,只留下面 wrapPetSpriteEl() 這條專門管戰場 sprite 的。
+   * ⚠️ 只隱藏視覺(display:none),寵物/召喚物本身仍正常參戰、正常計算傷害/回血/加成
+   * (petsOutList()/summonRenderList() 完全不動,戰鬥數值不受影響);_petWanderStep 等
+   * 位置計算 JS 運算仍會照跑,這裡沒有做到「省運算」的效能優化,只解決「方向錯誤」本身。
    * 找不到對應原作函式(改版/改名)就整組略過,不影響其餘功能。
    * ------------------------------------------------------------------------ */
   (function () {
@@ -179,30 +181,40 @@
       refreshVisibility();   // 飄浮娃娃寵物也要跟著「顯示寵物」開關走
     }
 
-    function wrapTeamHtmlFn(fnName, wrapClass) {
-      var orig = window[fnName];
-      if (typeof orig !== 'function' || orig.__afkVisWrapped) return false;
-      var wrapped = function () {
-        var html = orig.apply(this, arguments);
-        return html ? '<div class="' + wrapClass + '">' + html + '</div>' : html;
-      };
-      wrapped.__afkVisWrapped = true;
-      window[fnName] = wrapped;
-      return true;
-    }
-
     function injectVisCss() {
       if (document.getElementById('afk-pet-summon-vis-style')) return;
       var s = document.createElement('style');
       s.id = 'afk-pet-summon-vis-style';
-      s.textContent = 'body.afk-hide-pet .afk-pet-team-wrap{display:none !important;}body.afk-hide-summon .afk-summon-team-wrap{display:none !important;}';
+      // 只隱藏戰場 sprite(靠 wrapPetSpriteEl() 補上的 data-kind 分辨寵物/召喚獸),
+      // 隊伍面板卡片不受這裡影響(2026-07-14 使用者明訂卡片不可隱藏)。
+      s.textContent =
+          'body.afk-hide-pet #pet-layer [data-pet][data-kind="pet"]{display:none !important;}'
+        + 'body.afk-hide-summon #pet-layer [data-pet][data-kind="summon"]{display:none !important;}';
       document.head.appendChild(s);
+    }
+
+    // 幫戰場 sprite 元素補上 data-kind,讓上面的 CSS 能分別隱藏寵物/召喚獸(不動 petsOutList()/
+    // summonRenderList() 本身,兩者仍被戰鬥邏輯共用,只在「畫面上要不要生成/更新這個 sprite 的
+    // DOM 元素」這一層動手,不影響傷害/回血/加成計算)。
+    function wrapPetSpriteEl() {
+      var orig = window._petSpriteEl;
+      if (typeof orig !== 'function' || orig.__afkVisWrapped) return false;
+      var wrapped = function (layer, p) {
+        var el = orig.apply(this, arguments);
+        if (el && p) {
+          var kind = (typeof PET_BOOK !== 'undefined' && PET_BOOK && PET_BOOK[p.form]) ? 'pet' : 'summon';
+          if (el.getAttribute('data-kind') !== kind) el.setAttribute('data-kind', kind);
+        }
+        return el;
+      };
+      wrapped.__afkVisWrapped = true;
+      window._petSpriteEl = wrapped;
+      return true;
     }
 
     function install() {
       injectVisCss();
-      wrapTeamHtmlFn('renderPetTeamHTML', 'afk-pet-team-wrap');
-      wrapTeamHtmlFn('renderSummonTeamHTML', 'afk-summon-team-wrap');
+      wrapPetSpriteEl();
       applyBodyClass();
     }
     try {

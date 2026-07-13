@@ -542,19 +542,36 @@
       fastMode = true;
       console.info('[AFK] ⚡ 快速結算啟動:平均 ' + ticksPerKill.toFixed(1) + ' 拍/殺,每拍消耗 ' + JSON.stringify(consumePerTick));
     }
-    function fastRefill(id) {   // 斷貨 → 比照原作 autoActions / 外掛 autobuy 的自動購買;補不了 → false(退回全模擬)
+    // 🍶 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:分析發現快速結算幾乎都被消耗品
+    //   斷貨拖回全模擬,原因是①每次只補到 100 瓶(治癒)/1 瓶(增益藥水、卷軸),撐不了多久又要
+    //   重補;②只在「完全斷貨」(idx<0)才觸發補貨,不會提前補。使用者確認:①批量一律改大到
+    //   250(不做成可調整UI,直接改常數);②新增「提前補貨門檻」(1~20,可調整,見 afk-autobuy.js
+    //   注入的下拉選單)——庫存低於門檻就先補,不用等真的用到0瓶才補,減少「補貨中間卡一拍」
+    //   的機會。範圍:治癒藥水(目前選定的那瓶)、藍色藥水(補魔)、增益藥水(加速/勇敢/謹慎/
+    //   精靈餅乾)、變身卷軸、瞬間移動卷軸——跟 fastRefill 原本認得的種類完全一致,只是門檻
+    //   從「等於0」放寬成「使用者設定的數字」。肉/魔法屏障卷軸走外掛 autobuy 自己既有的門檻
+    //   (MEAT_MIN/SCROLL_MIN),不受這裡影響。
+    var FAST_REFILL_BATCH = 250;   // 統一批量(原治癒100瓶/增益1瓶,使用者要求一律改大到250)
+    function fastRefillThreshold(id) {   // 這個 id 在潘朵拉補貨門檻的適用範圍內 → 回使用者設定值(1~20);不適用 → 0(維持舊行為:等斷貨才補)
+      var potSel = document.getElementById('set-pot');
+      var inScope = (potSel && potSel.value === id) ||
+        ['potion_blue', 'potion_haste', 'potion_brave', 'new_item_140', 'new_item_139', 'scroll_poly', 'scroll_teleport'].indexOf(id) >= 0;
+      if (!inScope) return 0;
+      return (typeof window.__afkAutobuyPotionThreshold === 'function') ? window.__afkAutobuyPotionThreshold() : 0;
+    }
+    function fastRefill(id) {   // 斷貨(或低於提前補貨門檻) → 比照原作 autoActions / 外掛 autobuy 的自動購買;補不了 → false(退回全模擬)
       try {
         var on = function (cid) { var el = document.getElementById(cid); return !!(el && el.checked); };
         var potSel = document.getElementById('set-pot');
-        if (potSel && potSel.value === id && on('set-auto-buy-pot')) {   // 治癒藥水:自動補貨 100 瓶(同 autoActions)
+        if (potSel && potSel.value === id && on('set-auto-buy-pot')) {   // 治癒藥水:自動補貨(同 autoActions,批量見上方 FAST_REFILL_BATCH)
           var unit = shopPrice(DB.items[id].p);
-          if (player.gold >= 100 * unit) { player.gold -= 100 * unit; gainItem(id, 100, true, true); return true; }
+          if (player.gold >= FAST_REFILL_BATCH * unit) { player.gold -= FAST_REFILL_BATCH * unit; gainItem(id, FAST_REFILL_BATCH, true, true); return true; }
           return false;
         }
         var buyChk = { potion_haste: 'set-auto-buy-haste', potion_brave: 'set-auto-buy-brave', potion_blue: 'set-auto-buy-blue', new_item_140: 'set-auto-buy-cautious', new_item_139: 'set-auto-buy-elfcookie', scroll_poly: 'set-auto-buy-poly', scroll_teleport: 'set-auto-buy-teleport' }[id];
-        if (buyChk && on(buyChk)) {   // 增益藥水/卷軸:買 1 瓶(同 autoActions)
+        if (buyChk && on(buyChk)) {   // 增益藥水/卷軸:批量補貨(同上,原本只買1瓶)
           var p = shopPrice(DB.items[id].p);
-          if (player.gold >= p) { player.gold -= p; gainItem(id, 1, true, true); return true; }
+          if (player.gold >= FAST_REFILL_BATCH * p) { player.gold -= FAST_REFILL_BATCH * p; gainItem(id, FAST_REFILL_BATCH, true, true); return true; }
           return false;
         }
         if (typeof window.__afkAutobuyCheck === 'function') {   // 肉/魔法屏障卷軸:外掛 autobuy(玩家有開才會補)
@@ -570,11 +587,18 @@
         if (d.isArrow) return (typeof consumeArrow === 'function') ? consumeArrow() !== null : false;
         var idx = -1, i;
         for (i = 0; i < player.inv.length; i++) if (player.inv[i] && player.inv[i].id === id) { idx = i; break; }
-        if (idx < 0) {
-          if (!fastRefill(id)) return false;
-          for (i = 0; i < player.inv.length; i++) if (player.inv[i] && player.inv[i].id === id) { idx = i; break; }
-          if (idx < 0) return false;
+        var curCnt = (idx >= 0) ? (player.inv[idx].cnt || 1) : 0;
+        var threshold = fastRefillThreshold(id);   // >0 的種類:低於門檻就提前補,不等真的斷貨(見上方待辦註解)
+        if (curCnt <= threshold) {
+          if (fastRefill(id)) {
+            idx = -1;
+            for (i = 0; i < player.inv.length; i++) if (player.inv[i] && player.inv[i].id === id) { idx = i; break; }
+          } else if (idx < 0) {
+            return false;   // 補不了、且手上完全沒有 → 真的斷貨
+          }
+          // 補不了但手上還有剩(尚未到0)→ 先用現有的,下一輪再嘗試補
         }
+        if (idx < 0) return false;
         var it = player.inv[idx];
         if ((it.cnt || 1) > 1) it.cnt = (it.cnt || 1) - 1; else player.inv.splice(idx, 1);
         return true;

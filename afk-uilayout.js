@@ -22,6 +22,12 @@
  *    「🧺批次販賣」不會換行——查 js/10-ui-tabs.js buildQuickHeader() 只給這兩顆按鈕 flex-1,
  *    沒加 white-space:nowrap(批次販賣按鈕是 afk-batch-sell.js 自己的 class、已自帶
  *    nowrap)。純 CSS 覆寫補上 nowrap,不改 DOM/邏輯。
+ * H. 2026-07-14 待辦(裝備欄UI與共用倉庫七項問題分析#1):手機版村莊 NPC 對話內容(倉庫/商店/
+ *    製作等,#interaction-content)往上滑到頂端後繼續往上拖曳的手勢,會「滲透」到外層
+ *    #game-screen 觸發它的橡皮筋回彈(iOS overscroll bounce),回彈期間整個捲動容器暫時
+ *    位移,連帶把 sticky 在它裡面的 #m-nav(afk-mobile.js)底部導覽列一起拉動。加
+ *    overscroll-behavior:contain 讓 #interaction-content 自己滾到底/滾到頂時不再把手勢
+ *    往外層傳,只在手機生效(桌機沒有觸控橡皮筋回彈問題)。
  * F. 2026-07-13 使用者回報:選角畫面(#load-slot-grid)桌機版 4 個角色卡片,拱門裡面是純黑色
  *    (原作 `load.png` 這張圖,拱門內本來就是黑色留白,只有拱門周圍雕花有場景);手機版
  *    (afk-mobile.js)因為一次只顯示 1 張卡,已經另外把同一張圖放大裁切當背景、看起來像
@@ -49,7 +55,9 @@
     'body:not(.m-mobile) #load-slot-grid{background-image:url(public/assets/login/load.png);background-repeat:no-repeat;background-size:180% auto;background-position:50% 22%;}' +
     'body:not(.m-mobile) .load-slot-card.empty,body:not(.m-mobile) .load-slot-card.filled{background:rgba(3,3,3,.32);}' +
     /* G:快速強化/快速廢品按鈕文字不換行(見上方檔頭說明) */
-    'button[onclick^="toggleQuickEnhance"],button[onclick^="toggleQuickJunk"]{white-space:nowrap!important;}';
+    'button[onclick^="toggleQuickEnhance"],button[onclick^="toggleQuickJunk"]{white-space:nowrap!important;}' +
+    /* H:NPC對話內容捲動不再拖動底部導覽列(見上方檔頭說明,只在手機生效) */
+    'body.m-mobile #interaction-content,body.m-mobile #town-npc-container{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}';
 
   function inject() {
     if (document.getElementById(STYLE_ID)) return;

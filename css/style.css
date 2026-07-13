@@ -64,7 +64,7 @@
             border-top-left-radius: 0.25rem;
             border-top-right-radius: 0.25rem;
         }
-        #status-panel > .panel-header { background: transparent; color: #fbbf24; text-shadow: none; }  /* 人物左上資訊框標題：還原原本顏色 */
+        #status-panel > .panel-header { background: transparent; color: #fbbf24; text-shadow: none; border-bottom: 0 !important; }  /* 人物左上資訊框標題：取消等級上方分隔線 */
         /* 🤝 隊伍／技能設定清單：視窗過小或傭兵較多導致下方隊員設定被擋住時，清單內部出現捲軸（面板標題與 隊伍/技能設定 分頁鈕保持固定）。
            狀態框不壓縮（數值/血條保持完整）；隊伍面板可縮小讓內部清單捲動→整塊面板不會被擠出視窗外。max-height 46vh 為上限（傭兵多時大螢幕也不會霸佔整欄，保留自動化設定可見）。 */
         #status-panel { flex-shrink: 0; }
@@ -388,22 +388,58 @@
         }
         /* 緊湊狀態框：玩家、傭兵與寵物共用雙欄 HP/MP 規格。 */
         .status-compact-body { padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 8px; }
-        .status-level-row { display: grid; grid-template-columns: auto auto minmax(64px, 1fr); align-items: center; gap: 5px; padding-bottom: 7px; border-bottom: 1px solid #334155; white-space: nowrap; }
-        .status-exp-bar { height: 14px; min-width: 0; }
-        .status-exp-bar .bar-text { font-size: 10px; line-height: 14px; }
-        .status-defense-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; color: #94a3b8; }
+        .status-level-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-bottom: 0; border-bottom: 0; white-space: nowrap; }
+        .status-exp-bar { width: 94%; height: 9px; min-width: 0; align-self: center; }
+        .status-exp-bar .bar-text { font-size: 8px; line-height: 9px; }
+        .status-defense-row { display: flex; flex-direction: column; gap: 8px; color: #94a3b8; }
         .status-stat { display: flex; align-items: center; justify-content: space-between; min-width: 0; gap: 6px; white-space: nowrap; }
         .status-stat strong { color: #fff; }
         .status-gold-row { display: flex; align-items: center; justify-content: space-between; color: #94a3b8; }
+        /* 左上基礎數值：與標籤同級尺寸、中等字重，降低亮度以免搶過 HP／MP。 */
+        #status-panel #st-lv, #status-panel #st-ac, #status-panel #st-mr, #status-panel #st-gold {
+            font-size: 1rem !important;
+            line-height: 1.5rem;
+            font-weight: 500 !important;
+            font-variant-numeric: tabular-nums;
+        }
+        #status-panel #st-lv, #status-panel #st-ac, #status-panel #st-mr { color: #cbd5e1 !important; }
+        #status-panel #st-gold { color: #d6b45f !important; }
         .status-vitals-row, .compact-dual-vitals { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; }
+        /* 左上角色 HP／MP：以 334×34 血條底圖為完整雙條框，內部血量依原圖比例定位。 */
+        .status-vitals-row {
+            position: relative;
+            display: block;
+            width: 100%;
+            aspect-ratio: 334 / 34;
+            background: url('../assets/character/血條底圖.png') center / 100% 100% no-repeat;
+        }
+        .status-vitals-row > .compact-vital-bar {
+            position: absolute;
+            top: 50%;
+            width: 41.2%;
+            height: 30%;
+            min-height: 9px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            box-shadow: none;
+            transform: translateY(-50%);
+        }
+        .status-vitals-row > .compact-vital-bar:first-child { left: 3.3%; }
+        .status-vitals-row > .compact-vital-bar:nth-child(2) { left: 55.5%; }
+        .status-vitals-row > .compact-vital-bar .bar-fill { border-radius: 999px; }
+        .status-vitals-row > .compact-vital-bar .bar-text { font-size: 8px; line-height: 1; top: 50%; transform: translateY(-50%); }
         .compact-vital-bar { height: 17px; min-width: 0; }
         .compact-vital-bar .bar-text { font-size: 11px; line-height: 17px; }
-        .ally-compact-head { display: grid; grid-template-columns: minmax(0, auto) auto minmax(70px, 1fr); align-items: center; gap: 6px; }
+        /* 傭兵卡頭列：經驗條固定 110px（不因名稱長短/職業而變）；名字欄改彈性、過長以省略號截斷（.ally-compact-name 已有 ellipsis）。 */
+        .ally-compact-head { display: grid; grid-template-columns: minmax(0, 1fr) auto 110px; align-items: center; gap: 6px; }
         .ally-compact-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ally-exp-bar { height: 12px; min-width: 0; }
-        .ally-exp-bar .bar-text { font-size: 9px; line-height: 12px; }
-        .compact-team-bar { height: 13px; min-width: 0; }
-        .compact-team-bar .bar-text { font-size: 9px; line-height: 13px; }
+        /* 傭兵經驗條：高度/字級對齊主角經驗條（.status-exp-bar 9px/8px），寬度維持撐滿本欄不變。 */
+        .ally-exp-bar { height: 9px; min-width: 0; }
+        .ally-exp-bar .bar-text { font-size: 8px; line-height: 9px; }
+        /* 傭兵 HP／MP：與主角內條同為 9px、沿用相同紅藍漸層；不套主角的雙條底框圖片。 */
+        .compact-team-bar { height: 9px; min-width: 0; }
+        .compact-team-bar .bar-text { font-size: 8px; line-height: 9px; }
         /* 🛡️ 裝備可用職業 logo：細金邊、無發光特效 */
         .class-eq-icon { display: inline-block; width: 20px; height: 20px; object-fit: contain; vertical-align: middle; margin-right: 4px; border: 1px solid #c9a227; border-radius: 4px; background: #11161f; box-shadow: none; }
         .c-blessed { color: #facc15; } .c-ancient { color: #c084fc; } .c-rare { color: #fb923c; } .c-attr { color: #22d3ee; } .c-anc-bless { color: #e3a625; }
@@ -1633,6 +1669,287 @@ button.classic-skill-cell { cursor:pointer; }
     #town-interaction-container:not(.hidden) > div:first-child { margin-bottom: 8px !important; padding: 10px !important; }
 }
 
+/* ===== Mobile login / character select / character creation ===== */
+@media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
+    #creation-screen {
+        width: 100vw;
+        height: 100dvh;
+        min-height: 0;
+        padding: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    #login-art-stage,
+    #load-art-stage,
+    #creation-panel:not(.hidden) {
+        max-width: 100vw;
+        max-height: 100dvh;
+        box-shadow: none;
+    }
+    #main-menu > button,
+    #load-action-panel button,
+    #creation-back-button,
+    #btn-start.creation-start-button,
+    .creation-gender-btn,
+    .creation-class-btn,
+    .creation-stat-btn { touch-action: manipulation; }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    #creation-screen { align-items: flex-start; justify-content: flex-start; }
+
+    /* Login: retain the artwork while keeping every action comfortably tappable. */
+    #login-art-stage {
+        width: 100vw;
+        height: 100dvh;
+        min-height: 640px;
+        aspect-ratio: auto;
+        overflow: hidden;
+    }
+    #login-bg-image { width: 100%; height: 100%; object-fit: cover; object-position: 54% center; opacity: .84; }
+    #login-anim-image { left: -28%; top: 70%; width: 142%; height: 30%; object-fit: fill; opacity: .78; }
+    #login-title-layer { left: 7%; top: 7%; width: 86%; }
+    #login-title-layer h1 { margin-bottom: 8px; font-size: clamp(24px, 7vw, 32px); }
+    #login-title-layer p { font-size: 14px; }
+    #main-menu {
+        left: 8%;
+        top: 31%;
+        width: 84%;
+        gap: 12px !important;
+    }
+    #main-menu > button {
+        min-height: 48px;
+        padding: 10px 8px !important;
+        font-size: 16px !important;
+    }
+    #main-menu > p {
+        width: 100% !important;
+        margin: 2px 0 0 !important;
+        padding: 0 6px;
+        font-size: 11px !important;
+        line-height: 1.5;
+    }
+    #login-meta-layer { left: 8%; top: auto; bottom: 4%; width: 84%; }
+    #login-version { margin-bottom: 6px; font-size: 14px !important; }
+    #login-disclaimer { font-size: 9px !important; line-height: 1.45; }
+
+    /* Character select: two portrait rows, readable details, then compact actions. */
+    #load-select-panel:not(.hidden) {
+        position: absolute;
+        inset: 0;
+        height: auto;
+        min-height: 100dvh;
+        display: block;
+        overflow: auto;
+    }
+    #load-art-stage {
+        width: 100%;
+        height: 1040px;
+        max-height: none;
+        aspect-ratio: auto;
+        overflow: hidden;
+        background: #090807;
+    }
+    #load-select-bg { object-fit: cover; object-position: center top; opacity: .66; }
+    #load-select-overlay { display: none; }
+    #load-slot-grid {
+        left: 12px;
+        top: 14px;
+        width: calc(100% - 24px);
+        height: 500px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .load-slot-card {
+        min-width: 0;
+        border: 1px solid rgba(124, 94, 57, .72);
+        background: rgba(0, 0, 0, .46);
+        box-shadow: inset 0 0 20px rgba(0,0,0,.72);
+    }
+    .load-slot-card img { transform: scale(1.02); }
+    .load-slot-card[data-key="m_warrior"] img,
+    .load-slot-card[data-key="f_warrior"] img { transform: scale(1.16); }
+    #load-page-tabs {
+        left: 50%;
+        top: 524px;
+        width: 126px;
+        height: 48px;
+        transform: translateX(-50%);
+    }
+    #load-page-tabs button {
+        position: relative;
+        top: auto;
+        left: auto !important;
+        right: auto !important;
+        width: 44px;
+        height: 44px;
+        transform: none;
+        border: 1px solid rgba(180, 139, 65, .62);
+        color: #e6d4a4;
+        background: rgba(12, 10, 8, .8);
+        font: 700 18px Georgia, serif;
+        text-shadow: 0 1px 2px #000;
+    }
+    #load-page-1::after { content: "1"; }
+    #load-page-2::after { content: "2"; }
+    #load-info-panel {
+        left: 12px;
+        top: 584px;
+        width: calc(100% - 24px);
+        height: 250px;
+        padding: 12px;
+        border: 1px solid rgba(139, 104, 70, .72);
+        background: rgba(29, 27, 30, .88);
+        box-sizing: border-box;
+    }
+    .load-info-row {
+        width: 47% !important;
+        height: 30px;
+        justify-content: space-between;
+        gap: 6px;
+        border-bottom: 1px solid rgba(103, 83, 65, .35);
+        font-size: 11px;
+    }
+    .load-info-row span { display: block; color: #c8b996; font-size: 10px; }
+    .load-info-row strong { width: 48%; padding: 0 3px; justify-content: flex-start; font-size: 11px; }
+    .load-info-row.name { left: 3%; top: 4%; }
+    .load-info-row.pledge { left: 3%; top: 18%; }
+    .load-info-row.class { left: 3%; top: 32%; }
+    .load-info-row.alignment { left: 3%; top: 46%; }
+    .load-info-row.hp { left: 3%; top: 60%; }
+    .load-info-row.mp { left: 3%; top: 74%; }
+    .load-info-row.ac { left: 3%; top: 88%; }
+    .load-info-row.lv { left: 51%; top: 4%; }
+    .load-info-row.str { left: 51%; top: 18%; }
+    .load-info-row.dex { left: 51%; top: 32%; }
+    .load-info-row.con { left: 51%; top: 46%; }
+    .load-info-row.wis { left: 51%; top: 60%; }
+    .load-info-row.cha { left: 51%; top: 74%; }
+    .load-info-row.int { left: 51%; top: 88%; }
+    #load-action-panel {
+        left: 12px;
+        top: 854px;
+        width: calc(100% - 24px);
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    #load-action-panel button { width: 100%; height: 48px; font-size: 14px; }
+    #load-btn-back { grid-column: 1 / -1; }
+
+    /* Character creation: a scrollable portrait composition with no overlapping controls. */
+    #creation-panel:not(.hidden) {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform: none;
+        width: 100%;
+        height: 1120px;
+        min-height: 1120px;
+        max-height: none;
+        aspect-ratio: auto;
+        flex: 0 0 auto;
+        overflow: hidden;
+        background: #090807;
+    }
+    #creation-bg-image { object-fit: cover; object-position: 62% top; opacity: .48; }
+    #creation-class-desc-frame {
+        left: 12px;
+        top: 14px;
+        width: calc(100% - 24px);
+        height: 252px;
+        padding: 18px 20px;
+        box-sizing: border-box;
+        border: 1px solid rgba(163, 124, 60, .68);
+        background: rgba(20, 15, 10, .79);
+    }
+    #creation-class-title { margin-bottom: 10px; font-size: 24px; }
+    #class-desc { overflow-y: auto; padding-right: 5px; font-size: 15px; line-height: 1.62; }
+    #creation-avatar-stage { left: 24%; top: 278px; width: 52%; height: 290px; }
+    #creation-class-list {
+        left: 12px;
+        top: 578px;
+        width: calc(100% - 24px);
+        height: 140px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(2, 64px);
+        gap: 10px 6px;
+        pointer-events: auto;
+    }
+    .creation-class-btn,
+    .creation-class-btn.class-left,
+    .creation-class-btn.class-right,
+    .creation-class-btn.class-pos-1,
+    .creation-class-btn.class-pos-2,
+    .creation-class-btn.class-pos-3,
+    .creation-class-btn.class-pos-4 {
+        position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
+        width: 64px;
+        height: 64px;
+        justify-self: center;
+    }
+    #creation-gender-panel {
+        left: 50%;
+        top: 736px;
+        width: 210px;
+        height: 58px;
+        padding: 0;
+        transform: translateX(-50%);
+    }
+    .creation-gender-btn { width: 52px; height: 52px; font-size: 36px; }
+    #creation-pts { left: 46%; top: 808px; width: 8%; height: 36px; font-size: 16px; }
+    .creation-stat-control {
+        grid-template-columns: 30px 28px 28px;
+        gap: 7px;
+        width: 100px;
+        height: 34px;
+    }
+    .creation-stat-control::before { right: calc(100% + 6px) !important; left: auto !important; font-size: 15px; text-align: right !important; }
+    .creation-stat-control.stat-str,
+    .creation-stat-control.stat-dex,
+    .creation-stat-control.stat-con { left: 30%; }
+    .creation-stat-control.stat-wis,
+    .creation-stat-control.stat-cha,
+    .creation-stat-control.stat-int { left: 74%; }
+    .creation-stat-control.stat-str,
+    .creation-stat-control.stat-wis { top: 852px; }
+    .creation-stat-control.stat-dex,
+    .creation-stat-control.stat-cha { top: 900px; }
+    .creation-stat-control.stat-con,
+    .creation-stat-control.stat-int { top: 948px; }
+    .creation-stat-value { min-width: 30px; font-size: 14px; }
+    .creation-stat-btn { width: 28px; height: 28px; font-size: 14px; }
+    #classic-mode-control {
+        left: 16px;
+        top: 1011px;
+        width: 116px;
+        height: 48px;
+        justify-content: flex-start;
+        font-size: 13px;
+    }
+    #classic-mode-control input { width: 18px; height: 18px; }
+    #btn-start.creation-start-button {
+        left: 142px;
+        top: 1008px;
+        width: calc(100% - 158px);
+        height: 48px;
+        font-size: 15px;
+    }
+    #creation-back-button {
+        left: 142px;
+        top: 1064px;
+        width: calc(100% - 158px);
+        height: 42px;
+        font-size: 14px;
+    }
+}
+
 /* ===== Unified floating-window palette ===== */
 :is(#autosell-rule-modal, #autosell-preview-modal, #poly-modal, #osiris-box-modal,
     #summon-select-overlay, #pet-evo-overlay, #pet-gear-overlay,
@@ -1855,6 +2172,19 @@ button.classic-skill-cell { cursor:pointer; }
 .town-npc .tn-shadow {
     position: absolute; left: 0; top: 0; width: 100%; height: auto; z-index: 0;
     pointer-events: none; image-rendering: pixelated;
+}
+/* 🌑 v3.3.18 影子後備橢圓：無真實影子 sprite(idle_s 404·職業動畫如依詩蒂/特羅斯·或老 gfx 潘/埃爾頻/芮克妮/茉莉…)→在腳下畫橢圓陰影；有真實影子(idle_s onload→.has-tn-shadow)則隱藏 */
+.town-npc::after {
+    content: ''; position: absolute; left: 50%; bottom: 0; z-index: 0;
+    width: 56%; height: 9px; transform: translate(-50%, 42%);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.42) 0%, rgba(0,0,0,.24) 52%, transparent 72%);
+    border-radius: 50%; pointer-events: none;
+}
+.town-npc.has-tn-shadow::after { display: none; }
+/* 🔥 v3.3.18 火焰/武器疊層(與本體共畫布·screen 混合發光)：宙斯之熔岩高崙的燃燒特效 */
+.town-npc .tn-weapon {
+    position: absolute; left: 0; top: 0; width: 100%; height: auto; z-index: 2;
+    pointer-events: none; image-rendering: pixelated; mix-blend-mode: screen;
 }
 .town-npc:hover { filter: brightness(1.16) drop-shadow(0 0 7px rgba(250,204,21,.65)); transform: translate(-50%,-100%) scale(1.07); }
 .town-npc .tn-label {

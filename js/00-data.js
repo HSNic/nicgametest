@@ -1,6 +1,6 @@
 /** 遊戲核心資料庫 */
 // 🏷️ 遊戲版本號（顯示於登入頁面下方·單一真相來源）：更新版本時只改這一行，登入頁面自動同步。
-const GAME_VERSION = 'v3.3.16';
+const GAME_VERSION = 'v3.3.27';
 // ===== 💾 存檔壓縮（LZString compressToUTF16/decompressFromUTF16·MIT, Pieroxy）：localStorage 內部以 UTF-16 壓縮，省 ~89%，繞過 5MB 上限 =====
 //  ⚠️ 只壓 localStorage（存檔位/倉庫/共用桶/_bak）；匯出檔維持明文 JSON（可攜·importSave 用 JSON.parse 驗證）。_lzGet 相容舊明文存檔（無 'LZ1:' 前綴→原樣回傳）。
 var LZString = (function () {
@@ -621,7 +621,7 @@ const DB = {
         "relic_seawater_shirt":     { n: "浸泡海水的內衣",   type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 6, resWind: -10, resFire: 10, mpR: 3, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】海賊骷髏浸透海水的內衣，濕冷卻能澆熄烈焰。" },
         "relic_fighter_axe":        { n: "鬥士的老舊戰斧",   type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 18, dmgL: 18, hit: 9, dmgBonus: 9, eff: "crush", hardWear: 100, req: "royal,knight,elf,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】骷髏鬥士的老舊戰斧，一劈便將堅甲硬皮盡數崩碎。" },
         "relic_hermitcrab_shell":   { n: "寄居蟹的巨大背殼", type: "arm", slot: "shield", relic: true, noEnhance: true, ac: 10, dr: 15, moveSpeedPct: -50, req: "knight", p: 10000, gachaWeight: 0, d: "【遺物】奎斯坦修的巨大背殼，堅如磐石卻沉重拖累身形。" },
-        "relic_bombflower_core":    { n: "爆彈花蕊",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resFire: 20, hurtExplode: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】爆彈花不穩定的花蕊，受創時炸裂波及四周。" },
+        "relic_bombflower_core":    { n: "爆彈花蕊",         type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 6, resFire: 20, hurtExplode: 100, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】爆彈花不穩定的花蕊，受創時炸裂波及四周；爆裂反噬屬於火屬性魔法傷害，可由魔防與火屬性抗性減輕。" },
         "relic_scarab_shin":        { n: "古代聖甲蟲脛甲",   type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 4, resEarth: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】底比斯聖甲蟲的甲殼脛甲，親和大地之力。" },
         "relic_darkelf_grindblade": { n: "黑暗殘兵的研磨利刃", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 10, dmgL: 12, hit: 15, dmgBonus: 14, req: "royal,knight,elf,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵研磨至極的單手武士刀，刃鋒薄透卻能破甲穿骨。" },
         "relic_darkelf_shootglove": { n: "黑暗殘兵輔助射擊手套", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 5, rangedDmg: 2, rangedHit: 2, req: "knight,elf,dark,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】黑暗妖精殘兵操弩的皮手套，穩住扣弦瞄準的每一次呼吸。" },
@@ -787,6 +787,15 @@ const DB = {
         "relic_collie_fur":      { n: "柯利的柔毛",       type: "arm", slot: "shin",   relic: true, noEnhance: true, ac: 1, mr: 5, dr: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】柯利牧羊犬蓬鬆柔毛織成的護脛，溫暖而堅韌。" },
         "relic_kangaroo_gloves": { n: "袋鼠的拳擊套",     type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 4, meleeDmg: 2, meleeHit: 4, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】袋鼠拳王的專用拳擊套，出拳快狠準。" },
         "relic_monkey_staff":    { n: "猴子的金箍棒",     type: "wpn", relic: true, noEnhance: true, eff: "crush", ignHardSkin: true, dmgS: 6, dmgL: 3, hit: 6, dmgBonus: 6, lvDmgDiv: 5, lvHitDiv: 5, req: "royal,knight,elf,mage,illusion,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】猴王隨心變化的如意金箍棒。單手鈍器。" },
+        // ===== 🏺 遺物 第十五批：元素精靈王與職業特化遺物（單一怪物 0.0001% 掉落） =====
+        "relic_magic_resist_shirt": { n: "魔力阻抗襯衫", type: "arm", slot: "tshirt", relic: true, noEnhance: true, ac: 0, mrPerWis: 1, req: "all", p: 10000, gachaWeight: 0, img: "assets/icons/armors/T恤.png", d: "【遺物】紅鬼魂殘存的抗魔意志凝成的襯衫。每有 1 點精神，魔防（MR）+1。" },
+        "relic_fireking_blast": { n: "火精靈王的爆焰", type: "wpn", w2h: true, relic: true, noEnhance: true, dmgS: 17, dmgL: 21, hit: 15, dmgBonus: 18, eff: "cleave", ele: "fire", hitEchoMagic: { rate: 10, ele: "fire" }, req: "royal,knight,dragon", p: 10000, gachaWeight: 0, img: "assets/icons/weapons/雙手劍.png", d: "【遺物】火精靈王爆焰凝成的雙手劍。一般模式可發動切割；一般攻擊化為火屬性，命中時有 10% 機率爆破，追加等同該次傷害的火屬性魔法傷害。" },
+        "relic_waterking_caress": { n: "水精靈王的撫摸", type: "wpn", relic: true, noEnhance: true, ignHardSkin: true, dmgS: 17, dmgL: 13, hit: 15, dmgBonus: 15, eff: "combo", comboRate: 35, ele: "water", missGrazeRate: 30, req: "dark", p: 10000, gachaWeight: 0, img: "assets/icons/weapons/鋼鐵鋼爪.png", d: "【遺物】水精靈王柔流凝成的鋼爪。雙擊 35%，攻擊貫穿硬皮；一般攻擊化為水屬性，未命中時有 30% 機率改判為擦傷並造成一半傷害。" },
+        "relic_windking_roar": { n: "風精靈王的狂嘯", type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 3, dmgL: 3, hit: 15, dmgBonus: 15, ele: "wind", windSpellProcRate: 15, req: "mage", p: 10000, gachaWeight: 0, img: "assets/icons/weapons/橡木魔法杖.png", d: "【遺物】風精靈王狂嘯凝成的單手魔杖。一般模式可發動共鳴，攻擊貫穿硬皮；一般攻擊化為風屬性，施展風屬性傷害魔法時有 15% 機率額外觸發龍捲風。" },
+        "relic_earthking_resist": { n: "地精靈王的抗拒", type: "wpn", isBow: true, ranged: true, w2h: true, rapidfire: 65, relic: true, noEnhance: true, dmgS: 3, dmgL: 3, hit: 15, dmgBonus: 18, ele: "earth", hurtRapidfire: true, req: "elf,illusion", p: 10000, gachaWeight: 0, img: "assets/icons/weapons/精靈弓.png", d: "【遺物】地精靈王抗拒之力凝成的雙手弓。一般模式可發動連射 65%；一般攻擊化為地屬性，受到傷害時必定額外觸發一次連射（經典模式亦可發動）。" },
+        "relic_pure_maiden_love": { n: "純潔少女的憐愛", type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, dex: 2, int: 2, mpR: 3, req: "elf", reqAvatar: "女妖精", strictAvatar: true, p: 10000, gachaWeight: 0, img: "assets/icons/accessories/智力項鍊.png", d: "【遺物】獨角獸回應純潔少女憐愛所留下的項鍊。僅女妖精可裝備；男妖精與其他職業皆無法裝備。" },
+        "relic_rockmage_secret": { n: "破岩法師的秘術", type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, dmgS: 3, dmgL: 3, hit: 15, dmgBonus: 15, extraMp: 15, ele: "earth", procSkill: "sk_hell_fang", procRateBase: 100, procRatePerEn: 0, req: "mage,illusion", p: 10000, gachaWeight: 0, img: "assets/icons/weapons/巴風特魔杖.png", d: "【遺物】破岩法師將大地秘術封入的單手魔杖。一般模式可發動共鳴；一般攻擊化為地屬性，每次攻擊 100% 額外觸發地獄之牙。" },
+        "relic_general_swordguard": { n: "將軍愛用的握劍護腕", type: "arm", slot: "gloves", relic: true, noEnhance: true, ac: 6, swordStr: 3, req: "all", p: 10000, gachaWeight: 0, img: "assets/icons/armors/武官手套.png", d: "【遺物】黑暗妖精將軍愛用的握劍護腕。裝備單手劍或雙手劍時，力量 +3。" },
         "clk_elf": { n: "精靈斗篷", type: "arm", slot: "cloak", ac: 1, req: "all", safe: 6, p: 900, gachaWeight: 100 },
         "clk_oasis": { n: "歐西斯斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 15, gachaWeight: 100 },
         "arm_86": { n: "侏儒斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 18, gachaWeight: 100 },
@@ -2804,6 +2813,9 @@ const DB = {
         "dark_magic_lab": ["de_lab_earth", "de_lab_water", "de_lab_wind", "de_lab_fire", "de_lab_mage", "de_lab_blackmage", "de_train_gatekeeper"],
         "necro_training": ["de_necro_avenger", "de_necro_warlock", "de_necro_omwarrior", "de_necro_darklord", "de_necro_bloodknight", "de_necro_omheavy", "de_train_gatekeeper"],
         "elder_room": ["de_elder_guard", "de_elder_captain", "de_elder_follower", "de_lab_blackmage", "de_train_soulknight", "de_necro_bloodknight", "dark_spirit_king", "darkdweller", "de_lab_earth", "de_lab_water", "de_lab_fire", "de_lab_wind", "dark_spirit_caller", "de_elder_kina", "de_elder_andis", "de_elder_batas", "de_elder_balos", "de_elder_balud", "de_elder_ramas", "de_elder_taimas", "de_elder_adiel"],   // 🏛️ 格蘭肯神殿．長老之室：3 新一般怪 + 既有出沒怪物 + 8 長老 BOSS（BOSS 出場由 spawnMob 節流：場上最多 2 隻、第 1 隻存活滿 3 分鐘才出第 2 隻）
+        // ===== 🌑 黑暗妖精聖地：一般區沿用守軍／黑魔法系；受詛咒區改用較高階的冥法軍與神殿近衛 =====
+        "dark_elf_sanctuary": ["de_gate_xbow", "de_gate_spear", "de_gate_patrol", "de_gate_soldier", "de_gate_general", "de_lab_mage", "de_lab_blackmage", "dark_spirit_caller", "de_elder_guard"],
+        "cursed_dark_elf_sanctuary": ["de_necro_avenger", "de_necro_warlock", "de_necro_omwarrior", "de_necro_darklord", "de_necro_bloodknight", "de_necro_omheavy", "de_elder_guard", "de_elder_captain", "de_elder_follower"],
         "antaras_lair": ["antaras"],
         "fafurion_lair": ["fafurion"],
         "valakas_lair": ["valakas"],

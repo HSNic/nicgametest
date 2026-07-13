@@ -31,8 +31,8 @@
     <title>放置天堂 - 蛇神降世</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=8edc0faeaa">
-    <link rel="stylesheet" href="css/floating-ui.css?v=cef1e683d5">
+    <link rel="stylesheet" href="css/style.css?v=1776506593">
+    <link rel="stylesheet" href="css/floating-ui.css?v=e9fc8f0f9f">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
 <body class="h-screen w-screen overflow-hidden">
@@ -197,7 +197,6 @@
                 <div class="status-compact-body text-base">
                     <div class="status-level-row text-slate-400">
                         <span>等級</span><span class="text-white font-bold text-xl" id="st-lv">1</span>
-                        <div class="bar-bg status-exp-bar"><div id="bar-exp" class="bar-fill bg-yellow-500" style="width:0%"></div><div id="txt-exp" class="bar-text font-normal">0.00%</div></div>
                     </div>
                     <div class="status-defense-row">
                         <span class="status-stat"><span>AC</span><strong id="st-ac">10</strong></span>
@@ -208,6 +207,7 @@
                         <div class="bar-bg compact-vital-bar" title="HP"><div id="bar-hp" class="bar-fill bg-red-600" style="width:100%"></div><div id="txt-hp" class="bar-text text-white">16/16</div></div>
                         <div class="bar-bg compact-vital-bar" title="MP"><div id="bar-mp" class="bar-fill bg-blue-600" style="width:100%"></div><div id="txt-mp" class="bar-text text-white">1/1</div></div>
                     </div>
+                    <div class="bar-bg status-exp-bar" title="EXP"><div id="bar-exp" class="bar-fill bg-yellow-500" style="width:0%"></div><div id="txt-exp" class="bar-text font-normal">0.00%</div></div>
                     <div id="castle-guard-row" class="flex items-center gap-3 mt-1 hidden"><span id="cg-name" class="text-amber-300 font-bold w-16 text-right text-xs leading-tight whitespace-nowrap">護衛</span><div class="bar-bg flex-1 !h-4"><div id="cg-bar" class="bar-fill bg-amber-500" style="width:100%"></div><div id="cg-txt" class="bar-text text-white !text-xs !line-height-[16px]">0/0</div></div></div>
                 </div>
             </div>
@@ -535,36 +535,36 @@
     })();
     </script>
 
-    <script src="js/00-data.js?v=3a9c202b8a"></script>
-<script src="js/01-drops-config.js?v=e6826d77b1"></script>
-<script src="js/02-stats-recompute.js?v=a83b24afcd"></script>
-    <script src="js/03-combat-core.js?v=53fb0709c8"></script>
-    <script src="js/04-combat-attack.js?v=b15712e0dc"></script>
-<script src="js/05-kill-progression.js?v=b6d292548a"></script>
-    <script src="js/06-status-allies.js?v=e7196d7031"></script>
-    <script src="js/07-skills-cast.js?v=e4ddebe401"></script>
-<script src="js/08-items-equip.js?v=2b97b27230"></script>
+    <script src="js/00-data.js?v=a50163b4b9"></script>
+<script src="js/01-drops-config.js?v=ad5b99c29d"></script>
+<script src="js/02-stats-recompute.js?v=7eec9e9e74"></script>
+    <script src="js/03-combat-core.js?v=ab876fa7b4"></script>
+    <script src="js/04-combat-attack.js?v=914b562cc8"></script>
+<script src="js/05-kill-progression.js?v=f3e75f1a64"></script>
+    <script src="js/06-status-allies.js?v=3ea7d8e86c"></script>
+    <script src="js/07-skills-cast.js?v=441d32ca33"></script>
+<script src="js/08-items-equip.js?v=4dd70f841b"></script>
 <script src="js/09-vfx-render.js?v=92346c6a36"></script>
-<script src="js/10-ui-tabs.js?v=312e3989ff"></script>
-<script src="js/11-world-map.js?v=b0799ef7c7"></script>
+<script src="js/10-ui-tabs.js?v=01c00649ae"></script>
+<script src="js/11-world-map.js?v=1455208e22"></script>
 <script src="js/12-npc-quests.js?v=18baddba1a"></script>
-<script src="js/13-shop-save.js?v=888fb36efc"></script>
+<script src="js/13-shop-save.js?v=432c280d50"></script>
 <script src="js/14-craft-pandora.js?v=d8bbdd5873"></script>
 <script src="js/15-cards.js?v=20cf88749b"></script>
 <script src="js/16-equip-book.js?v=45290f2d29"></script>
 <script src="js/18-misc-book.js?v=cc8f8f7ce4"></script>
 <script src="js/17-audio.js?v=8e371ccd31"></script>
-<script src="js/19-equipment-window.js?v=ea8ee8596f"></script>
+<script src="js/19-equipment-window.js?v=d9e74bafc6"></script>
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
-    <script src="js/23-summons.js?v=8077bf2452"></script>
+    <script src="js/23-summons.js?v=70ed826723"></script>
     <script src="js/22-pets.js?v=594622fc59"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-offline.js?v=20260712a"></script>
+<script src="afk-offline.js?v=20260714a"></script>
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260713f"></script>
+<script src="afk-mobile.js?v=20260714k"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-backnav.js?v=20260712a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -576,13 +576,13 @@
 <!-- 小百科外掛(專精/武器特性/職業魔法;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-wiki.js?v=20260712a"></script>
 <!-- 共用倉庫視覺註記:可學技能書顯示「可學」、角色不可使用的裝備/技能書顯示淡紅色外框，背包／倉庫兩側都標(純視覺;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-warehouse-skill.js?v=20260708a"></script>
+<script src="afk-warehouse-skill.js?v=20260714b"></script>
 <!-- 自動販賣「個別例外」bug修復:永遠保留/永遠販賣後搜尋字/分類/捲動位置不再被重置(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-autosell-fix.js?v=20260707a"></script>
 <!-- 自動販賣規則視窗 UI 優化:各別例外清單加捲動+搜尋、三大區塊可收合、文字修正(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-autosell-ui.js?v=20260708e"></script>
 <!-- 通用修正外掛(補原作者坑,桌機/手機通用;含 saveGame 空白角色防呆,建議排在 afk-offline 之後最乾淨——順序反了防呆仍擋得住毀檔,只是不夠乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-fixes.js?v=20260713a"></script>
+<script src="afk-fixes.js?v=20260714a"></script>
 <!-- 背景大圖快取 Service Worker 註冊(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-sw.js?v=20260622a"></script>
 <!-- 手機 toast 提示(點按鈕的系統日誌訊息浮現;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -596,7 +596,7 @@
 <!-- 首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-quickpanel.js?v=20260713c"></script>
 <!-- 外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-autobuy.js?v=20260707a"></script>
+<script src="afk-autobuy.js?v=20260714a"></script>
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260706a"></script>
 <!-- 首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -614,7 +614,7 @@
 <!-- Cloudflare Web Analytics beacon 注入:統計人數/開啟次數(只在正式站台送;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-analytics.js?v=20260625a"></script>
 <!-- 道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫,不動原作者本體;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-classic-list.js?v=20260713a"></script>
+<script src="afk-classic-list.js?v=20260714a"></script>
 <!-- 道具/武器/防具分頁加子分類篩選(下拉選單;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-item-subfilter.js?v=20260713d"></script>
 <!-- 物品欄批次販賣(道具分頁新增批次勾選賣出;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -640,12 +640,12 @@
 <!-- 首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可 -->
 <script src="afk-batch-settle.js?v=20260712a"></script>
 <!-- 版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-uilayout.js?v=20260713b"></script>
+<script src="afk-uilayout.js?v=20260714a"></script>
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-player-ring.js?v=20260708a"></script>
 <!-- 首頁「加掛版」品牌標記 + 外掛區外框(純視覺;需排在其他 afk-* 之後;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-skin.js?v=20260713f"></script>
 <!-- 魔法娃娃「飄浮寵物」:取代原本滑鼠游標特效,改成冒險地圖戰鬥框左下角飄浮的寵物圖案(出發狩獵才顯示);需排在 afk-mobile.js 之後(完全接管 applyDollCursor);可獨立維護,原作者更新後重新加回此行即可 -->
-<script src="afk-doll-pet.js?v=20260713a"></script>
+<script src="afk-doll-pet.js?v=20260714b"></script>
 </body>
 </html>

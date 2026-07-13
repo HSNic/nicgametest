@@ -52,6 +52,7 @@ function recomputeStats() {
         if (ed.con) d.con += ed.con;
         if (ed.wis) d.wis += ed.wis;
         if (ed.cha) d.cha += ed.cha;   // 🔧 裝備魅力(cha)：可突破 60 上限
+        if (ed.swordStr && p.eq.wpn) { let _st = getWeaponTags(p.eq.wpn.id); if (_st.includes('單手劍') || _st.includes('雙手劍')) d.str += ed.swordStr; }   // 🏺 將軍愛用的握劍護腕：持單手劍／雙手劍時力量 +N（提前計入衍生能力）
     }
     // 👑 同名 buff 去重（頭盔版「力盔/敏盔」優先，蓋掉法師魔法版／王族魔法精通版，避免同效果疊加）：頭盔版生效時把對應法師版 buff 歸零
     if (p.buffs.sk_helm_str1 > 0) p.buffs.sk_ench_wpn = 0;   // 擬似魔法武器（extraDmg）
@@ -186,6 +187,7 @@ function recomputeStats() {
     d.mpReduce  += getIntMpReduce(d.int);
     // 精神（MR / MP恢復）
     d.mr  += getWisMR(d.wis);
+    if (p.eq) { for (let _k in p.eq) { let _e = p.eq[_k], _ed = _e && DB.items[_e.id]; if (_ed && _ed.mrPerWis) d.mr += d.wis * _ed.mrPerWis; } }   // 🏺 魔力阻抗襯衫：每 1 點最終精神增加 MR
     if (p.skills && p.skills.includes('sk_royal_kingguard')) d.mr += 10;   // 👑 王者加護（被動）：MR+10
     d.mpR  = getWisMpRegen(d.wis);
     d.hpR  = 0;   // HP自然恢復量(裝備/精靈斗篷加成)：每次重算先歸零，避免持續疊加且卸下不還原

@@ -783,7 +783,7 @@ function stretchHitValue(raw) {
     let hvInt = lo + ((Math.random() < (hv - lo)) ? 1 : 0);
     return Math.max(1, Math.min(20, hvInt));
 }
-function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst) {
+function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst, forceGraze) {
     let isRanged = !!(wpn && wpn.ranged);
     let hitBonus = (isRanged ? player.d.rangedHit : player.d.meleeHit) + player.d.extraHit + (player._skillHitBonus || 0) + (player._setBeauty5 ? (player._beautyMissStack || 0) : 0);   // 🗼 范德之劍：施展衝擊之暈時本次技能近距離命中+1；🔮 麗人5/5：未命中堆疊命中
     let dmgBonus = (isRanged ? player.d.rangedDmg : player.d.meleeDmg);
@@ -801,7 +801,8 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     let isCrush = !!(_cw && _cw.eff === 'crush');
     let rollHit = roll(1, 20);
     let hit = false, heavy = false, graze = false, crush = false;
-    if (forceHeavy) { hit = true; heavy = true; }   // 魔擊：必定命中且必定重擊
+    if (forceGraze) { hit = true; graze = true; }   // 🏺 水精靈王的撫摸：原本未命中時依機率改判為 50% 擦傷
+    else if (forceHeavy) { hit = true; heavy = true; }   // 魔擊：必定命中且必定重擊
     else if (forceHit) { hit = true; }   // 反擊：必定命中、必定非重擊
     else if (forceLand) { hit = true; if (rollHit === 20) heavy = true; }   // 居合：必定命中，rollHit20 仍自然重擊；不擦傷
     else if (rollHit === 20) { hit = true; heavy = true; }
@@ -927,7 +928,7 @@ function consumeArrow() {
 }
 
 // ===== 法杖共鳴：裝備指定魔法杖時，一般攻擊(不論命中與否)有 智力/60 機率免費施展光箭 =====
-const WAND_LIGHTARROW_IDS = ['wpn_oakwand', 'wpn_38', 'wpn_witchwand', 'wpn_manawand', 'wpn_crystalwand', 'wpn_baless', 'wpn_wand_rasta', 'wpn_red_crystalwand', 'wpn_laia_wand', 'wpn_icequeen_wand', 'wpn_demon_scythe', 'wpn_darkmage_wand', 'wpn_baphomet_wand', 'wpn_illu_wand', 'wpn_demon_wand_hidden', 'wpn_dark_crystalball', 'wpn_steel_manawand_blue', 'relic_amp_staff', 'relic_elder_thunder', 'relic_cerberus_wand', 'relic_evillizard_eye', 'relic_lightbeam_wand', 'relic_warlock_grimoire'];   // 🏺 遺物 安普長老的拐杖／長老的雷電能量／三頭犬魔杖／邪惡蜥蜴的眼瞳／光束強化魔杖亦共鳴 // 🔮 幻術士魔杖：共鳴（👹 隱藏的魔族魔杖亦共鳴；🏴‍☠️ 漆黑水晶球亦共鳴）   // 🏅 共鳴：含蕾雅魔杖／冰之女王魔杖／惡魔鐮刀／黑法師之杖／🔧巴風特魔杖（👑惡魔王魔杖已改為魔爆 eff:magicburst）
+const WAND_LIGHTARROW_IDS = ['wpn_oakwand', 'wpn_38', 'wpn_witchwand', 'wpn_manawand', 'wpn_crystalwand', 'wpn_baless', 'wpn_wand_rasta', 'wpn_red_crystalwand', 'wpn_laia_wand', 'wpn_icequeen_wand', 'wpn_demon_scythe', 'wpn_darkmage_wand', 'wpn_baphomet_wand', 'wpn_illu_wand', 'wpn_demon_wand_hidden', 'wpn_dark_crystalball', 'wpn_steel_manawand_blue', 'relic_amp_staff', 'relic_elder_thunder', 'relic_cerberus_wand', 'relic_evillizard_eye', 'relic_lightbeam_wand', 'relic_warlock_grimoire', 'relic_windking_roar', 'relic_rockmage_secret'];   // 🏺 遺物 安普長老的拐杖／長老的雷電能量／三頭犬魔杖／邪惡蜥蜴的眼瞳／光束強化魔杖／風精靈王的狂嘯／破岩法師的秘術亦共鳴 // 🔮 幻術士魔杖：共鳴（👹 隱藏的魔族魔杖亦共鳴；🏴‍☠️ 漆黑水晶球亦共鳴）   // 🏅 共鳴：含蕾雅魔杖／冰之女王魔杖／惡魔鐮刀／黑法師之杖／🔧巴風特魔杖（👑惡魔王魔杖已改為魔爆 eff:magicburst）
 function wandLightArrowProc(target) {
     if (player.classicMode) return;   // 🎮 經典模式：停用共鳴
     let wpn = player.eq.wpn;
@@ -1089,11 +1090,11 @@ function magicStrikeProc(target) {
     procMagicStrike(t);
 }
 // ===== 連射：發動攻擊時依機率追加 1~3 箭；每箭各自接受命中判定(可未命中/重擊/爆擊)，傷害為該箭結算的 30%；每箭也各判定月光爆裂 =====
-function rapidfireProc(arrowData) {
-    if (player.classicMode) return;   // 🎮 經典模式：停用連射
+function rapidfireProc(arrowData, forceProc, classicOk) {
+    if (player.classicMode && !classicOk) return;   // 🎮 經典模式：一般連射停用；地精靈王的抗拒受擊連射為指定例外
     let wpn = player.eq.wpn ? DB.items[player.eq.wpn.id] : null;
     if (!wpn || !wpn.rapidfire) return;
-    if (roll(1, 100) > wpn.rapidfire) return;
+    if (!forceProc && roll(1, 100) > wpn.rapidfire) return;
     let _rfN = roll(1, hasMastery('e_rapid') ? 5 : 3);   // 🏅 連射精通：額外箭數 1~3 → 隨機 1~5
     for (let _r = 0; _r < _rfN; _r++) {
         let _alive = [];
@@ -1122,6 +1123,16 @@ function rapidfireProc(arrowData) {
         moonburstProc(_t);   // 熾炎天使弓：每支連射箭矢也有機會觸發月光爆裂（主目標死亡自動轉移）
     }
     renderMobs();
+}
+// 🏺 地精靈王的抗拒：裝備者受到傷害時必定額外發動一次連射；這個受擊觸發在經典模式仍有效。
+function hurtRapidfireProc() {
+    if (!player || player.dead || player.hp <= 0 || !player.eq || !player.eq.wpn) return;
+    let wpn = DB.items[player.eq.wpn.id];
+    if (!wpn || !wpn.hurtRapidfire || !wpn.isBow) return;
+    let arrowData = consumeArrow();
+    if (!arrowData) return;
+    logCombat(`<span class="font-bold" style="color:#fcd34d;text-shadow:0 0 6px #a16207;">【${wpn.n}】</span>承受衝擊後立刻反射連射！`, 'player-special');
+    rapidfireProc(arrowData, true, true);
 }
 // 🛡️ 臂甲判定：臂甲裝在副手(slot:shield)但帶 armguard 旗標；反擊/居合用它區分「真盾牌 vs 臂甲」
 function _isArmguard(shRef) { return !!(shRef && DB.items[shRef.id] && DB.items[shRef.id].armguard); }

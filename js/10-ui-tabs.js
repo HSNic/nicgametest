@@ -177,7 +177,7 @@ function renderTabs(force) {
 
     let eDiv = document.getElementById('tab-equip'); eDiv.innerHTML = '';
     { let _wd = player.d || {}; let _t = _wd.loadTier || 0; let _hdr = document.createElement('div'); _hdr.className = 'classic-list-toolbar text-center py-0.5 rounded bg-slate-900/60 border border-slate-700 text-sm font-bold leading-tight' + (_t >= 1 ? ' cursor-help' : ''); if (_t >= 1) { _hdr.title = _t === 1 ? '負重50%↑：HP/MP不自然恢復' : (_t === 2 ? '負重82%↑：HP/MP不自然恢復、停自動施法、攻速變慢' : '負重100%↑：HP/MP不自然恢復、停自動施法、攻速大幅變慢'); } _hdr.innerHTML = `<span class="text-slate-400">負重 </span><span class="${getLoadColor(_t)}">${_wd.weightPct||0}%</span>`; eDiv.appendChild(_hdr); }
-    const _baseSlots = [{k:'wpn',n:'武器'}, ...((player.cls === 'warrior' && (player.skills.includes('sk_warrior_dualaxe') || player.eq.offwpn)) ? [{k:'offwpn',n:'副手武器'}] : []), {k:'shield',n:'副手'},{k:'helm',n:'頭盔'},{k:'armor',n:'盔甲'},{k:'tshirt',n:'T恤'},{k:'cloak',n:'斗篷'},{k:'gloves',n:'手套'},{k:'boots',n:'長靴'},{k:'amulet',n:'項鍊'},{k:'ear1',n:'耳環'},{k:'ear2',n:'耳環'},{k:'ring1',n:'戒指'},{k:'ring2',n:'戒指'},{k:'ring3',n:'戒指'},{k:'ring4',n:'戒指'},{k:'belt',n:'腰帶'},{k:'pet',n:'寵物裝備'},{k:'doll',n:'魔法娃娃'},{k:'arrow',n:'箭矢'}];   // ⚔️ offwpn：戰士學會迅猛雙斧後顯示副手武器欄
+    const _baseSlots = [{k:'wpn',n:'武器'}, ...((player.cls === 'warrior' && (player.skills.includes('sk_warrior_dualaxe') || player.eq.offwpn)) ? [{k:'offwpn',n:'副手武器'}] : []), {k:'shield',n:'副手'},{k:'helm',n:'頭盔'},{k:'armor',n:'盔甲'},{k:'shin',n:'脛甲'},{k:'tshirt',n:'T恤'},{k:'cloak',n:'斗篷'},{k:'gloves',n:'手套'},{k:'boots',n:'長靴'},{k:'amulet',n:'項鍊'},{k:'ear1',n:'耳環'},{k:'ear2',n:'耳環'},{k:'ring1',n:'戒指'},{k:'ring2',n:'戒指'},{k:'ring3',n:'戒指'},{k:'ring4',n:'戒指'},{k:'belt',n:'腰帶'},{k:'doll',n:'魔法娃娃'},{k:'arrow',n:'箭矢'}];   // 🦴 v3.3.21 移除已停用的 {k:'pet'} 空格（v3.2.37 玩家 eq.pet 拆除→改亞丁包武保管·此欄恆空）   // ⚔️ offwpn：戰士學會迅猛雙斧後顯示副手武器欄
     const _remSlots = (typeof SHERINE_REMAINS !== 'undefined') ? SHERINE_REMAINS.map(r => ({ k: r.id, n: '遺骸' + r.n })) : [];   // 🦴 v3.1.68 席琳遺骸 8 格（欄位鍵=物品id·浮動裝備視窗 js/19 PAGE_SLOTS 不含→不顯示）
     // 🦴 v3.1.75 遺骸固定在 1.8 皮膚格線的「最後兩排」：viewport 為 4 欄 × 8 排＝32 格（見 css .classic-inventory-viewport / decorateClassicInventoryTab 補滿 32），
     //    故一般裝備欄之後補 (32 − 遺骸數 − 基本欄位數) 個空白填充格，讓 8 格遺骸剛好落在第 25~32 格（副手武器欄出現時基本欄位 +1、填充格自動 −1）。
@@ -254,7 +254,7 @@ function renderTabs(force) {
             el.innerHTML = `<div class="classic-icon-box">${imgHtml}${_equippedBadge}${_cornerValue}</div><div class="classic-name-box"><span class="classic-slot-name">${s.n}</span><span class="${getItemColor(eq)} font-bold">${getItemFullName(eq)}</span></div>${eq.lock ? '<span class="classic-item-lock-badge" aria-hidden="true">🔒</span>' : ''}`;
             el.onclick = () => openModal(eq, true, s.k);
         } else {
-            let _rlv = (s.k === 'ring3') ? 55 : (s.k === 'ring4') ? 65 : (s.k === 'ear2') ? 50 : 0;   // 🔧 第3/4戒指欄、第2耳環欄等級需求
+            let _rlv = (s.k === 'ring3') ? 76 : (s.k === 'ring4') ? 81 : (s.k === 'ear2') ? 59 : 0;   // 🔧 第3/4戒指欄、第2耳環欄等級需求
             let _locked = _rlv && player.lv < _rlv;
             el.title = _locked ? `${s.n}（需 Lv${_rlv}）` : `${s.n}（空）`;
             el.innerHTML = `<div class="classic-icon-box"></div><div class="classic-name-box"><span class="classic-slot-name">${s.n}</span><span class="${_locked ? 'text-red-400' : 'text-slate-500'}">${_locked ? '需 Lv' + _rlv : '- 空 -'}</span></div>`;
@@ -675,7 +675,9 @@ const WEAPON_TAGS = {
     relic_executor_axe:['單手鈍器'], relic_healer_wand:['單手鈍器'], relic_minotaur_flail:['單手鈍器'],
     relic_executor_skewer:['矛'], relic_weathered_obelisk:['雙手鈍器'], relic_shadow_stinger:['匕首'], relic_soulreaper_dual:['雙刀'],
     // 🏺 遺物 第十四批（v3.3.0）：兇殘惡鬼的毒牙/殘暴骸骨的破片=單手劍(反擊)、傳說海賊的迷幻雙刀=雙刀(雙擊)、熔岩灼燒的雙拳=單手鈍器(鈍擊＋自動貫穿)；屍毒之針(isBow)/不定形的變幻劍(chainsword) 靠旗標自判免 tag
-    relic_ghoul_fang:['單手劍'], relic_sparto_shard:['單手劍'], relic_pirate_dual:['雙刀'], relic_lava_fists:['單手鈍器']
+    relic_ghoul_fang:['單手劍'], relic_sparto_shard:['單手劍'], relic_pirate_dual:['雙刀'], relic_lava_fists:['單手鈍器'],
+    // 🏺 遺物 第十五批：爆焰＝雙手劍（切割）、撫摸＝鋼爪（雙擊）；兩把魔杖與弓由 isWand/isBow 旗標判定。
+    relic_fireking_blast:['雙手劍'], relic_waterking_caress:['鋼爪']
 };
 function getWeaponTags(id){ return WEAPON_TAGS[id] || []; }
 // ⚔️ 雙擊機率 comboRate：未明定者依武器標籤套預設（鋼爪 33% / 雙刀 25%）；個別武器可在 def 寫 comboRate 覆寫（底比斯歐西里斯雙刀30 / 死亡之指20 / 恨之鋼爪50 / 破壞雙刀·破壞鋼爪30）。日後新增 combo 武器自動取得預設機率。
@@ -1012,6 +1014,9 @@ function openModal(item, isEq, slot) {
     document.getElementById('modal-item-name').className = `text-2xl font-bold mb-3 border-b border-slate-600 pb-3 flex justify-between items-center ${getItemColor(item)}`;
     
     let desc = buildItemDescHTML(item);
+    let _modalEquipItem = d.type === 'wpn' || d.type === 'arm' || d.type === 'acc';
+    let _modalCanEquip = !_modalEquipItem || checkCanEquip(item);
+    if (!isEq && _modalEquipItem && !_modalCanEquip) desc += `<br><span class="text-red-400 font-bold">無法裝備${d.reqAvatar ? `：僅限${d.reqAvatar}` : ''}</span>`;
     
     let sellPrice = getSellPrice(item);
 
@@ -1038,7 +1043,8 @@ function openModal(item, isEq, slot) {
             act += `<button class="col-span-2 w-full btn border-green-700 bg-emerald-800 hover:bg-emerald-700 text-green-100 py-3 text-lg font-bold" onclick="useItem('${item.uid}')">使用卷軸</button>`;
         }
         if(d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') {
-            act += `<button class="col-span-2 w-full btn border-blue-700 bg-blue-900 hover:bg-blue-800 text-blue-200 py-3 text-lg font-bold" onclick="equipItem(${JSON.stringify(item).replace(/"/g, '&quot;')})">裝備</button>`;
+            if (_modalCanEquip) act += `<button class="col-span-2 w-full btn border-blue-700 bg-blue-900 hover:bg-blue-800 text-blue-200 py-3 text-lg font-bold" onclick="equipItem(${JSON.stringify(item).replace(/"/g, '&quot;')})">裝備</button>`;
+            else act += `<button class="col-span-2 w-full btn border-red-900 bg-red-950 text-red-400 py-3 text-lg font-bold cursor-not-allowed" disabled>無法裝備${d.reqAvatar ? `・僅限${d.reqAvatar}` : ''}</button>`;
         }
         
         // 把販賣按鈕移出來，讓所有道具都可以賣
@@ -1966,6 +1972,7 @@ function switchTab(t, btn) {
     // 👇 更新陣列名單
     ['stats', 'equip', 'weapons', 'skill', 'armors', 'items', 'audit', 'automation'].forEach(id => { let _e = document.getElementById(`tab-${id}`); if(_e) _e.classList.add('hidden'); });   // 🔧 v2.6.74 自動化設定改分頁內嵌（tab-automation）
     document.getElementById(`tab-${t}`).classList.remove('hidden');
+    if(typeof setEquipmentPanelEmbedded === 'function') setEquipmentPanelEmbedded(t === 'equip');
     if(t === 'audit' && typeof renderAuditTab === 'function') renderAuditTab();
 }
 

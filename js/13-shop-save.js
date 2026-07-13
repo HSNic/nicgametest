@@ -56,6 +56,8 @@ const SPECIAL_AREA_BG = {   // 特殊地圖：逐張對應背景
     necro_king_room: 'assets/area/軍王之室.jpg',    // 👑 冥法軍王之室
     assassin_king_room: 'assets/area/軍王之室.jpg', // 👑 暗殺軍王之室
     elder_room: 'assets/area/軍王之室.jpg',         // 🏛️ 格蘭肯神殿．長老之室（無專屬背景圖·借用軍王之室背景）
+    dark_elf_sanctuary: 'assets/area/1920x1080/黑暗妖精聖地.jpg',
+    cursed_dark_elf_sanctuary: 'assets/area/1920x1080/受詛咒的黑暗妖精聖地.jpg',
     thebes_desert: 'assets/area/底比斯沙漠.jpg',   // 🏛️ 底比斯 沙漠（專屬背景）
     thebes_pyramid: 'assets/area/底比斯.jpg',      // 🏛️ 底比斯 金字塔內部（與祭壇共用底比斯背景）
     thebes_temple: 'assets/area/底比斯.jpg',        // 🏛️ 底比斯 歐西里斯祭壇（純BOSS房）
