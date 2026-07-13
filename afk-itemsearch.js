@@ -17,6 +17,7 @@
     { key: 'arm', tabId: 'tab-armors' },
     { key: 'item', tabId: 'tab-items' }
   ];
+  var KEY_TO_CAT = { wpn: 'weapon', arm: 'armor', item: 'item' };   // 對應 afk-item-subfilter.js 的 cat 命名,兩者互相取交集用
 
   function injectCss() {
     if (document.getElementById('afk-isearch-css')) return;
@@ -65,15 +66,32 @@
   // 另外 afk-classic-list.js 對 `.classic-inventory-viewport > .list-item` 下了
   // `display:flex!important`,一般的 `style.display='none'`(無 !important)蓋不過去,物品列
   // 不會真的被隱藏,要用 setProperty 帶 'important' 才蓋得過去(比照 afk-item-subfilter.js 的作法)。
-  function filterChildren(container, kw, skipEl) {
+  // 2026-07-13(修正搜尋/子分類篩選互相覆寫閃爍):cat 有帶(武器/防具/道具三分頁才有)時,
+  // 同時檢查 afk-item-subfilter.js 的子分類篩選狀態,兩者取交集——不管哪支外掛的重繪收尾
+  // 最後執行,算出來的顯示/隱藏都已經是最終正確結果,不會有一方蓋掉另一方、下一輪又被修回來
+  // 的兩階段跳動。也順手排除 .afk-subfilter-bar 本身(先前沒排除,打關鍵字時子分類篩選列
+  // 的按鈕文字對不上關鍵字也會被搜尋誤隱藏,是同一段程式碼裡發現的另一個小 bug,一併修掉)。
+  function filterChildren(container, kw, skipEl, cat) {
     if (!container) return;
     kw = norm(kw.trim());
+    var subApi = cat && window.AFK_SUBFILTER;
+    var subState = subApi ? window.AFK_SUBFILTER.getState(cat) : '';
+    var bucket = (subApi && subState) ? window.AFK_SUBFILTER.getBucket()[cat] : null;
     var scanRoot = container.querySelector(':scope > .classic-inventory-shell > .classic-inventory-viewport') || container;
+    var rowIdx = 0;
     for (var i = 0; i < scanRoot.children.length; i++) {
       var el = scanRoot.children[i];
       if (el === skipEl || el.classList.contains('afk-isearch')) continue;
+      if (el.classList.contains('afk-subfilter-bar')) continue;
       if (el.dataset.afkKeep === '1') continue;   // 標記不過濾的列(快速操作頭部)
-      var visible = !kw || norm(el.textContent).indexOf(kw) >= 0;
+      var kwOk = !kw || norm(el.textContent).indexOf(kw) >= 0;
+      var subOk = true;
+      if (bucket) {
+        var invItem = bucket[rowIdx];
+        subOk = !!(invItem && window.AFK_SUBFILTER.matches(cat, invItem, subState));
+      }
+      rowIdx++;
+      var visible = kwOk && subOk;
       if (visible) el.style.removeProperty('display'); else el.style.setProperty('display', 'none', 'important');
     }
   }
@@ -111,7 +129,7 @@
       if (!box) {
         // 重建過了 → 重注入。快速操作頭部(第一個子元素,若存在)標記不過濾,搜尋框插在它後面。
         if (div.firstElementChild && !div.firstElementChild.classList.contains('afk-isearch')) div.firstElementChild.dataset.afkKeep = '1';
-        box = makeBox(inputId, t.key, function () { filterChildren(div, q[t.key], box); });
+        box = makeBox(inputId, t.key, function () { filterChildren(div, q[t.key], box, KEY_TO_CAT[t.key]); });
         div.insertBefore(box, div.firstElementChild ? div.firstElementChild.nextSibling : null);
       }
       // 2026-07-13:搜尋框前面若有「快速強化/快速廢品」操作列(也是 sticky,top:-12),搜尋框原本
@@ -137,7 +155,7 @@
         if (vp) vp.style.setProperty('padding-top', '0', 'important');   // 鈕搬走了,原本留給它的頂部空白一併收掉
       }
       syncSearchWidth(div, box);
-      filterChildren(div, q[t.key], box);
+      filterChildren(div, q[t.key], box, KEY_TO_CAT[t.key]);
     });
   }
 
@@ -215,6 +233,14 @@
     wrappedWh.__afkISearch = true;
     window.renderWarehouseNPC = wrappedWh;
   }
+
+  // 讓 afk-item-subfilter.js 反向查詢目前的搜尋關鍵字,兩者取交集(見 filterChildren 註解)。
+  window.AFK_ISEARCH = {
+    match: function (tabKey, el) {
+      var kw = norm((q[tabKey] || '').trim());
+      return !kw || norm(el.textContent).indexOf(kw) >= 0;
+    }
+  };
 
   injectCss();
   if (typeof window.renderTabs === 'function' || typeof window.renderWarehouseNPC === 'function') {

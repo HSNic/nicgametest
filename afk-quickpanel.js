@@ -1,13 +1,15 @@
 /* ============================================================================
- * afk-quickpanel.js — 首頁「⚙ 設定」按鈕 + 彈窗:5 個常用開關集中管理
+ * afk-quickpanel.js — 首頁「⚙ 設定」按鈕 + 彈窗:常用開關集中管理
  *
  *   原本首頁固定放兩顆常駐按鈕(✨戰鬥特效/🔢傷害數字),這裡改成只留一顆「⚙ 設定」
- *   按鈕(插在原本兩顆按鈕的位置),點開彈窗集中管理 5 項:
+ *   按鈕(插在原本兩顆按鈕的位置),點開彈窗集中管理:
  *     戰鬥特效(呼叫原作既有 window.toggleVfxPref)
  *     傷害數字(呼叫原作既有 window.toggleVfxNumPref)
  *     音樂(呼叫原作既有 window.setBgmOn,js/17-audio.js)
  *     音效(呼叫原作既有 window.setSfxOn,js/17-audio.js)
  *     省電模式(本外掛新增,見下方說明)
+ *     顯示怪物名稱(2026-07-13 從獨立設定項簡化搬入,呼叫 afk-mobname.js 暴露的
+ *       window.AFK_MOBNAME;原本的「鎖定中常駐顯示」中間選項一併簡化拿掉,只剩開/關)
  *   原本兩顆常駐按鈕與說明文字改用 CSS 隱藏(不刪 DOM,原作邏輯/localStorage 偏好
  *   完全不受影響,只是換一種方式呈現),首頁不再被常駐按鈕佔位。
  *
@@ -111,6 +113,13 @@
         avail: function () { return true; },
         get: function () { return isPowerSaveOn(); },
         set: function (on) { setPowerSave(on); }
+      },
+      {
+        key: 'mobname', label: '🏷️ 顯示怪物名稱',
+        sub: '開啟後場上所有怪物的名字一直顯示,不用移游標;關閉則維持原版行為',
+        avail: function () { return !!(window.AFK_MOBNAME && typeof window.AFK_MOBNAME.setOn === 'function'); },
+        get: function () { return window.AFK_MOBNAME.isOn(); },
+        set: function (on) { AFK_MOBNAME.setOn(on); }
       }
     ];
   }

@@ -30,23 +30,25 @@
   // 外掛入口的「顯示順序」(都是 #main-menu 的子孫;依此序排入外框)。
   //   2026-07-08 起 afk-syncinfo.js 不再輸出 DOM(A1 面板文字精簡),原本置頂的
   //   #afk-syncinfo / 排在後段的 #afk-syncinfo-links 已從順序移除,只剩查詢/小百科/設定。
-  //   🎨 2026-07-11 首頁 V17 改版:#afk-stg-wrap(⚙其他功能 齒輪+下拉選單)移出這個框,
-  //   改成獨立放在框的下方(見 ensureFrame 尾端)。
-  //   🎨 2026-07-11 使用者回饋再調整:「外掛」框只留掉落查詢/小百科兩個大方格(呼應 V17
-  //   原設計的 3 格大工具列);備份管理/批次結算改移到獨立的「其他功能」小方格區
-  //   (見 ensureOtherFrame),用較小的按鈕呈現、但顏色仍與外掛方格一致(同一組藍色漸層)。
-  //   🎨 2026-07-13 使用者再次調整:雲端同步/批次結算/角色背包(新增)三顆小方格,改成
-  //   緊貼在掉落查詢/小百科方格列「正下方、同一個外框內」,不再另開一個有獨立標題的
-  //   「其他功能」框(見下方 ensureFrame,tiles 直接 append 進 #afk-plugin-frame)。
+  //   🎨 2026-07-13 使用者再次調整:「外掛」框只留掉落查詢/小百科兩個大方格;原本擠在同一框
+  //   內的雲端同步/批次結算/角色背包,連同「⚙其他功能」下拉選單裡的項目,全部改移到緊貼在
+  //   下方的獨立「🔧 其他」方格區(見 ensureOtherFrame),下拉選單本身移除。
+  //   🎨 2026-07-13 再次調整:①「顯示怪物名稱」簡化成開關,搬進「⚙ 設定」彈窗
+  //   (afk-quickpanel.js),不再是「其他」區塊裡的一顆按鈕(afk-mobname.js 已不再註冊進
+  //   AFK_SETTINGS)。②離線掛機紀錄/安裝成APP/檢查存檔大小這三項各自彈窗內容不同、無法真的
+  //   合併成同一個畫面,改成「其他」區塊裡放一顆「📋 紀錄」按鈕,點下去彈出小選單列出這三項,
+  //   點其中一項才開啟它原本的彈窗(見 RECORD_GROUP_LABELS/openRecordModal)。
   var FRAME_ORDER = ['.m-dex-entry-row', '.m-wiki-entry-row'];
-  // 從 AFK_SETTINGS._items 找這些項目、升格成獨立方格(不再顯示於 ⚙其他功能 下拉選單,
-  // 已在 afk-storage.js 的 PROMOTED_TO_TILE 排除)。label 要跟各自的 AFK_SETTINGS.add() 完全一致。
-  // 「角色背包」只是顯示名稱改了,底層仍是 afk-asset-manager.js 的角色資產管理功能。
-  var PROMOTED_TILES = [
-    { key: 'cloud-sync', srcLabel: '☁️ 配對碼雲端同步', icon: '☁️', label: '備份管理' },
-    { key: 'batch-settle', srcLabel: '⏱️ 批次結算', icon: '⏱️', label: '批次結算' },
-    { key: 'asset-manager', srcLabel: '🏦 角色資產管理', icon: '🎒', label: '角色背包' }
-  ];
+  // 「🔧 其他」方格區:直接讀 AFK_SETTINGS._items 全部項目(每支外掛註冊的設定入口),
+  // 不用手動維護清單——之後任何外掛新註冊一項,會自動出現在這裡當一顆按鈕,不必回來改本檔。
+  // label 沿用各自 AFK_SETTINGS.add() 的原始文字;只有下面這幾項顯示名稱需要跟原文字不同
+  // (該項目名稱在其他地方另有意義,這裡換個更貼切的短稱),才需要加進 OTHER_LABEL_OVERRIDE。
+  var OTHER_LABEL_OVERRIDE = {
+    '☁️ 配對碼雲端同步': '☁️ 備份管理',
+    '🏦 角色資產管理': '🎒 角色背包'
+  };
+  // 這幾項各自彈窗內容不同、無法合併成單一畫面,改收進「📋 紀錄」小選單裡(見 ensureOtherFrame)。
+  var RECORD_GROUP_LABELS = ['📜 離線掛機紀錄', '📥 安裝成 APP', '🔍 檢查存檔大小'];
 
   // ---- CSS ----------------------------------------------------------------
   var CSS = [
@@ -91,11 +93,26 @@
     '#main-menu .afk-tile-btn-sm{width:100%;min-height:40px;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;',
       'padding:8px 6px;font-size:clamp(9px,0.95vw,12px);line-height:1.15;}',
     'body.m-mobile #main-menu .afk-tile-btn-sm{font-size:11.5px;min-height:42px;}',
-    /* ⚙其他功能齒輪鈕維持黑金(它不是 V17 的工具方格,是我們自己的下拉選單開關,獨立於方格外) */
-    '#main-menu #afk-stg-gear{',
-      'border-color:#b68a39;background:linear-gradient(180deg,rgba(139,103,55,.94) 0%,rgba(60,38,20,.95) 47%,rgba(20,13,7,.96) 100%);',
-      'color:#f8e7bb;text-shadow:0 1px 2px #000;box-shadow:inset 0 1px 0 rgba(255,240,203,.28),inset 0 -2px 4px rgba(0,0,0,.5),0 3px 8px rgba(0,0,0,.45);}',
-    '#main-menu #afk-stg-gear:hover{filter:brightness(1.15);transform:translateY(-1px);}',
+    /* 🔧 其他:獨立方格區,樣式比照 #afk-plugin-frame(同一組金框+黑底),放在它正下方 */
+    '#afk-other-frame{position:relative;width:100%;max-width:22rem;margin:14px auto 0;padding:20px 14px 16px;',
+      'border:1px solid rgba(190,145,75,.72);border-radius:16px;background:rgba(6,5,4,.48);',
+      'box-shadow:inset 0 0 18px rgba(0,0,0,.5),0 4px 18px rgba(0,0,0,.20);',
+      'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}',
+    '#afk-other-frame .afk-frame-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);',
+      'padding:2px 14px;font-size:12.5px;font-weight:700;letter-spacing:2px;color:#ead09a;',
+      'background:linear-gradient(180deg,#1d1710,#090704);',
+      'border:1px solid rgba(190,145,75,.78);border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap;}',
+    /* 📋 紀錄小選單(離線掛機紀錄/安裝成APP/檢查存檔大小) */
+    '#afk-record-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(2,6,23,.82);align-items:center;justify-content:center;padding:24px 12px;font-family:system-ui,"Segoe UI",sans-serif;}',
+    '#afk-record-modal.open{display:flex;}',
+    '#afk-record-card{width:min(360px,92vw);background:#0f172a;border:1px solid #334155;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden;}',
+    '#afk-record-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #1e293b;}',
+    '#afk-record-title{font-size:16px;font-weight:bold;color:#fff;}',
+    '#afk-record-close{width:34px;height:34px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;border-radius:8px;font-size:15px;cursor:pointer;line-height:1;}',
+    '#afk-record-close:active{background:#334155;}',
+    '#afk-record-body{display:flex;flex-direction:column;gap:8px;padding:12px;}',
+    '#afk-record-body button{background:#111c30;border:1px solid #1e293b;color:#e2e8f0;border-radius:9px;padding:12px;font-size:14.5px;text-align:left;cursor:pointer;font-family:inherit;}',
+    '#afk-record-body button:hover{background:#16233b;border-color:#38bdf8;}',
     /* 主入口鈕(含升格方格)改直向堆疊:圖示一行、文字一行,對齊 V17「icon<br>label」的方格外觀 */
     '#main-menu .m-dex-entry-main,#main-menu .m-wiki-entry-main,#main-menu .afk-tile-btn{',
       'width:100%;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;',
@@ -232,25 +249,6 @@
   function findEl(menu, sel) {
     return document.querySelector('#afk-plugin-frame > ' + sel) || menu.querySelector(':scope > ' + sel);
   }
-  // 找/建「升格方格」按鈕(備份管理/批次結算):來源功能是 AFK_SETTINGS._items 裡的項目,
-  // 每次呼叫都重新查 visible()(例如雲端同步要「已設定配對碼」才顯示,狀態會變動)。
-  // 🎨 2026-07-11:改放進獨立的「其他功能」小方格區(見 ensureOtherFrame),不再進外掛框,
-  // 樣式改用 .afk-tile-btn-sm(橫向排列、較矮),故 innerHTML/className 跟著改。
-  function ensurePromotedTile(def) {
-    var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
-    var src = null;
-    for (var i = 0; i < ext.length; i++) { if (ext[i].label === def.srcLabel) { src = ext[i]; break; } }
-    var existing = document.getElementById('afk-tile-' + def.key);
-    if (!src || (src.visible && !src.visible())) { if (existing) existing.remove(); return null; }
-    if (existing) return existing;
-    var b = document.createElement('button');
-    b.id = 'afk-tile-' + def.key;
-    b.type = 'button';
-    b.className = 'btn bg-amber-700 hover:bg-amber-600 border-amber-500 afk-tile-btn-sm';
-    b.textContent = def.icon + ' ' + def.label;
-    b.addEventListener('click', src.onClick);
-    return b;
-  }
   function ensureFrame() {
     var menu = document.getElementById('main-menu'); if (!menu) return;
     var els = [];
@@ -268,19 +266,89 @@
     }
     // 依 FRAME_ORDER 重新 append → 框內順序固定(把散在 #main-menu 的也一起收進來;idempotent)
     els.forEach(function (el) { frame.appendChild(el); });
+  }
 
-    // 🎨 2026-07-13 使用者調整:雲端同步/批次結算/角色背包三顆小方格,直接 append 進同一個
-    // #afk-plugin-frame(緊貼在掉落查詢/小百科方格「正下方、同一個外框內」),不再另外開一個
-    // 有獨立標題的「其他功能」框——避免視覺上被當成不同區塊。沒有任何升格方格可顯示時
-    // 什麼都不 append(維持只有 dex/wiki 兩格)。
-    PROMOTED_TILES.forEach(function (def) {
-      var tile = ensurePromotedTile(def);
-      if (tile) frame.appendChild(tile);
+  // 📋「紀錄」小選單:離線掛機紀錄/安裝成APP/檢查存檔大小這三項各自彈窗內容不同,
+  // 無法真的合併成同一個畫面,改成點「📋 紀錄」這顆按鈕彈出一個小選單,選單裡再列這三項,
+  // 點其中一項才關掉小選單、開啟它原本的彈窗。手機返回鍵/ESC 透過 AFK_UI 共用管理器處理。
+  var _recordLayer = null;
+  function hideRecordModal() { var m = document.getElementById('afk-record-modal'); if (m) m.classList.remove('open'); _recordLayer = null; }
+  function closeRecordModal() { if (_recordLayer && window.AFK_UI) AFK_UI.closeLayer(_recordLayer); else hideRecordModal(); }
+  function ensureRecordModal() {
+    if (document.getElementById('afk-record-modal')) return;
+    var modal = document.createElement('div');
+    modal.id = 'afk-record-modal';
+    modal.innerHTML =
+      '<div id="afk-record-card">' +
+        '<div id="afk-record-head"><span id="afk-record-title">📋 紀錄</span><button id="afk-record-close" type="button" title="關閉">✕</button></div>' +
+        '<div id="afk-record-body"></div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('afk-record-close').addEventListener('click', closeRecordModal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeRecordModal(); });
+  }
+  function openRecordModal(items) {
+    ensureRecordModal();
+    var body = document.getElementById('afk-record-body');
+    body.innerHTML = '';
+    items.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = OTHER_LABEL_OVERRIDE[it.label] || it.label;
+      b.addEventListener('click', function () { closeRecordModal(); it.onClick(); });
+      body.appendChild(b);
     });
+    document.getElementById('afk-record-modal').classList.add('open');
+    _recordLayer = window.AFK_UI ? AFK_UI.openLayer(hideRecordModal) : null;
+  }
 
-    // ⚙ 其他功能(齒輪+下拉選單)固定在外掛框的正下方
-    var stgWrap = menu.querySelector(':scope > #afk-stg-wrap');
-    if (stgWrap && stgWrap.previousElementSibling !== frame) menu.insertBefore(stgWrap, frame.nextSibling);
+  // 🔧「其他」方格區:讀 AFK_SETTINGS._items 全部項目(每支外掛註冊的設定入口,如備份管理/
+  // 批次結算/角色背包…),各自變成一顆跟外掛方格同風格的小按鈕(.afk-tile-btn-sm),放進緊貼
+  // 「🔌 外掛」框下方的獨立方格區;其中 RECORD_GROUP_LABELS 這幾項合併成一顆「📋 紀錄」按鈕
+  // (見上方 openRecordModal)。每次呼叫都重新查 visible()(例如雲端同步要「已設定配對碼」才
+  // 顯示,狀態會變動;安裝成APP 裝好後就不再顯示),沒有任何項目可顯示時整個框移除。
+  // ⚠ apply() 每 300ms 重試一次(前 6 秒)+ #main-menu 有任何子節點變動就會再跑一次,
+  // 若每次都無條件把按鈕整批砍掉重建,使用者點下去那一瞬間按鈕節點可能剛好被換成新的,
+  // 點擊事件就落空在已被移除的舊節點上(踩過:手機測試點「檢查存檔大小」沒反應)。
+  // 用 visible 項目的 label 組一個簽章存在 frame.dataset.sig,沒變就直接跳過重建。
+  function ensureOtherFrame() {
+    var menu = document.getElementById('main-menu'); if (!menu) return;
+    var pluginFrame = document.getElementById('afk-plugin-frame');
+    var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
+    var visibleItems = ext.filter(function (it) { return !(it.visible && !it.visible()); });
+    var groupItems = visibleItems.filter(function (it) { return RECORD_GROUP_LABELS.indexOf(it.label) >= 0; });
+    var normalItems = visibleItems.filter(function (it) { return RECORD_GROUP_LABELS.indexOf(it.label) < 0; });
+    var frame = document.getElementById('afk-other-frame');
+    if (!visibleItems.length) { if (frame) frame.remove(); return; }
+    if (!frame) {
+      frame = document.createElement('div'); frame.id = 'afk-other-frame';
+      var label = document.createElement('div'); label.className = 'afk-frame-label'; label.textContent = '🔧 其他';
+      frame.appendChild(label);
+      menu.insertBefore(frame, pluginFrame ? pluginFrame.nextSibling : null);
+    } else if (pluginFrame && frame.previousElementSibling !== pluginFrame) {
+      menu.insertBefore(frame, pluginFrame.nextSibling);
+    }
+    var sig = normalItems.map(function (it) { return it.label; }).join('|') + '##' + groupItems.map(function (it) { return it.label; }).join('|');
+    if (frame.dataset.sig === sig) return;   // 內容沒變 → 不重建,避免按鈕被頻繁換掉導致點擊落空
+    frame.dataset.sig = sig;
+    // idempotent 重建:先清掉舊按鈕(保留標籤),依 AFK_SETTINGS._items 目前順序重新 append。
+    Array.prototype.slice.call(frame.querySelectorAll('button')).forEach(function (b) { b.remove(); });
+    normalItems.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn bg-amber-700 hover:bg-amber-600 border-amber-500 afk-tile-btn-sm';
+      b.textContent = OTHER_LABEL_OVERRIDE[it.label] || it.label;
+      b.addEventListener('click', it.onClick);
+      frame.appendChild(b);
+    });
+    if (groupItems.length) {
+      var rb = document.createElement('button');
+      rb.type = 'button';
+      rb.className = 'btn bg-amber-700 hover:bg-amber-600 border-amber-500 afk-tile-btn-sm';
+      rb.textContent = '📋 紀錄';
+      rb.addEventListener('click', function () { openRecordModal(groupItems); });
+      frame.appendChild(rb);
+    }
   }
 
   // 🩹 2026-07-13 寬螢幕矮視窗防裁切:量測 #main-menu(含外掛/其他功能方格)的「自然高度」
@@ -309,6 +377,7 @@
     try {
       injectCss(); ensureBadge(); ensureMarquee();
       ensureFrame();
+      ensureOtherFrame();
       fitMainMenu();
     } catch (e) { /* 視覺外掛,出錯不影響遊戲 */ }
     _busy = false;

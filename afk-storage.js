@@ -1,12 +1,12 @@
 /* ============================================================================
- * afk-storage.js — 首頁「設定」鈕 → 展開選單 → 檢查存檔大小
+ * afk-storage.js — 「檢查存檔大小」功能(彈窗本體);入口按鈕已移到「🔧 其他」方格區
  *
- * 在首頁(#main-menu)加一顆小的「⚙ 設定」鈕,點開後展開一個小選單,目前放一項
- * 「🔍 檢查存檔大小」。點下去彈出 modal,把瀏覽器 localStorage 裡每個 key 佔的
- * 大小由大到小列出來,並算總用量與離 ~5MB 上限的比例。
+ * 把瀏覽器 localStorage 裡每個 key 佔的大小由大到小列出來,並算總用量與離 ~5MB
+ * 上限的比例。純唯讀:只 getItem 量字數,不做任何刪除/覆寫。
  *
- * 純唯讀:只 getItem 量字數,不做任何刪除/覆寫。設計成將來要再加別的設定項很容易
- * (往 MENU_ITEMS 陣列加一筆即可)。
+ * 2026-07-13:原本自帶「⚙ 其他功能」齒輪+下拉選單當入口,已拿掉;改成跟其他外掛
+ * 設定項一樣註冊進共用的 AFK_SETTINGS._items,由 afk-skin.js 的「🔧 其他」方格區
+ * 統一收成按鈕(見 afk-skin.js ensureOtherFrame)。
  *
  * 優雅降級:抓不到 #main-menu 就安靜停用,不影響遊戲。
  * 掛接:在 index.html 的 </body> 前加一行 <script src="afk-storage.js"></script>
@@ -101,11 +101,6 @@
   function hideModal() { var m = document.getElementById('m-stg-modal'); if (m) m.classList.remove('open'); _layer = null; }   // 實際收起,不自行動歷史
   function closeModal() { if (_layer && window.AFK_UI) AFK_UI.closeLayer(_layer); else hideModal(); }   // 主動關(✕ / 點背景)
 
-  // 將來要加別的設定項,往這裡加一筆 { label, onClick } 即可
-  var MENU_ITEMS = [
-    { label: '🔍 檢查存檔大小', onClick: openModal }
-  ];
-
   function buildModal() {
     if (document.getElementById('m-stg-modal')) return;
     var modal = document.createElement('div');
@@ -129,16 +124,6 @@
     var s = document.createElement('style');
     s.id = 'm-stg-style';
     s.textContent = [
-      /* 首頁的小設定鈕 + 展開選單(2026-07-11 首頁 V17 改版:黑金配色,呼應其他首頁按鈕) */
-      '#afk-stg-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:-6px;}',
-      '#afk-stg-gear{background:linear-gradient(180deg,#3a2d1c,#17110a);border:1px solid rgba(190,145,75,.72);color:#ead09a;border-radius:8px;font-size:13px;font-weight:bold;padding:5px 14px;cursor:pointer;font-family:inherit;line-height:1.2;}',
-      '#afk-stg-gear:hover{filter:brightness(1.15);}',
-      '#afk-stg-gear.on{background:linear-gradient(180deg,#4a3a24,#221809);color:#f4d68a;border-color:#d8a94b;}',
-      /* 選單往「上方」浮出(absolute,不佔版面流、不把下方內容撐開);bottom:100% 貼齊設定鈕上緣 */
-      '#afk-stg-menu{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:8px;z-index:1001;flex-direction:column;gap:4px;background:rgba(6,5,4,.96);border:1px solid rgba(190,145,75,.72);border-radius:10px;padding:6px;box-shadow:0 -8px 30px rgba(0,0,0,.55);min-width:200px;}',
-      '#afk-stg-menu.open{display:flex;}',
-      '#afk-stg-menu button{background:transparent;border:1px solid transparent;color:#ead09a;border-radius:7px;padding:8px 12px;font-size:14px;text-align:left;cursor:pointer;font-family:inherit;}',
-      '#afk-stg-menu button:hover{background:rgba(190,145,75,.16);border-color:rgba(190,145,75,.5);}',
       /* modal */
       '#m-stg-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(2,6,23,0.82);align-items:flex-start;justify-content:center;padding:24px 12px;font-family:system-ui,"Segoe UI",sans-serif;}',
       '#m-stg-modal.open{display:flex;}',
@@ -168,53 +153,18 @@
     document.head.appendChild(s);
   }
 
+  // 2026-07-13 使用者要求:拿掉「⚙ 其他功能」齒輪+下拉選單,改成跟其他外掛設定項一樣,
+  // 註冊進共用的 AFK_SETTINGS._items,由 afk-skin.js 的「🔧 其他」方格區統一收納成按鈕
+  // (見 afk-skin.js ensureFrame/ensureOtherFrame)。這裡只保留 modal 本體與開啟函式。
   function init() {
     var menu = document.getElementById('main-menu');
     if (!menu) { console.warn('[AFK-storage] 找不到 #main-menu,設定鈕停用。'); return; }
-    if (document.getElementById('afk-stg-wrap')) return;
     injectCSS();
     buildModal();
+    window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
+    AFK_SETTINGS.add({ label: '🔍 檢查存檔大小', onClick: openModal });
 
-    var wrap = document.createElement('div');
-    wrap.id = 'afk-stg-wrap';
-    var gear = document.createElement('button');
-    gear.id = 'afk-stg-gear';
-    gear.type = 'button';
-    gear.textContent = '⚙ 其他功能';
-    var list = document.createElement('div');
-    list.id = 'afk-stg-menu';
-    wrap.appendChild(gear);
-    wrap.appendChild(list);
-    menu.appendChild(wrap);
-
-    // 開選單時才重建項目:合併外掛註冊的(AFK_SETTINGS,如「安裝成免網路遊玩」)＋本檔內建項;
-    //   外掛項在前、內建項在後;帶 visible() 的條件項(安裝裝好後即隱藏)於此時求值。
-    // 🎨 2026-07-11 首頁 V17 改版:「☁️ 配對碼雲端同步」「⏱️ 批次結算」這兩項移到外掛工具方格區
-    // 當獨立方格顯示(見 afk-skin.js ensureFrame),下拉選單裡不再重複顯示。
-    var PROMOTED_TO_TILE = { '☁️ 配對碼雲端同步': 1, '⏱️ 批次結算': 1, '🏦 角色資產管理': 1 };
-    function renderMenu() {
-      var ext = (window.AFK_SETTINGS && AFK_SETTINGS._items) || [];
-      list.innerHTML = '';
-      ext.concat(MENU_ITEMS).forEach(function (it) {
-        if (PROMOTED_TO_TILE[it.label]) return;
-        if (it.visible && !it.visible()) return;
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = it.label;
-        b.addEventListener('click', function () { closeMenu(); it.onClick(); });
-        list.appendChild(b);
-      });
-    }
-    function openMenu() { renderMenu(); list.classList.add('open'); gear.classList.add('on'); }
-    function closeMenu() { list.classList.remove('open'); gear.classList.remove('on'); }
-    gear.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (list.classList.contains('open')) closeMenu(); else openMenu();
-    });
-    // 點選單外面就收起來
-    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) closeMenu(); });
-
-    console.log('[AFK-storage] hooks OK — 首頁設定鈕(檢查存檔大小)已啟用。');
+    console.log('[AFK-storage] hooks OK — 檢查存檔大小已註冊進「其他」方格區。');
   }
 
   ready(init);

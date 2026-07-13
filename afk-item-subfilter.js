@@ -33,6 +33,7 @@
   ];
   var _subFilterState = { item: '', weapon: '', armor: '' };
   var STYLE_ID = 'afk-item-subfilter-style';
+  var CAT_TO_ISEARCH_KEY = { item: 'item', weapon: 'wpn', armor: 'arm' };   // 對應 afk-itemsearch.js 的 key 命名
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -138,15 +139,22 @@
     });
   }
 
+  // 2026-07-13(修正搜尋/子分類篩選互相覆寫閃爍):同時檢查 afk-itemsearch.js 的搜尋關鍵字,
+  // 兩者取交集——不管哪支外掛的重繪收尾最後執行,算出來的顯示/隱藏都已經是最終正確結果,
+  // 不會有一方蓋掉另一方、下一輪又被修回來的兩階段跳動。
   function applyOne(tabId, cat, invItems) {
     var tabDiv = document.getElementById(tabId);
     if (!tabDiv) return;
     var viewport = tabDiv.querySelector('.classic-inventory-viewport') || tabDiv;
     var rows = viewport.querySelectorAll(':scope > .list-item');
     var sub = _subFilterState[cat];
+    var isearchKey = CAT_TO_ISEARCH_KEY[cat];
     for (var idx = 0; idx < rows.length; idx++) {
       var invItem = invItems[idx];
       var visible = !sub || (invItem && matchesSub(cat, invItem, sub));
+      if (visible && window.AFK_ISEARCH && typeof window.AFK_ISEARCH.match === 'function') {
+        visible = window.AFK_ISEARCH.match(isearchKey, rows[idx]);
+      }
       // afk-classic-list.js 對 .list-item 下了 display:flex!important,一般的
       // style.display='none'(無 !important)蓋不過去,物品不會真的被隱藏。
       // 用 setProperty 帶 'important' 才贏得過去;顯示時用 removeProperty 交回原本的
@@ -184,6 +192,13 @@
     window.renderTabs = wrapped;
     return true;
   }
+
+  // 讓 afk-itemsearch.js 反向查詢目前的子分類篩選狀態,兩者取交集(見 filterChildren/applyOne 註解)。
+  window.AFK_SUBFILTER = {
+    getState: function (cat) { return _subFilterState[cat] || ''; },
+    getBucket: categorizedInv,
+    matches: matchesSub
+  };
 
   if (install()) {
     console.log('[AFK-item-subfilter] hooks OK — 道具/武器/防具分頁已加上子分類篩選。');
