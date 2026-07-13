@@ -461,6 +461,10 @@
         document.body.classList.remove('m-mobile');
         document.body.classList.remove('mlog-open');
         logsToColumn();
+        // 2026-07-13:切回桌機時把手機版拱門疊圖節點一併清掉,不要留著等下次意外現形
+        // (見上方 CSS `body.m-mobile #m-load-arch-overlay` 註解)。
+        var arch = document.getElementById('m-load-arch-overlay');
+        if (arch) arch.remove();
       }
       // 桌機↔手機切換時立刻重算一次魔法娃娃游標狀態(見上方 wrapApplyDollCursorForMobile),
       // 避免「切手機前已裝娃娃」殘留 has-doll-cursor、或「切回桌機」沒恢復游標特效。
@@ -1178,7 +1182,10 @@
       /* 拱門雕花疊圖:獨立 div,插在 #load-slot-grid 內部、inset:0 貼滿同一個容器,z-index 蓋在
          角色卡片之上——不透明的拱門雕花部分自然疊在角色黑底外圍,鏤空透明部分露出角色與底下純黑。
          裁切座標沿用 ensureLoadArchOverlay() 算好的固定像素(x=170~330/y=30 起,見上方函式)。 */
-      '#m-load-arch-overlay{position:absolute;inset:0;z-index:5;pointer-events:none;background-image:url(public/assets/login/load1.png);background-repeat:no-repeat;}',
+      /* 2026-07-13 修正:漏了 body.m-mobile 前綴,導致切回桌機後這條規則不受裝置 class 限制,
+         殘留的 DOM 節點(見下方 apply() 的清除補丁)沒清乾淨前還是會被畫出來、疊在桌機版自己
+         的背景圖上(使用者回報「縮小視窗再放大,多了一層拱門圖,要重整才消失」)。 */
+      'body.m-mobile #m-load-arch-overlay{position:absolute;inset:0;z-index:5;pointer-events:none;background-image:url(public/assets/login/load1.png);background-repeat:no-repeat;}',
       'body.m-mobile .load-slot-card{display:none !important;position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;align-items:center !important;justify-content:center !important;}',
       'body.m-mobile .load-slot-card.selected{display:flex !important;}',
       'body.m-mobile .load-slot-card img{max-width:68% !important;max-height:82% !important;}',
