@@ -1082,6 +1082,15 @@
       // 更差)。
       'body.m-mobile #tab-content-panel.equipment-panel-host{height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;min-height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;}',
       'body.m-mobile .equipment-window.equipment-window-embedded{overflow-y:auto !important;-webkit-overflow-scrolling:touch;}',
+      // 2026-07-14 使用者再回報:開了上面的滑動後,能滑到最下方,但滑不到最上方(一開始就卡在
+      // 角色圖片中間)。根因:css/floating-ui.css 的 .equipment-window-frame 是用
+      // left:50%;top:50%;transform:translate(-50%,-50%) 「上下置中」貼在容器裡的——當畫框本身的
+      // 高度比容器高(我們剛封頂的那個較矮的容器),置中會讓畫框上半部延伸到容器頂端「上面」
+      // (負座標),下半部延伸到容器底部「下面」。捲動的 scrollTop 最小只能是 0(容器自己的頂端),
+      // 摸不到那段延伸到負座標的上半部——這才是「滑不到最上方」的真正原因,不是捲動範圍算錯。
+      // 解法:改成「貼齊容器頂端」(top:0,只保留水平置中),畫框就從容器的 y=0 開始往下畫,上半部
+      // 不再跑到負座標,直接看得到;下半部超出的部分交給上面已經開的滑動捲到。
+      'body.m-mobile .equipment-window-embedded .equipment-window-frame{top:0 !important;transform:translateX(-50%) !important;}',
       'body.m-mobile #automation-panel{flex:1 1 auto !important;}',   /* 設定欄:原生 flex:none 害填不滿 → 還原撐滿 */
       'body.m-mobile #automation-panel > div:last-child{max-height:none !important;}',   /* 解除原生 220px 內捲上限,讓內容隨欄高自然捲動 */
 
