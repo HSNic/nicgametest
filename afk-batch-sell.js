@@ -268,11 +268,18 @@
     if (!header) return;
     var row = findIdleRow(header);
     if (!row) return;   // 快速強化/快速廢品進行中:不佔位置,自己收起
+    // 2026-07-13 使用者要求:「快速強化」「快速廢品」(原作按鈕,不可改原始碼)跟我們自己插入的
+    // 「批次販賣」同一排太擠,縮短成「強化」「廢品」增加空間。renderTabs 每次都整段重建這排 DOM
+    // (innerHTML=''重來),所以每次呼叫都要重新改一次文字,不能只改一次。
+    Array.prototype.forEach.call(row.querySelectorAll('button'), function (b) {
+      if (b.textContent === '⚡ 快速強化') b.textContent = '⚡ 強化';
+      else if (b.textContent === '🗑️ 快速廢品') b.textContent = '🗑️ 廢品';
+    });
     if (row.querySelector('.' + ENTRY_CLASS)) return;
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'flex-1 btn border-orange-700 bg-orange-900/70 hover:bg-orange-800 py-1.5 text-sm font-bold text-orange-200 rounded shadow ' + ENTRY_CLASS;
-    btn.textContent = '🧺 批次販賣';
+    btn.textContent = '🧺 販賣';   // 2026-07-13 使用者要求:快速強化/快速廢品/批次販賣三顆按鈕都縮短名稱、增加同排空間利用率
     btn.onclick = function () { openModalUI(type); };
     row.appendChild(btn);
   }

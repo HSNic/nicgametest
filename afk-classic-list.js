@@ -58,7 +58,12 @@
     + '.classic-inventory-scroll{display:none!important;}'
     // 整理背包(↕)按鈕:改成固定在清單右上角的小按鈕，不再依附八格底圖的座標百分比。
     + '.classic-sort-wrap{position:absolute!important;left:auto!important;right:0!important;top:0!important;width:26px!important;height:22px!important;z-index:30!important;}'
-    + '.classic-sort-menu{left:auto!important;right:0!important;top:100%!important;}';
+    + '.classic-sort-menu{left:auto!important;right:0!important;top:100%!important;}'
+    // 2026-07-13 使用者要求:圖示右下角的強化值/堆疊數量、裝備欄左上角的「E」已裝備標記，
+    // 跟名稱文字裡本來就有的「+14」「(43)」重複顯示，桌機/手機都拿掉(只隱藏這兩個 class，
+    // 不動同樣底層 CSS 但用在裝備視窗 js/19 的 .equipment-slot-*，那邊沒人反映重複)。
+    + '.classic-icon-corner-value{display:none!important;}'
+    + '.classic-equipped-badge{display:none!important;}';
 
   function inject() {
     if (document.getElementById(STYLE_ID)) return true;

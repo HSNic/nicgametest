@@ -285,6 +285,7 @@
       if (noCombat && document.body.classList.contains('mlog-combat')) setLog('sys');
       ensureLoadSelectSlotPicker();   // 選角畫面(手機)8 顆存檔位按鈕:面板一出現就補插+每次刷新 active/名稱,idempotent
       ensureLoadArchOverlay();   // 選角畫面(手機)拱門疊圖(見下方 2026-07-13 註解),idempotent
+      ensureTownNpcList();   // 城鎮 NPC 條列式選單(手機;見下方 2026-07-13 稍晚註解),idempotent(簽章沒變就不重建)
     }
     setInterval(mirror, 300);
 
@@ -313,6 +314,75 @@
         ov.style.backgroundSize = bgSize;
         ov.style.backgroundPosition = bgPos;
       }
+    }
+
+    // 2026-07-13 稍晚:城鎮 NPC 條列式選單(手機)。原作 v3.2.84 把城鎮 NPC 從「文字卡片清單」
+    // 改成「站在地圖上、名字用小標籤浮貼」,他自己的「名牌防重疊」(_resolveTownLabelOverlap)
+    // 遇到 NPC 站得密集的城鎮(如銀騎士村 7 位)只會把名牌往上疊成一直行、不會左右錯開,手機窄螢幕
+    // 還是會疊在一起、很難點準;加上手機觸控本來就比滑鼠難點中小小的地圖人物。
+    // 使用者要求:地圖圖片保留(視覺),但地圖下方要有「一個個往下排」的清單,點哪一列就等同點地圖上的
+    // 那個人。原作把舊卡片清單的程式碼整段註解關掉、資料還在(DB.towns[townId].npcs 的 n/title/d/type),
+    // 這裡重新用它建立單欄清單,重用原作全域 interactNPC()/openTownFloatWindow() 開對應功能視窗,
+    // 完全不改動任何核心檔案。只在手機模式生效,桌機的地圖式 NPC 維持原樣不動。
+    var _lastTownNpcSig = '';
+    var TOWN_NPC_ICON = { shop: '💰', craft: '⚒️', skill: '📖', exchange: '⚖️', quest: '📜', pledge: '⚔️', ally: '🤝', bless: '✨', pray: '🙏', mastery: '🏅', castleguard: '🛡️', petstore: '🐾', travel: '⛵', synth: '🎴', warehouse: '🏦' };
+    function townNpcRow(icon, name, title, desc, onClick) {
+      var row = document.createElement('div');
+      row.className = 'm-town-npc-row';
+      row.innerHTML =
+        '<span class="m-tnr-ic">' + icon + '</span>' +
+        '<span class="m-tnr-txt"><b class="m-tnr-name">' + name + '</b><span class="m-tnr-title">[' + title + ']</span>' +
+        '<span class="m-tnr-desc">' + (desc || '') + '</span></span>';
+      row.addEventListener('click', onClick);
+      return row;
+    }
+    function ensureTownNpcList() {
+      // 只在原作已經上線「地圖式 NPC」(#town-npc-map 存在)時才接手;舊版原作自己的卡片清單
+      // (#town-npc-container 預設可見、非 hidden)照原樣運作,不受這裡影響,避免還沒同步到新版前
+      // 就先改掉目前正式站台既有的清單外觀。
+      if (!document.getElementById('town-npc-map')) return;
+      var container = document.getElementById('town-npc-container');
+      if (!container) return;
+      var townView = document.getElementById('town-view');
+      var inTown = townView && !townView.classList.contains('hidden');
+      if (!inTown || typeof mapState === 'undefined' || !mapState || !mapState.current || typeof DB === 'undefined') {
+        if (container.innerHTML) container.innerHTML = '';
+        _lastTownNpcSig = '';
+        return;
+      }
+      var townId = mapState.current;
+      var td = DB.towns && DB.towns[townId];
+      if (!td || !td.npcs) { if (container.innerHTML) container.innerHTML = ''; _lastTownNpcSig = ''; return; }
+      var sig = townId + '|' + (player.bloodPledge || '') + '|' + (player.cls || '') + '|' + (!!player.classicMode);
+      if (sig === _lastTownNpcSig) return;   // 城鎮/血盟/職業/經典模式都沒變 → 不重建(避免每 300ms 洗掉使用者正在看的清單)
+      _lastTownNpcSig = sig;
+      container.innerHTML = '';
+      td.npcs.filter(function (npc) {
+        // 過濾條件對齊原作 renderTownNPCMap:三座攻城城堡只顯示玩家所屬血盟盟主、黑暗妖精限定、經典模式隱藏
+        if (typeof SIEGE_CASTLES !== 'undefined' && SIEGE_CASTLES.indexOf(townId) >= 0) {
+          if (npc.id === 'npc_esti' && player.bloodPledge !== 'esti') return false;
+          if (npc.id === 'npc_tros' && player.bloodPledge !== 'tros') return false;
+        }
+        if (npc.darkOnly && player.cls !== 'dark') return false;
+        if (npc.classicHide && player.classicMode) return false;
+        return true;
+      }).forEach(function (npc) {
+        container.appendChild(townNpcRow(TOWN_NPC_ICON[npc.type] || '👤', npc.n, npc.title, npc.d, function () {
+          if (typeof interactNPC === 'function') interactNPC(npc.id, townId);
+        }));
+      });
+      // 傲慢之塔/時空裂痕入口:地圖版是點地圖上的告示 NPC 開浮動視窗,這裡補對應清單列
+      if (townId === 'town_pride' && typeof renderPrideEntrance === 'function' && typeof openTownFloatWindow === 'function') {
+        container.appendChild(townNpcRow('🗼', '傲慢之塔', '入口', '攀登傲慢之塔,或挑戰排名模式。', function () {
+          openTownFloatWindow('傲慢之塔', '排名挑戰', renderPrideEntrance);
+        }));
+      }
+      if (townId === 'town_rift' && typeof renderRiftEntrance === 'function' && typeof openTownFloatWindow === 'function') {
+        container.appendChild(townNpcRow('🌀', '時空裂痕', '入口', '進入時空裂痕戰場。', function () {
+          openTownFloatWindow('時空裂痕', '進入', renderRiftEntrance);
+        }));
+      }
+      container.classList.remove('hidden');
     }
 
     // ---- 選角畫面(手機):素質表下方 8 顆存檔位按鈕(4個一排×兩排)---------------
@@ -635,6 +705,155 @@
     document.body.appendChild(o);
   }
 
+  // --- 匯入存檔:手機版改用「自製」確認視窗取代原生 confirm/alert ---------------
+  //   背景(2026-07-13 使用者回報):手機版第一次匯入成功,第二次以後按「匯入進度」選完檔案就
+  //   完全沒反應,連確認視窗都不跳。跟登出鈕當年踩的坑同一種(見上方 doLogout 註解):iOS Safari
+  //   在某些情況下會悄悄抑制原生 confirm()/alert(),導致「按了沒反應」。core 的 importSave() 內建
+  //   4 段 confirm()(未簽章警告/覆蓋確認/還原倉庫/還原寵物),原地全部走一次原生對話框。
+  //   做法:比照 doLogout,自己畫一個「取消/確定」卡片當 confirm 的替代品(Promise 化,支援 await
+  //   依序詢問);importSave 本身邏輯照抄一份(不能改 js/13-shop-save.js),只把 confirm() 換成這個
+  //   自製版、alert() 換成全域已接管的 window.alert(afk-ui.js,同樣走自製彈窗、不受影響)。
+  //   只在手機生效,桌機仍用原作 importSave(原生 confirm 桌機沒有這個抑制問題)。
+  function mConfirmModal(message) {
+    return new Promise(function (resolve) {
+      var m = document.createElement('div');
+      m.id = 'm-import-confirm';
+      var msgHtml = String(message).split('\n').map(function (line) {
+        return line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }).join('<br>');
+      m.innerHTML =
+        '<div id="m-import-confirm-card">' +
+          '<div id="m-import-confirm-msg">' + msgHtml + '</div>' +
+          '<div id="m-import-confirm-btns">' +
+            '<button type="button" id="m-import-confirm-cancel">取消</button>' +
+            '<button type="button" id="m-import-confirm-ok">確定</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(m);
+      function close(result) { m.remove(); resolve(result); }
+      m.addEventListener('click', function (e) { if (e.target === m) close(false); });
+      m.querySelector('#m-import-confirm-cancel').addEventListener('click', function () { close(false); });
+      m.querySelector('#m-import-confirm-ok').addEventListener('click', function () { close(true); });
+    });
+  }
+  // 照抄 js/13-shop-save.js importSave() 的邏輯(核心不可改),把每個 confirm() 換成上面的自製視窗、
+  // 用 async/await 依序詢問。用到的存檔輔助函式(_saveUnwrap/_lsGet/_lzSet/_lzSetStoredRaw/_saveWrap/
+  // whKey/PET_ROSTER_KEY/modeSuffix/slotSummary/renderLoadSelect/openSlotSelect/_slotMode)都是原作
+  // 已暴露的全域,沿用同一套、不重寫存檔格式。
+  // 2026-07-13 使用者實機回報:同一個畫面連續按第二次「匯入進度」,iOS 選檔器只閃一下
+  // 「正在準備檔案…」就自動跳掉,完全打不開檔案清單(第一次沒事)。原本(跟核心 importSave 同款
+  // 寫法)每次呼叫都 `document.createElement('input')` 生一個全新、從沒接進 DOM 的 <input>,
+  // 用完即丟——iOS Safari 對「從沒進過 DOM、用過即丟」的檔案輸入框,連續換新元素觸發原生選檔器
+  // 似乎有節流/防濫用機制，第二個全新元素就可能被悄悄擋下來。改成整個外掛只建立一次、
+  // 固定接在 <body> 下面(display:none)的同一個 <input>，每次呼叫只是換掉 onchange 內容
+  // 並清空 value 再 .click()，跟原生瀏覽器分頁裡「一個固定的匯入按鈕」用起來完全一樣。
+  var _mImportInput = null;
+  function getMobileImportInput() {
+    if (_mImportInput && document.body.contains(_mImportInput)) return _mImportInput;
+    var el = document.createElement('input');
+    el.type = 'file';
+    el.accept = '.json,application/json';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    _mImportInput = el;
+    return el;
+  }
+  function mobileImportSave(n) {
+    var input = getMobileImportInput();
+    input.value = '';   // 清空,確保連續選同一個檔案也會觸發 change
+    input.onchange = function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      // 2026-07-13 使用者實機回報:iOS 選檔後卡在系統「正在準備檔案…」就自動跳掉、什麼都沒發生。
+      // 追到 core 原本的 reader 就沒掛 onerror(見 js/13-shop-save.js 同一段)——如果讀檔失敗
+      // (常見於從 iCloud/雲端來源選檔,系統要先下載,連線不穩或逾時就會讀檔失敗)，原本的寫法會
+      // 整個無聲無息地什麼都不做，玩家只會看到「跳掉」。這裡補上失敗提示 + 外層 try/catch，
+      // 讓失敗至少會跳自製彈窗說明，不會像原本一樣完全沒反應。
+      reader.onerror = function () {
+        window.alert('匯入失敗：讀取檔案時發生錯誤（若檔案存放在 iCloud/雲端，請確認網路連線穩定，或先在「檔案」App 內下載到裝置後再選取）。');
+      };
+      reader.onload = function () {
+        (async function () {
+          try {
+          var _raw = String(reader.result || '');
+          var _u = _saveUnwrap(_raw);
+          if (_u.signed && !_u.ok) { window.alert('匯入失敗：檔案完整性校驗未通過，可能已被竄改。'); return; }
+          if (!_u.signed) {
+            var okUnsigned = await mConfirmModal('此存檔檔案沒有完整性簽章（可能來自舊版本，或被外部修改/移除簽章）。\n仍要匯入嗎？');
+            if (!okUnsigned) return;
+          }
+          var text = _u.payload;
+          var d;
+          try { d = JSON.parse(text); }
+          catch (e) { window.alert('匯入失敗：檔案不是有效的存檔（JSON 解析錯誤）。'); return; }
+          if (!d || typeof d !== 'object' || !d.p || typeof d.p !== 'object' || !d.p.cls) {
+            window.alert('匯入失敗：檔案內容不是有效的放置天堂存檔。'); return;
+          }
+          var existing = slotSummary(n);
+          if (existing) {
+            var okOverwrite = await mConfirmModal('存檔 ' + n + ' 已有角色（' + existing.cls + ' Lv.' + existing.lv + ' ' + existing.name + '）。\n確定要用匯入的存檔「取代」它嗎？\n（原存檔會自動備份，可於載入畫面點「復原備份」還原）');
+            if (!okOverwrite) return;
+          }
+          var whData = d.wh;
+          var petData = d.pets;
+          var saveText = text;
+          if (whData !== undefined || petData !== undefined) {
+            var _c = {};
+            for (var k in d) { if (k !== 'wh' && k !== 'pets') _c[k] = d[k]; }
+            saveText = JSON.stringify(_c);
+          }
+          var cur = _lsGet('lineage_idle_save_' + n);
+          if (cur) _lzSetStoredRaw('lineage_idle_save_' + n + '_bak', cur);
+          _lzSet('lineage_idle_save_' + n, _saveWrap(saveText));
+          var whMsg = '';
+          if (whData !== undefined) {
+            var _cnt = (whData.items && whData.items.length) || 0;
+            var _gold = whData.gold || 0;
+            var okWh = await mConfirmModal('此匯入檔包含倉庫資料（物品 ' + _cnt + ' 項、金幣 ' + _gold.toLocaleString() + '）。\n是否一併還原倉庫？\n⚠ 會覆蓋該角色所屬模式（' + ((d.p && d.p.classicMode) ? '經典' : '非經典') + '）的共用倉庫。');
+            if (okWh) {
+              _lzSet(whKey(d.p), JSON.stringify({ items: whData.items || [], gold: whData.gold || 0 }));
+              whMsg = '\n倉庫已一併還原。';
+            } else {
+              whMsg = '\n（倉庫維持原狀，未還原）';
+            }
+          }
+          var petMsg = '';
+          if (petData !== undefined && Array.isArray(petData) && petData.length) {
+            var okPet = await mConfirmModal('此匯入檔包含寵物名冊（' + petData.length + ' 隻）。\n是否一併還原寵物？\n⚠ 會覆蓋該角色所屬模式（' + ((d.p && d.p.classicMode) ? '經典' : '非經典') + '）的共用寵物名冊。');
+            if (okPet) {
+              var _petKey = (typeof PET_ROSTER_KEY !== 'undefined' ? PET_ROSTER_KEY : 'fb5_pet_roster') + (typeof modeSuffix === 'function' ? modeSuffix(!!(d.p && d.p.classicMode), false) : '');
+              _lzSet(_petKey, _saveWrap(JSON.stringify(petData)));
+              // ⚠ core 記憶體快取 _petRosterKey 是模組內 let 變數,外部摸不到、重置不了;
+              // 若匯入的角色跟目前快取剛好同模式,寵物名冊要等下次自然切換模式才會重讀最新內容,
+              // 不影響這裡寫入 localStorage 的存檔資料本身正確性。
+              petMsg = '\n寵物名冊已一併還原。';
+            } else {
+              petMsg = '\n（寵物名冊維持原狀，未還原）';
+            }
+          }
+          if (typeof _slotMode !== 'undefined' && _slotMode === 'load-grid') { if (typeof renderLoadSelect === 'function') renderLoadSelect(); }
+          else if (typeof openSlotSelect === 'function') openSlotSelect(_slotMode);
+          var ns = slotSummary(n);
+          window.alert('已匯入到存檔 ' + n + '：' + (ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成') + '。' + (cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : '') + whMsg + petMsg);
+          } catch (err) {
+            window.alert('匯入失敗：處理存檔時發生未預期的錯誤（' + (err && err.message ? err.message : err) + '）。');
+          }
+        })();
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+  (function installMobileImportSave() {
+    if (typeof window.importSave !== 'function') return;   // 原作若改版拿掉/改名 importSave,靜靜跳過、桌機手機都退回不存在此鈕(不會壞)
+    var coreImportSave = window.importSave;
+    window.importSave = function (n) {
+      if (document.body.classList.contains('m-mobile')) { mobileImportSave(n); return; }
+      return coreImportSave.apply(this, arguments);
+    };
+  })();
+
   // --- 手機戰鬥畫面:怪物下方的「手動喝水列」 -------------------------------
   //   每列排版:[藥水圖示][數量][按鈕]。藥水列喝設定裡選的治癒藥水(set-pot:紅/橙/白),
   //   沒貨依紅→橙→白往下找;背包有安特的水果時自動多一列(食用)。
@@ -784,6 +1003,13 @@
          於 m-mobile 下蓋回。scope 在 body.m-mobile #id,比原作者 #id 規則更specific 即可勝出;
          原作者哪天移除這些規則,選擇器不命中就自動失效(不會弄壞)。 */
       'body.m-mobile #mobile-vitals{display:none !important;}',   /* 原生置頂 HP/MP 細條 → 與本外掛 #m-status 重複(雙血條),隱藏 */
+      // 2026-07-13 使用者回報:背包分頁「能力/裝備/技能…」12 顆分頁按鈕列上方留一截空白、且往下
+      // 蓋到武器/防具/道具分頁的「快速強化/快速廢品/批次販賣」列。根因:原作 css/style.css 在
+      // `#col-right > .tab-bar{position:sticky;top:62px}` 幫這排按鈕做手機吸頂,62px 是原作自己
+      // 的原生狀態列(#mobile-vitals)高度——但 #mobile-vitals 被我們隱藏、改用自己的 #m-status,
+      // 兩者高度對不上,吸頂的偏移量算出來的位置比實際版面低了一截，才會空一段又蓋到下面。
+      // 這裡不需要吸頂效果(#m-status 本來就固定在最上方看得到目前分頁),直接關掉 sticky。
+      'body.m-mobile #col-right > .tab-bar{position:static !important;top:auto !important;}',
       'body.m-mobile #tab-content-panel{flex:1 1 auto !important;height:auto !important;min-height:0 !important;}',   /* 背包欄:原生 height:70vh 害底部留空 → 還原撐滿 */
       'body.m-mobile #automation-panel{flex:1 1 auto !important;}',   /* 設定欄:原生 flex:none 害填不滿 → 還原撐滿 */
       'body.m-mobile #automation-panel > div:last-child{max-height:none !important;}',   /* 解除原生 220px 內捲上限,讓內容隨欄高自然捲動 */
@@ -957,8 +1183,10 @@
       'body.m-mobile.mview-config .m-col-left{display:flex !important;}',
       'body.m-mobile.mview-bag .m-col-right{display:flex !important;}',
 
-      /* 底部導覽列 */
-      'body.m-mobile #m-nav{display:flex !important;flex:0 0 auto !important;height:56px;background:#0f172a;border-top:1px solid #334155;}',
+      /* 底部導覽列:遊戲本體 .m-col-left/.m-col-center/.m-col-right 各自帶 order:1~3(它自己響應式版面用),
+         而這裡沒指定 order 時瀏覽器預設 0,會比欄位內容更早排(視覺上被擠到 #m-status 正下方、跑到頂部)。
+         給一個夠大的 order 值,確保無論核心欄位用到多少 order 都排在它們之後,固定貼在畫面最下方。 */
+      'body.m-mobile #m-nav{display:flex !important;flex:0 0 auto !important;order:99 !important;height:56px;background:#0f172a;border-top:1px solid #334155;}',
       'body.m-mobile #m-nav button{flex:1;background:transparent;border:none;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:inherit;touch-action:manipulation;}',   /* touch-action:manipulation:取消 iOS 雙擊縮放的 300ms 等待 → click 在 touchend 當下就發,不會被 mirror/戰鬥重排插隊取消(iPhone 要按多下才有反應的根因) */
       'body.m-mobile #m-nav button.m-active{color:#fcd34d;background:#1e293b;}',
       'body.m-mobile #m-nav button:active{background:#334155;}',
@@ -1021,6 +1249,17 @@
       '#m-logout-ok{background:#b45309;color:#fff;border-color:#d97706;}',
       '#m-logout-ok:active{background:#92400e;}',
 
+      /* 匯入存檔確認視窗(自製,同上取代原生 confirm) */
+      '#m-import-confirm{position:fixed;inset:0;z-index:95;background:rgba(2,6,23,0.7);display:flex;align-items:center;justify-content:center;padding:24px;}',
+      '#m-import-confirm-card{width:min(360px,92vw);background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6);}',
+      '#m-import-confirm-msg{color:#e2e8f0;font-size:14px;line-height:1.7;text-align:center;margin-bottom:18px;white-space:normal;}',
+      '#m-import-confirm-btns{display:flex;gap:10px;}',
+      '#m-import-confirm-btns button{flex:1;padding:11px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;font-family:inherit;border:1px solid #334155;touch-action:manipulation;}',
+      '#m-import-confirm-cancel{background:#1e293b;color:#cbd5e1;}',
+      '#m-import-confirm-cancel:active{background:#334155;}',
+      '#m-import-confirm-ok{background:#4338ca;color:#fff;border-color:#6366f1;}',
+      '#m-import-confirm-ok:active{background:#3730a3;}',
+
       /* 登出遮罩:按確定後立刻蓋住,撐過 reload 重開機的幾秒(否則舊頁戰鬥畫面還在跑) */
       '#m-logout-overlay{position:fixed;inset:0;z-index:100000;background:#020617;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;}',
       '#m-logout-overlay-spin{width:38px;height:38px;border:3px solid #334155;border-top-color:#f59e0b;border-radius:50%;animation:m-logout-spin 0.8s linear infinite;}',
@@ -1072,7 +1311,24 @@
       'body.m-mobile #town-view{padding:10px 12px !important;gap:5px !important;}',
       'body.m-mobile #town-name{font-size:19px !important;}',
       'body.m-mobile #town-view > p{font-size:12px !important;line-height:1.35 !important;}',
-      'body.m-mobile #town-npc-container{margin-top:6px !important;}',
+      /* 城鎮 NPC 條列式選單(見上方 ensureTownNpcList):原作把這個容器改成 2 欄卡片格線後永遠 hidden
+         (NPC 改用地圖式呈現),這裡把它重新啟用、改回單欄直向清單,貼在地圖下方(DOM 順序天生在
+         #town-npc-map 之後,原作、地圖圖片保留在上面不動)。 */
+      /* :has(#town-npc-map) 只在原作已上線地圖式 NPC 才命中;還沒同步到新版的正式站台
+         沒有這個元素,不會動到目前運作中的舊版 2 欄卡片清單。
+         原作 #town-view 本身是「固定 16:9、overflow:hidden」的圖框(跟戰鬥框同規格),多塞進去的
+         清單會被直接裁掉看不見;這裡讓 #town-view 改成隨內容自然長高(地圖仍維持 16:9,清單接在
+         下面),交給 #game-screen 既有的 overflow-y:auto 一起捲動。 */
+      'body.m-mobile:has(#town-npc-map) #town-view:not(.hidden){aspect-ratio:none !important;height:auto !important;overflow:visible !important;}',
+      'body.m-mobile:has(#town-npc-map) #town-npc-map{aspect-ratio:16/9 !important;height:auto !important;flex:0 0 auto !important;}',
+      'body.m-mobile:has(#town-npc-map) #town-npc-container{display:flex !important;flex-direction:column !important;grid-template-columns:none !important;gap:8px !important;margin-top:8px !important;flex:0 0 auto !important;overflow:visible !important;max-height:none !important;}',
+      'body.m-mobile .m-town-npc-row{display:flex;flex:0 0 auto;align-items:flex-start;gap:10px;padding:10px 12px;min-height:44px;background:#1e293b;border:1px solid #334155;border-radius:10px;cursor:pointer;touch-action:manipulation;}',
+      'body.m-mobile .m-town-npc-row:active{background:#334155;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-ic{font-size:22px;line-height:1;flex:0 0 auto;margin-top:1px;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-txt{display:flex;flex-direction:column;gap:1px;min-width:0;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-name{color:#f1f5f9;font-size:15px;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-title{color:#facc15;font-size:12px;margin-left:4px;}',
+      'body.m-mobile .m-town-npc-row .m-tnr-desc{color:#94a3b8;font-size:12px;line-height:1.4;margin-top:2px;}',
 
       /* 倉庫(warehouse NPC):金幣存取列 + 分類/一鍵列在手機窄寬下擠成一團 → 重排成整齊兩行。
          用倉庫專屬 id/onclick(#wh-gold-amt、whOneClickDeposit)定位,只命中倉庫;原作改版即失效不影響別頁。 */
