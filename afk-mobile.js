@@ -287,6 +287,7 @@
       ensureLoadArchOverlay();   // 選角畫面(手機)拱門疊圖(見下方 2026-07-13 註解),idempotent
       ensureTownNpcList();   // 城鎮 NPC 條列式選單(手機;見下方 2026-07-13 稍晚註解),idempotent(簽章沒變就不重建)
       capEquipmentPanelHeight();   // 裝備視窗高度上限(手機;見下方 2026-07-14 註解),idempotent
+      restoreEquipmentFrameWidth();   // 裝備視窗寬度改回 build 0714-1608 的大小(手機;見下方 2026-07-14 註解),idempotent
     }
     setInterval(mirror, 300);
 
@@ -316,6 +317,25 @@
         // 重新排版,裝備視窗的實際高度才會跟著我們封頂後的容器高度一起變小。
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
       }
+    }
+
+    // 2026-07-14 使用者回報:同步原作 v3.4.24 後,手機裝備視窗看起來比昨天(build 0714-1608)小了一圈。
+    // 追出根因:原作這次同步改了 js/19-equipment-window.js 手機版寬度算法——舊版手機分支不管高度、
+    // 直接拿滿容器寬度(frameWidth = hostRect.width);新版加了 maxFrameWidth=366 上限、且改用
+    // "min(容器寬, 366, 容器高×183/408)" 三者取最小——容器高被我們上面 capEquipmentPanelHeight()
+    // 封頂後通常遠小於寬度換算出的等值寬,於是這個「高度換算寬度」的新項目變成實際生效的那個、把畫框
+    // 寬度壓得比昨天窄很多(實測 371px→213px)。這段 js/19 是原作程式碼,不能直接改;採用「事後蓋一次」
+    // 的方式,在 mirror() 每 300ms 跟著把畫框寬度改回昨天的算法(=容器目前的實際寬度,不再被高度換算
+    // 值限制住),視覺上等於回到 build 0714-1608 的大小。不影響前面已修好的觸控捲動/封頂高度邏輯
+    // (那兩塊完全沒被這次同步動到)。
+    function restoreEquipmentFrameWidth() {
+      var host = document.getElementById('tab-content-panel');
+      if (!host || !host.classList.contains('equipment-panel-host')) return;
+      var frame = document.querySelector('.equipment-window-embedded .equipment-window-frame');
+      if (!frame) return;
+      var w = Math.floor(host.getBoundingClientRect().width);
+      if (w <= 0) return;
+      if (frame.style.width !== w + 'px') frame.style.setProperty('width', w + 'px', 'important');
     }
 
     // 2026-07-13:選角畫面(手機)拱門畫框疊圖——見上方 CSS `#m-load-arch-overlay` 註解。

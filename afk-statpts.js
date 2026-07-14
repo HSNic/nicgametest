@@ -9,12 +9,18 @@
  * 註:用過「回憶蠟燭」重置後,創角分配的點會被併進 alloc(升),此時「始」只剩純職業基礎、
  *    「升」會含創角點;沒重置過的角色則 始/升 完全準確。總一定正確。
  *
- * 作法:monkey-patch 全域 updateUI——原函式跑完後,在六大屬性 grid 內、每個屬性「值欄」之後插一條
- *      橫跨整列(grid-column:1/-1)的分解行。
- *      原作把屬性值從「整格 div」改成「夾在 +/- 加點按鈕之間的窄 span(w-8)」後,不能再 append 進值元素
- *      (會被擠爆);改為插在值欄之後、獨立成一橫列,對「無加點」與「升級加點(+/- 顯示)」兩種狀態都不影響版面。
- *      分解行不再前綴屬性名——它就在該屬性(原作已標「力量 (STR)」)正下方,再標一次會變兩個名字、反而醜。
- *      優雅降級:找不到 updateUI / player.base / 屬性元素就安靜停用。
+ * 作法:monkey-patch 全域 updateUI——原函式跑完後幫每個屬性值補上分解資訊。
+ *
+ * ⚠️ 2026-07-14 補記(原作 v3.4.24「能力視窗改版」踩過的坑):原本是在六大屬性「值欄」之後插一條
+ *    橫跨整列(grid-column:1/-1)的獨立分解行,前提是原作用 CSS grid 排這六格。原作這次改版把
+ *    #tab-stats 整個換成「用一張 400×825 底圖 + 每格數值各自 position:absolute 貼點座標」的新版面
+ *    (.ability-primary-control 系列),六格彼此貼得很緊(格高 3.35%、格距只有 3.1%,中間完全沒有
+ *    多餘空間可以再塞一整行文字),插入的分解行變成蓋住/疊在下一格數值上面(玩家反映「畫面疊字很亂」)。
+ *    新版面已經沒有版面空間可以「常駐顯示」這行分解,改成掛在該屬性數值上的 title 提示(滑鼠停在數值
+ *    上就會跳出瀏覽器原生提示框),不佔任何版面空間、不會再疊字;代價是手機(無滑鼠 hover)看不到這個
+ *    提示,但這本來就是輔助資訊(不含裝備的分解,不是主要數值),可接受。
+ *    偵測法:valEl 是否在 .ability-primary-control 內——是就用新版面(title 提示);
+ *    不是則沿用舊版面的「插入分解行」寫法(萬一原作哪天又改回列表式版面,不必再改這支)。
  */
 (function () {
   var STATS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -41,11 +47,17 @@
     STATS.forEach(function (s) {
       var valEl = document.getElementById('dt-' + s);   // 原作:夾在 +/- 之間的屬性值 <span>
       if (!valEl) return;
-      var cell = valEl.parentElement;                   // 值欄(grid 直接子元素;flex 容器含 - 值 +)
-      if (!cell || !cell.parentElement) return;
       var bi = n(player.base, s), al = n(player.alloc, s), pa = n(player.panacea, s);
       var txt = '始' + bi + '／升' + al + '／藥' + pa + '／總' + (bi + al + pa);   // 總=不含裝備/buff
 
+      var control = valEl.closest('.ability-primary-control');   // 新版面(v3.4.24 起):貼點座標的緊湊版面,沒有空間再插一整行
+      if (control) {
+        if (control.title !== txt) control.title = txt;
+        return;
+      }
+
+      var cell = valEl.parentElement;                   // 舊版面:值欄(grid 直接子元素;flex 容器含 - 值 +)
+      if (!cell || !cell.parentElement) return;
       var line = lines[s];
       if (!line || !line.isConnected) {                 // 尚未插入 / 被外力移除 → 接既有的或新建,插在值欄之後
         var nx = cell.nextElementSibling;

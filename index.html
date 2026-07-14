@@ -329,59 +329,50 @@
 
             <div id="tab-content-panel" class="panel flex-1 flex flex-col overflow-hidden relative">
                 <!-- 能力：400×825 經典資訊欄底圖；配點框只在回憶蠟燭流程顯示 -->
-                <div id="tab-stats" class="ability-window-tab h-full">
-                    <div class="ability-window-shell">
-                        <div class="ability-primary-control ability-primary-str"><button class="alloc-minus hidden" onclick="adjAlloc('str',-1)" aria-label="力量減一">−</button><span id="dt-str">0</span><button class="alloc-plus hidden" onclick="adjAlloc('str',1)" aria-label="力量加一">＋</button></div>
-                        <div class="ability-primary-control ability-primary-dex"><button class="alloc-minus hidden" onclick="adjAlloc('dex',-1)" aria-label="敏捷減一">−</button><span id="dt-dex">0</span><button class="alloc-plus hidden" onclick="adjAlloc('dex',1)" aria-label="敏捷加一">＋</button></div>
-                        <div class="ability-primary-control ability-primary-con"><button class="alloc-minus hidden" onclick="adjAlloc('con',-1)" aria-label="體質減一">−</button><span id="dt-con">0</span><button class="alloc-plus hidden" onclick="adjAlloc('con',1)" aria-label="體質加一">＋</button></div>
-                        <div class="ability-primary-control ability-primary-int"><button class="alloc-minus hidden" onclick="adjAlloc('int',-1)" aria-label="智力減一">−</button><span id="dt-int">0</span><button class="alloc-plus hidden" onclick="adjAlloc('int',1)" aria-label="智力加一">＋</button></div>
-                        <div class="ability-primary-control ability-primary-wis"><button class="alloc-minus hidden" onclick="adjAlloc('wis',-1)" aria-label="精神減一">−</button><span id="dt-wis">0</span><button class="alloc-plus hidden" onclick="adjAlloc('wis',1)" aria-label="精神加一">＋</button></div>
-                        <div class="ability-primary-control ability-primary-cha"><button class="alloc-minus hidden" onclick="adjAlloc('cha',-1)" aria-label="魅力減一">−</button><span id="dt-cha">0</span><button class="alloc-plus hidden" onclick="adjAlloc('cha',1)" aria-label="魅力加一">＋</button></div>
-
-                        <div class="ability-detail-column ability-detail-left">
-                            <div><span>近距離傷害</span><strong id="dt-mdmg">0</strong></div>
-                            <div><span>近距離命中</span><strong id="dt-mhit">0</strong></div>
-                            <div><span>近距離爆擊率</span><strong id="dt-mcrit-p">0%</strong></div>
-                            <div><span>近距離爆擊傷害</span><strong id="dt-mcritdmg">0%</strong></div>
-                            <div class="ability-detail-spacer" aria-hidden="true"></div>
-                            <div><span>遠距離傷害</span><strong id="dt-rdmg">0</strong></div>
-                            <div><span>遠距離命中</span><strong id="dt-rhit">0</strong></div>
-                            <div><span>遠距離爆擊率</span><strong id="dt-rcrit">0%</strong></div>
-                            <div><span>遠距離爆擊傷害</span><strong id="dt-rcritdmg">0%</strong></div>
-                            <div><span>迴避率</span><strong id="dt-er">0%</strong></div>
-                            <div><span>HP恢復量</span><strong id="dt-hpr">0</strong></div>
-                            <div><span>藥水恢復量</span><strong id="dt-potion">0%</strong></div>
-                            <div><span>傷害減免</span><strong id="dt-dr">0</strong></div>
-                            <div><span>移動速度</span><strong id="dt-movespeed">100%</strong></div>
-                            <div><span>攻擊速度</span><strong id="dt-spd">1.0s</strong></div>
+                <div id="tab-stats" class="p-5 overflow-y-auto h-full flex flex-col gap-5 text-lg">
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                        <div class="text-red-300 flex items-center">力量 (STR)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('str',-1)">-</button><span class="text-red-200 font-bold w-8 text-right" id="dt-str">0</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('str',1)">+</button></div>
+                        <div class="text-green-300 flex items-center">敏捷 (DEX)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('dex',-1)">-</button><span class="text-green-200 font-bold w-8 text-right" id="dt-dex">0</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('dex',1)">+</button></div>
+                        <div class="text-orange-300 flex items-center">體質 (CON)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('con',-1)">-</button><span class="text-orange-200 font-bold w-8 text-right" id="dt-con">0</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('con',1)">+</button></div>
+                        <div class="text-blue-300 flex items-center">智力 (INT)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('int',-1)">-</button><span class="text-blue-200 font-bold w-8 text-right" id="dt-int">0</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('int',1)">+</button></div>
+                        <div class="text-purple-300 flex items-center">精神 (WIS)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('wis',-1)">-</button><span class="text-purple-200 font-bold w-8 text-right" id="dt-wis">0</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('wis',1)">+</button></div>
+                        <div class="text-pink-300 flex items-center">魅力 (CHA)</div> <div class="flex items-center justify-end gap-1.5"><button class="alloc-minus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('cha',-1)">-</button><span class="text-pink-200 font-bold w-8 text-right" id="dt-cha">8</span><button class="alloc-plus hidden btn px-2.5 py-0.5 text-base leading-none" onclick="adjAlloc('cha',1)">+</button></div>
+                    </div>
+                    <div class="border-t border-slate-700 pt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-base">
+                        <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離傷害</div> <div class="text-white text-right font-bold" id="dt-mdmg">0</div></span>
+                        <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離命中</div> <div class="text-white text-right font-bold" id="dt-mhit">0</div></span>
+                        <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離爆擊率</div> <div class="text-white text-right font-bold" id="dt-mcrit-p">0%</div></span>
+                        <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離傷害</div> <div class="text-white text-right font-bold" id="dt-rdmg">0</div></span>
+                        <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離命中</div> <div class="text-white text-right font-bold" id="dt-rhit">0</div></span>
+                        <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離爆擊率</div> <div class="text-white text-right font-bold" id="dt-rcrit">0%</div></span>
+                        <span class="stat-row" data-grp="extra"><div class="text-slate-200">額外傷害</div> <div class="text-white text-right font-bold" id="dt-edmg">0</div></span>
+                        <span class="stat-row" data-grp="extra"><div class="text-slate-200">額外命中</div> <div class="text-white text-right font-bold" id="dt-ehit">0</div></span>
+                        <div class="text-slate-200">魔法傷害</div> <div class="text-white text-right font-bold" id="dt-mgdmg">0</div>
+                        <div class="text-slate-200">額外魔法點數</div> <div class="text-white text-right font-bold" id="dt-sp">0</div>
+                        <div class="text-slate-200">魔法命中</div> <div class="text-white text-right font-bold" id="dt-mhit-mag">0</div>
+                        <div class="text-slate-200">魔法爆擊率</div> <div class="text-white text-right font-bold" id="dt-mcrit">0%</div>
+                        <div class="text-slate-200">MP消耗減免</div> <div class="text-white text-right font-bold" id="dt-mpreduce">0%</div>
+                        <div class="text-slate-400 text-red-400">HP恢復量</div> <div class="text-red-400 text-right font-bold" id="dt-hpr">0</div>
+						<div class="text-slate-400 text-blue-300">MP恢復量</div> <div class="text-blue-300 text-right font-bold" id="dt-mpr">0</div>
+						<div class="text-slate-200">迴避率 (ER)</div> <div class="text-white text-right font-bold" id="dt-er">0%</div>
+                        <div class="text-slate-200">傷害減免 (DR)</div> <div class="text-white text-right font-bold" id="dt-dr">0</div>
+                        <div class="text-red-300">火屬性抗性</div> <div class="text-red-200 text-right font-bold" id="dt-resfire">0%</div>
+                        <div class="text-blue-300">水屬性抗性</div> <div class="text-blue-200 text-right font-bold" id="dt-reswater">0%</div>
+                        <div class="text-green-300">風屬性抗性</div> <div class="text-green-200 text-right font-bold" id="dt-reswind">0%</div>
+                        <div class="text-amber-300">地屬性抗性</div> <div class="text-amber-200 text-right font-bold" id="dt-researth">0%</div>
+                        <div class="text-slate-200">攻擊速度</div> <div class="text-white text-right font-bold" id="dt-spd">1.0s</div>
+                    </div>
+                    <div class="border-t border-slate-700 pt-4 text-base leading-relaxed" id="dt-buffs"></div>
+                    
+                    <!-- 升級點數／回憶蠟燭配點：點數與「確認/取消」工具列（+/- 按鈕已併入上方六大屬性列） -->
+                    <div id="alloc-edit-bar" class="hidden mt-auto border-t border-slate-700 pt-4 bg-slate-800 -mx-5 -mb-5 p-5 rounded-b-xl flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex flex-col">
+                            <span class="text-yellow-400 font-bold text-lg" id="alloc-bar-label">升級點數：0</span>
+                            <span id="alloc-bar-hint" class="hidden text-slate-400 text-xs">以上方 +／- 重新分配，按「確認」才生效</span>
                         </div>
-                        <div class="ability-detail-column ability-detail-right">
-                            <div><span>魔法傷害</span><strong id="dt-mgdmg">0</strong></div>
-                            <div><span>魔法命中</span><strong id="dt-mhit-mag">0</strong></div>
-                            <div><span>額外魔法點數</span><strong id="dt-sp">0</strong></div>
-                            <div><span>魔法爆擊率</span><strong id="dt-mcrit">0%</strong></div>
-                            <div><span>魔法爆擊傷害</span><strong id="dt-mgcritdmg">0%</strong></div>
-                            <div><span>MP恢復量</span><strong id="dt-mpr">0</strong></div>
-                            <div><span>MP消耗減免</span><strong id="dt-mpreduce">0%</strong></div>
-                            <div><span>擊殺回魔</span><strong id="dt-mpkill">0</strong></div>
-                            <div><span>魔法防禦</span><strong id="dt-mr">0</strong></div>
-                            <div class="ability-detail-spacer" aria-hidden="true"></div>
-                            <div><span>無屬性抗性</span><strong id="dt-resnone">0%</strong></div>
-                            <div class="ability-res-fire"><span>火屬性抗性</span><strong id="dt-resfire">0%</strong></div>
-                            <div class="ability-res-water"><span>水屬性抗性</span><strong id="dt-reswater">0%</strong></div>
-                            <div class="ability-res-wind"><span>風屬性抗性</span><strong id="dt-reswind">0%</strong></div>
-                            <div class="ability-res-earth"><span>地屬性抗性</span><strong id="dt-researth">0%</strong></div>
-                        </div>
-
-                        <div class="ability-hidden-values" aria-hidden="true"><span id="dt-edmg">0</span><span id="dt-ehit">0</span></div>
-                        <div id="dt-buffs" class="ability-buffs"></div>
-
-                        <div id="alloc-edit-bar" class="hidden ability-respec-overlay">
-                            <span id="alloc-bar-label" class="ability-respec-points">0</span>
-                            <div class="ability-respec-actions">
-                                <span id="alloc-bar-hint">以上方 ＋／− 重新分配，確認後才會消耗回憶蠟燭</span>
-                                <div><button id="alloc-confirm-btn" onclick="confirmRespec()" class="hidden">確認</button><button id="alloc-cancel-btn" onclick="cancelRespec()" class="hidden">取消</button></div>
-                            </div>
+                        <div class="flex gap-2">
+                            <button id="alloc-confirm-btn" onclick="confirmRespec()" class="hidden btn px-5 py-2 bg-emerald-800 border-emerald-600 text-emerald-100 font-bold">確認</button>
+                            <button id="alloc-cancel-btn" onclick="cancelRespec()" class="hidden btn px-5 py-2 bg-slate-700 border-slate-500 text-slate-200 font-bold">取消</button>
                         </div>
                     </div>
                 </div>
@@ -575,7 +566,7 @@
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260714m"></script>
+<script src="afk-mobile.js?v=20260714n"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-backnav.js?v=20260712a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -599,7 +590,7 @@
 <!-- 手機 toast 提示(點按鈕的系統日誌訊息浮現;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-toast.js?v=20260713a"></script>
 <!-- 能力值面板補點數分解 始/升/藥/總(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-statpts.js?v=20260629a"></script>
+<script src="afk-statpts.js?v=20260714a"></script>
 <!-- 外掛工具面板(僅保留 hooks OK log,DOM 內容已於 2026-07-08 精簡移除;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-syncinfo.js?v=20260708a"></script>
 <!-- 統一自製彈窗:全域接管 window.alert(可獨立維護;原作者更新後重新加回此行即可) -->
