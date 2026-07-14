@@ -546,6 +546,10 @@ function loadFrameSrc(key, frame){
     if(key === 'none') return `assets/start/none/${frame}.png`;
     return `assets/start/${key}/${frame}.png`;
 }
+function creationFrameSrc(key, frame){
+    if(key === 'none') return 'assets/start/0.png';
+    return `assets/start-transparent/${key}/${frame}.png`;
+}
 function loadFirstFrame(key){
     if(key === 'none') return LOAD_NONE_ANIM_FRAMES[0];
     const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
@@ -560,7 +564,10 @@ function openLoadSelect(){
     if(main) main.classList.add('hidden');
     if(create) create.classList.add('hidden');
     if(oldSlots) oldSlots.classList.add('hidden');
-    if(load) load.classList.remove('hidden');
+    if(load) {
+        load.classList.remove('hidden');
+        load.scrollTop = 0;
+    }
     _loadLastClickSlot = 0; _loadLastClickAt = 0;
     _loadPage = 0;
     _loadSelectedSlot = [1,2,3,4].find(n => !!slotSummary(n)) || 1;
@@ -774,12 +781,12 @@ function setCreationClassAnimation(c){
     creationClassAnim = { key, frame: range[0], first: range[0], last: range[1], lastAt: 0, stepMs: 82, static: false };
     const img = document.getElementById('class-preview-img');
     if(img){
-        img.src = `assets/start/${key}/${range[0]}.png`;
+        img.src = creationFrameSrc(key, range[0]);
         img.style.display = 'block';
     }
     if(typeof playCreationFrameSfx === 'function') playCreationFrameSfx(key, range[0]);
     for(let n = range[0]; n <= Math.min(range[1], range[0] + 10); n++){
-        const pre = new Image(); pre.src = `assets/start/${key}/${n}.png`;
+        const pre = new Image(); pre.src = creationFrameSrc(key, n);
     }
 }
 (function animateCreationClassPreview(){
@@ -789,7 +796,7 @@ function setCreationClassAnimation(c){
         const gs = document.getElementById('game-screen');   // 🔊 v3.4.17 已進遊戲→停創角動畫（防 creation-panel classList 殘留→動畫續跑並每 loop 重觸發創角音效）
         if(panel && img && !panel.classList.contains('hidden') && (!gs || gs.classList.contains('hidden')) && !creationClassAnim.static && now - creationClassAnim.lastAt >= creationClassAnim.stepMs){
             creationClassAnim.frame = creationClassAnim.frame >= creationClassAnim.last ? creationClassAnim.first : creationClassAnim.frame + 1;
-            img.src = `assets/start/${creationClassAnim.key}/${creationClassAnim.frame}.png`;
+            img.src = creationFrameSrc(creationClassAnim.key, creationClassAnim.frame);
             if(creationClassAnim.frame === creationClassAnim.first && typeof playCreationFrameSfx === 'function') playCreationFrameSfx(creationClassAnim.key, creationClassAnim.frame);
             creationClassAnim.lastAt = now;
         }

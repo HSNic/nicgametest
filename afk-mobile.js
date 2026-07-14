@@ -1556,8 +1556,8 @@
          [170,330](寬160px)當裁切窗:background-size 410%(=640/160*100%,讓這 160px 撐滿容器寬)、
          background-position-x 用「(container-image)*(pct/100)=目標位移」反推 pct≈33%(見同名歷史對話
          推導,数字非憑空handle)。 */
-      'body.m-mobile #load-select-panel:not(.hidden){display:flex !important;flex-direction:column !important;height:100dvh !important;min-height:100dvh !important;overflow:hidden !important;padding:0 !important;}',
-      'body.m-mobile #load-art-stage{display:flex !important;flex-direction:column !important;flex:1 1 auto !important;min-height:0 !important;position:relative !important;width:100% !important;max-width:none !important;aspect-ratio:auto !important;height:auto !important;box-shadow:none !important;overflow:hidden !important;}',
+      'body.m-mobile #load-select-panel:not(.hidden){display:flex !important;flex-direction:column !important;align-items:center !important;justify-content:flex-start !important;height:100dvh !important;min-height:100dvh !important;max-height:100dvh !important;overflow-x:hidden !important;overflow-y:scroll !important;padding:0 0 max(180px,calc(env(safe-area-inset-bottom) + 150px)) !important;-webkit-overflow-scrolling:touch !important;touch-action:pan-y !important;}',
+      'body.m-mobile #load-art-stage{display:flex !important;flex-direction:column !important;flex:0 0 auto !important;min-height:720px !important;position:relative !important;width:100% !important;max-width:none !important;aspect-ratio:auto !important;height:max(720px,calc(100dvh + 20px)) !important;box-shadow:none !important;overflow:visible !important;}',
       'body.m-mobile #load-select-bg,body.m-mobile #load-select-overlay,body.m-mobile #load-page-tabs{display:none !important;}',   /* 底圖整張含4格+下方文字框、疊加外框線、桌機「1/2」頁籤——手機都不適用,改走下面自建的裁切背景與 ‹› 箭頭 */
       /* 🩹 2026-07-13 使用者回報:角色立繪來源圖(assets/start/*.png)沒有透明背景(純色底、無 alpha
          channel),不管背景圖裁哪裡,角色圖自己的矩形範圍一定會蓋出一塊實色方框,跟背後場景圖對比
@@ -1576,7 +1576,7 @@
          角色黑底同色系,不使用 load.png 場景圖裁切),`load1.png` 疊圖負責顯示拱門雕花本體(不透明
          部分自然蓋在黑底外圍)——這樣角色黑底跟周圍黑色完全融合(不會再有方塊接縫),拱門雕花清楚
          可見(不再跟任何場景圖搶對比度),兩個訴求分開處理、互不干擾。 */
-      'body.m-mobile #load-slot-grid{flex:1 1 auto !important;min-height:0 !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;height:auto !important;display:block !important;background:#040302;overflow:hidden;}',
+      'body.m-mobile #load-slot-grid{flex:0 1 auto !important;min-height:0 !important;position:relative !important;left:auto !important;top:auto !important;width:min(100vw,calc((100dvh - 292px) * .58)) !important;max-width:100% !important;max-height:calc(100dvh - 292px) !important;aspect-ratio:500/820 !important;height:auto !important;margin:0 auto !important;display:block !important;background:#040302;overflow:hidden;}',
       /* 拱門雕花疊圖:獨立 div,插在 #load-slot-grid 內部、inset:0 貼滿同一個容器,z-index 蓋在
          角色卡片之上——不透明的拱門雕花部分自然疊在角色黑底外圍,鏤空透明部分露出角色與底下純黑。
          裁切座標沿用 ensureLoadArchOverlay() 算好的固定像素(x=170~330/y=30 起,見上方函式)。 */
@@ -1586,7 +1586,7 @@
       'body.m-mobile #m-load-arch-overlay{position:absolute;inset:0;z-index:5;pointer-events:none;background-image:url(public/assets/login/load1.png);background-repeat:no-repeat;}',
       'body.m-mobile .load-slot-card{display:none !important;position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;align-items:center !important;justify-content:center !important;}',
       'body.m-mobile .load-slot-card.selected{display:flex !important;}',
-      'body.m-mobile .load-slot-card img{max-width:68% !important;max-height:82% !important;}',
+      'body.m-mobile .load-slot-card img{max-width:60% !important;max-height:74% !important;object-fit:contain !important;}',
       /* 🎨 2026-07-12 使用者第三輪回饋:拿掉左右‹›切換箭頭,改成素質表下方「8 顆存檔位按鈕」
          (4個一排、兩排),按鈕顯示角色名稱(空存檔顯示「空」),點哪顆就預覽哪一格——比「一格一格翻」
          更快能跳到想看的存檔位。見 ensureLoadSelectSlotPicker()。 */
