@@ -10,6 +10,160 @@
     overflow: hidden;
     user-select: none;
 }
+
+/* ===== 經典角色能力資訊欄（assets/ui/能力.png，400×825）===== */
+#tab-stats.ability-window-tab {
+    padding:0 !important;
+    gap:0 !important;
+    overflow:auto !important;
+    align-items:center;
+    justify-content:flex-start;
+    background:#08090d;
+    font-family:"Microsoft JhengHei",Arial,sans-serif;
+}
+.ability-window-shell {
+    position:relative;
+    flex:0 0 auto;
+    width:100%;
+    max-width:400px;
+    height:auto;
+    aspect-ratio:400 / 825;
+    container-type:inline-size;
+    overflow:hidden;
+    background:url('../assets/ui/能力.png') center/100% 100% no-repeat;
+    color:#e8e4dc;
+    user-select:none;
+}
+.ability-primary-control {
+    position:absolute;
+    z-index:5;
+    width:18%;
+    height:3.35%;
+    display:grid;
+    grid-template-columns:21% 40% 21%;
+    align-items:center;
+    justify-content:space-between;
+    gap:0;
+    color:#ded9cf;
+    font:600 2.85cqw/1 Arial,"Microsoft JhengHei",sans-serif;
+    font-variant-numeric:tabular-nums;
+    font-feature-settings:"tnum" 1;
+    text-shadow:0 1px 2px #000;
+}
+.ability-primary-control > span{grid-column:2;grid-row:1;min-width:0;text-align:center;letter-spacing:0}
+.ability-primary-control .alloc-minus{grid-column:1;grid-row:1}
+.ability-primary-control .alloc-plus{grid-column:3;grid-row:1}
+.ability-primary-control button {
+    width:100%;
+    height:62%;
+    padding:0;
+    border:1px solid #71644d;
+    border-radius:1px;
+    background:linear-gradient(#332d23,#12100d);
+    color:#ead69b;
+    font:700 2.35cqw/1 Arial,sans-serif;
+    box-shadow:inset 0 0 2px #000,0 1px 2px #000;
+    cursor:pointer;
+}
+.ability-primary-control button:hover{border-color:#d5b76d;filter:brightness(1.2)}
+.ability-primary-str,.ability-primary-dex,.ability-primary-con{left:23%}
+.ability-primary-int,.ability-primary-wis,.ability-primary-cha{left:59%}
+.ability-primary-str,.ability-primary-int{top:8.2%}
+.ability-primary-dex,.ability-primary-wis{top:11.3%}
+.ability-primary-con,.ability-primary-cha{top:14.4%}
+.ability-primary-str{color:#df9b9b}.ability-primary-dex{color:#a9d3c4}.ability-primary-con{color:#d6b18d}
+.ability-primary-int{color:#aebfe9}.ability-primary-wis{color:#c0a9d9}.ability-primary-cha{color:#d7a5be}
+
+.ability-detail-column {
+    position:absolute;
+    top:24.05%;
+    height:45.75%;
+    display:grid;
+    grid-template-rows:repeat(15,minmax(0,1fr));
+    align-content:stretch;
+    color:#eeeae2;
+    font:500 2.65cqw/1 "Microsoft JhengHei",Arial,sans-serif;
+    text-shadow:0 1px 1px #000;
+}
+.ability-detail-left{left:11.75%;width:36.75%}
+.ability-detail-right{left:56.5%;width:37%}
+.ability-detail-column > div{display:grid;grid-template-columns:74% 26%;align-items:center;min-height:0;white-space:nowrap}
+.ability-detail-column > .ability-detail-spacer{display:block;pointer-events:none}
+.ability-detail-column span{padding-left:5%;overflow:hidden;text-overflow:clip}
+.ability-detail-column strong{display:flex;align-items:center;justify-content:flex-end;height:100%;padding-right:8%;box-sizing:border-box;color:#ded9cc;font:600 2.72cqw/1 Arial,sans-serif;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:0}
+.ability-res-fire span{color:#e77d76}
+.ability-res-water span{color:#79a9e8}
+.ability-res-wind span{color:#79c58b}
+.ability-res-earth span{color:#d4ad5d}
+.ability-hidden-values{display:none}
+
+.ability-buffs {
+    position:absolute;
+    z-index:4;
+    left:6.5%;
+    top:71.1%;
+    width:87%;
+    height:25.7%;
+    padding:2.2% 2.5%;
+    overflow:auto;
+    box-sizing:border-box;
+    color:#d9d3c5;
+    font:600 3.2cqw/1.55 "Microsoft JhengHei",Arial,sans-serif;
+    text-shadow:0 1px 2px #000;
+    user-select:text;
+    word-break:normal;
+    overflow-wrap:break-word;
+}
+.ability-window-tab.is-respec .ability-buffs{display:none}
+
+.ability-respec-overlay{position:absolute;inset:0;z-index:9;pointer-events:none}
+.ability-respec-points {
+    position:absolute;
+    left:46%;
+    top:12.35%;
+    width:9%;
+    height:3.05%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#f2d37b;
+    font:700 3cqw/1 Arial,sans-serif;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 2px #000;
+}
+.ability-respec-actions {
+    position:absolute;
+    left:10%;
+    top:79%;
+    width:80%;
+    min-height:13%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8%;
+    padding:4%;
+    box-sizing:border-box;
+    border:1px solid rgba(139,116,70,.8);
+    background:rgba(8,8,8,.86);
+    box-shadow:inset 0 0 12px #000,0 2px 6px #000;
+    color:#cfc7b7;
+    font:500 2.65cqw/1.45 "Microsoft JhengHei",Arial,sans-serif;
+    text-align:center;
+    pointer-events:auto;
+}
+.ability-respec-actions > div{display:flex;justify-content:center;gap:8cqw;width:100%}
+.ability-respec-actions button {
+    min-width:22%;
+    padding:2.2% 6%;
+    border:1px solid #806d48;
+    border-radius:2px;
+    background:linear-gradient(#3b3224,#15120e);
+    color:#eadcae;
+    font:700 2.9cqw/1 "Microsoft JhengHei",Arial,sans-serif;
+    cursor:pointer;
+}
+.ability-respec-actions button:hover{border-color:#d7b96a;filter:brightness(1.18)}
         /* 🔤 表單控制項（下拉選單/輸入框/按鈕）強制繼承全站字型——native <select> 的選項清單預設不繼承，
            會挑到不同的中文後備字，導致「展開的選項」字體與「關閉的值/全站文字」不一致。釘住同一套字型修正之。 */
         select, option, optgroup, input, textarea, button { font-family: inherit; }
@@ -624,8 +778,39 @@
         #vfx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 35; overflow: hidden; }   /* 🎚️ v3.0.73 掛在 #app-stage 內(見 js/09 _vfxLayer)：z-index 35＝高於戰鬥內容(怪/站位/狀態列 z≤30)、低於所有開啟式 UI(收集冊45/收藏46/物品modal50/浮動裝備70/浮動倉庫72)→死亡殘影等狩獵動畫不再蓋到這些介面·無 UI 時仍正常疊在背景/怪之上 */
         /* 🔧 v3.1.48 修：收藏面板 #collection-panel 用的 Tailwind 任意值 class `z-[46]` 未被預編譯靜態 CSS 收錄(z-[45] 有→四本收集冊正常)→computed z:auto→掉到與戰鬥 sprite 同一 #app-stage stacking context 且被其 positive z(玩家 sprite z:2、怪 z:1~5)蓋過→面板與背景模糊都被角色/怪物動態壓在下面。改用 ID 選擇器明確給 z-index(特異性勝過任何 class)，確保收藏面板(含 backdrop-blur)蓋在所有戰鬥動態之上。 */
         #collection-panel { z-index: 46; }
-        .vfx-dmg { position: absolute; transform: translate(-50%,-50%); font-weight: 900; font-family: 'Arial Black','Segoe UI',system-ui,sans-serif; white-space: nowrap; letter-spacing: .5px; will-change: transform,opacity; text-shadow: 0 1px 2px rgba(0,0,0,.95), 0 0 7px rgba(0,0,0,.55); animation: vfxFloat .85s ease-out forwards; }
-        .vfx-dmg.vfx-crit { animation: vfxCrit 1.05s cubic-bezier(.18,.85,.25,1) forwards; -webkit-text-stroke: 1px rgba(0,0,0,.45); }
+        /* ⚔️ v3.4.19 清晰 RPG 傷害飄字：寬度適中的粗黑體＋銳利單層描邊；取消斜體、厚重疊影與大光暈，優先確保快速戰鬥中可讀。 */
+        .vfx-dmg {
+            position:absolute; transform:translate(-50%,-50%);
+            font-family:"Bahnschrift SemiBold","Segoe UI Black","Arial Black",Arial,sans-serif;
+            font-weight:800; font-style:normal; font-variant-numeric:tabular-nums lining-nums;
+            line-height:1; white-space:nowrap; letter-spacing:.35px; text-rendering:geometricPrecision;
+            -webkit-text-stroke:1px rgba(5,5,5,.96); paint-order:stroke fill;
+            text-shadow:0 1px 0 #000,0 2px 2px rgba(0,0,0,.94),0 0 3px rgba(0,0,0,.7);
+            filter:none;
+            will-change:transform,opacity; animation:vfxFloat .85s ease-out forwards;
+        }
+        .vfx-dmg.vfx-crit { animation:vfxCrit 1.05s cubic-bezier(.18,.85,.25,1) forwards; }
+        .vfx-dmg.vfx-heavy {
+            -webkit-text-stroke:1.25px #241600;
+            text-shadow:0 1px 0 #241600,0 3px 3px rgba(0,0,0,.96),0 0 3px rgba(255,213,79,.48);
+        }
+        .vfx-dmg.vfx-critical {
+            -webkit-text-stroke:1.35px #260403;
+            text-shadow:0 1px 0 #260403,0 3px 3px rgba(0,0,0,.96),0 0 4px rgba(255,59,48,.55);
+        }
+        .vfx-dmg-tag {
+            display:inline-block;
+            margin-right:.3em;
+            font-family:"Microsoft JhengHei UI","Microsoft JhengHei","Segoe UI",sans-serif;
+            font-size:.58em;
+            font-weight:900;
+            letter-spacing:.05em;
+            vertical-align:.14em;
+            -webkit-text-stroke:.6px rgba(5,5,5,.96);
+            paint-order:stroke fill;
+            text-shadow:0 1px 1px rgba(0,0,0,.95);
+        }
+        .vfx-dmg-value { display:inline-block; }
         @keyframes vfxFloat {
             0%   { opacity: 0; transform: translate(-50%,-40%) scale(.55); }
             18%  { opacity: 1; transform: translate(-50%,-95%) scale(1.06); }
@@ -633,10 +818,10 @@
             100% { opacity: 0; transform: translate(-50%,-200%) scale(.9); }
         }
         @keyframes vfxCrit {
-            0%   { opacity: 0; transform: translate(-50%,-40%) scale(.5) rotate(-8deg); }
-            14%  { opacity: 1; transform: translate(-50%,-90%) scale(1.55) rotate(4deg); }
-            32%  { transform: translate(-50%,-118%) scale(1.12) rotate(-2deg); }
-            72%  { opacity: 1; transform: translate(-50%,-170%) scale(1.18); }
+            0%   { opacity: 0; transform: translate(-50%,-40%) scale(.65); }
+            14%  { opacity: 1; transform: translate(-50%,-90%) scale(1.35); }
+            32%  { transform: translate(-50%,-118%) scale(1.08); }
+            72%  { opacity: 1; transform: translate(-50%,-170%) scale(1.12); }
             100% { opacity: 0; transform: translate(-50%,-235%) scale(1); }
         }
         .vfx-particle { position: absolute; border-radius: 50%; transform: translate(-50%,-50%); will-change: transform,opacity; }
@@ -657,6 +842,45 @@
             80% { transform: translate(-2px,1px); }
         }
         .vfx-shake { animation: vfxShake .45s ease-in-out; }
+        /* 🐉 v3.4.6 頭目降臨（四大龍＋吉爾塔斯／冥皇丹特斯出場）：強力震動＋名條（特效圖層由 JS 以 element.animate 驅動·此處僅震動與名條樣式） */
+        @keyframes vfxBossShake {
+            0%,100% { transform: translate(0,0); }
+            7% { transform: translate(-12px,7px) rotate(-.4deg); }  16% { transform: translate(13px,-8px) rotate(.4deg); }
+            27% { transform: translate(-14px,-5px) rotate(-.3deg); } 39% { transform: translate(12px,7px) rotate(.3deg); }
+            51% { transform: translate(-9px,4px); }  63% { transform: translate(8px,-4px); }
+            76% { transform: translate(-5px,2px); }  88% { transform: translate(3px,-2px); }
+        }
+        .vfx-bossshake { animation: vfxBossShake .82s cubic-bezier(.36,.07,.19,.97); }
+        .vfx-boss-banner { position:absolute; transform:translate(-50%,-50%); text-align:center; pointer-events:none; white-space:nowrap; will-change:opacity,transform; z-index:3; font-weight:900; }
+        .vfx-boss-banner .vfx-boss-sub  { font-size:15px; letter-spacing:.42em; opacity:.92; margin-bottom:5px; }
+        .vfx-boss-banner .vfx-boss-name { font-size:40px; letter-spacing:.05em; }
+        /* 🔥 v3.4.15 頭目狂暴：HP 低於門檻時，怪物本體後方保留猩紅氣焰與呼吸光；不動畫 transform，避免干擾既有站位／逐幀 sprite。 */
+        @keyframes mobRageAuraPulse {
+            0%,100% { opacity:.48; transform:translateX(-50%) scale(.88,.84); filter:blur(7px); }
+            50%     { opacity:.94; transform:translateX(-50%) scale(1.08,1.13); filter:blur(10px); }
+        }
+        @keyframes mobRageRingPulse {
+            0%,100% { opacity:.45; transform:translateX(-50%) scale(.82); }
+            50%     { opacity:.96; transform:translateX(-50%) scale(1.12); }
+        }
+        @keyframes mobRageBodyPulse {
+            0%,100% { filter:drop-shadow(0 0 4px rgba(239,68,68,.58)) drop-shadow(0 0 9px rgba(127,29,29,.42)); }
+            50%     { filter:drop-shadow(0 0 8px rgba(251,113,133,.96)) drop-shadow(0 0 18px rgba(220,38,38,.72)); }
+        }
+        #battle-view .mob-target.mob-raging .mob-img-wrap { animation:mobRageBodyPulse 1.05s ease-in-out infinite; }
+        #battle-view .mob-target.mob-raging .mob-img-inner { position:relative; isolation:isolate; }
+        #battle-view .mob-target.mob-raging .mob-img-inner::before,
+        #battle-view .mob-target.mob-raging .mob-img-inner::after { content:""; position:absolute; left:50%; pointer-events:none; z-index:0; }
+        #battle-view .mob-target.mob-raging .mob-img-inner::before {
+            bottom:-4%; width:150%; height:108%; border-radius:48% 48% 38% 38%;
+            background:radial-gradient(ellipse at 50% 86%, rgba(255,232,138,.88) 0%, rgba(255,69,58,.76) 18%, rgba(190,18,60,.52) 45%, transparent 72%);
+            mix-blend-mode:screen; animation:mobRageAuraPulse .86s ease-in-out infinite;
+        }
+        #battle-view .mob-target.mob-raging .mob-img-inner::after {
+            bottom:-2%; width:112%; height:34%; border-radius:50%; border:2px solid rgba(251,113,133,.78);
+            box-shadow:0 0 9px rgba(255,70,70,.95), inset 0 0 12px rgba(127,29,29,.78);
+            animation:mobRageRingPulse 1.05s ease-in-out infinite;
+        }
         @keyframes vfxHurt { 0%,100% { box-shadow: inset 0 0 0 0 rgba(220,38,38,0); } 42% { box-shadow: inset 0 0 32px 6px rgba(220,38,38,.55); } }
         .vfx-hurt { animation: vfxHurt .5s ease-out; }
         /* 命中衝擊環 */
@@ -725,12 +949,12 @@
 .classic-inventory-tab:not(.hidden) { display:flex !important; flex-direction:column; align-items:center; }
 .classic-list-toolbar { flex:0 0 auto; margin:0 !important; padding:6px 8px !important; top:0 !important; background:#111827 !important; border-bottom:1px solid #6b5426; z-index:20; }
 .classic-list-toolbar { width:100%; }
-.classic-inventory-shell { position:relative; flex:0 0 auto; width:100%; max-width:100%; aspect-ratio:223/336; overflow:hidden; background:url('../assets/ui/inventory-grid-532.png') center/100% 100% no-repeat; }
-.classic-inventory-viewport { position:absolute; z-index:2; left:20.18%; top:6.25%; width:65.47%; height:85.714286%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:12.5%; align-content:start; overflow-y:auto; overflow-x:hidden; box-sizing:border-box; background:#07080a; scrollbar-width:none; overscroll-behavior:contain; }
+.classic-inventory-shell { position:relative; flex:0 0 auto; width:100%; max-width:100%; aspect-ratio:193/282; overflow:hidden; background:url('../assets/ui/武器防具道具欄位.png') center/100% 100% no-repeat; }
+.classic-inventory-viewport { position:absolute; z-index:2; left:13.99%; top:10.64%; width:72.02%; height:70.21%; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:16.666667%; align-content:start; overflow-y:auto; overflow-x:hidden; box-sizing:border-box; background:#07080a; scrollbar-width:none; overscroll-behavior:contain; }
 .classic-inventory-viewport::-webkit-scrollbar { width:0; height:0; }
-.classic-inventory-viewport > .list-item { position:relative; box-sizing:border-box; display:flex !important; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; min-height:0; margin:0 !important; padding:2px !important; border:1px solid #55451f !important; border-radius:0 !important; background:#090a0d !important; box-shadow:inset 0 0 6px #000 !important; overflow:hidden; }
-.classic-inventory-viewport > .list-item:hover { border-color:#e0bd61 !important; filter:brightness(1.18); }
-.classic-inventory-viewport > .classic-grid-empty { box-sizing:border-box; width:100%; height:100%; min-width:0; min-height:0; border:1px solid #453919; background:#08090b; box-shadow:inset 0 0 6px #000; pointer-events:none; }
+.classic-inventory-viewport > .list-item { position:relative; box-sizing:border-box; display:flex !important; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; min-height:0; margin:0 !important; padding:2px !important; border:1px solid #454b47 !important; border-radius:0 !important; background:#090a0d !important; box-shadow:inset 0 0 6px #000 !important; overflow:hidden; }
+.classic-inventory-viewport > .list-item:hover { border-color:#b8c4bd !important; filter:brightness(1.18); }
+.classic-inventory-viewport > .classic-grid-empty { box-sizing:border-box; width:100%; height:100%; min-width:0; min-height:0; border:1px solid #3d423f; background:#08090b; box-shadow:inset 0 0 6px #000; pointer-events:none; }
 .classic-item-main { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
 .classic-icon-box { display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; }
 .classic-icon-box img,.classic-item-main .classic-icon-box img { width:88% !important; height:88% !important; max-width:none; max-height:none; margin:0 !important; object-fit:contain; }
@@ -752,9 +976,9 @@
 .classic-item-junk-label { position:absolute; z-index:6; left:1px; right:1px; bottom:1px; color:#ff5b5b; background:rgba(25,0,0,.70); font-size:clamp(6px,.5vw,8px); font-weight:800; line-height:1.1; text-align:center; text-shadow:0 1px 2px #000; pointer-events:none; }
 .classic-inventory-scroll { position:absolute; z-index:4; right:4.1%; width:7%; height:6.2%; padding:0; border:0; border-radius:50%; background:transparent; opacity:.01; }
 .classic-inventory-scroll:hover { opacity:.18; background:#fff3b0; }
-.classic-inventory-scroll-up { top:9.1%; }
-.classic-inventory-scroll-down { bottom:5.4%; }
-.classic-sort-wrap { position:absolute; z-index:8; left:3.4%; top:24%; width:13%; height:9%; }
+.classic-inventory-scroll-up { top:11.2%; }
+.classic-inventory-scroll-down { bottom:14.8%; }
+.classic-sort-wrap { position:absolute; z-index:8; left:2.8%; top:34%; width:9%; height:7%; }
 .classic-sort-button { width:100%; height:100%; padding:0; border:1px solid #8c6a27; border-radius:4px; color:#f5d77c; background:linear-gradient(#352817,#17120c); font-size:clamp(12px,1.2vw,18px); line-height:1; box-shadow:0 1px 4px #000; cursor:pointer; }
 .classic-sort-button:hover { border-color:#e3bd55; filter:brightness(1.18); }
 .classic-sort-menu { display:none; position:absolute; left:115%; top:-55%; width:150px; padding:6px; border:1px solid #aa7b2f; border-radius:6px; background:rgba(10,13,21,.97); box-shadow:0 5px 18px #000; color:#eee; font-size:13px; }
@@ -769,8 +993,9 @@
 #login-art-stage { position:relative; width:min(100vw,calc(100vh * 4 / 3)); aspect-ratio:4 / 3; flex:0 0 auto; overflow:hidden; background:#050505; box-shadow:0 0 45px #000; }
 #login-bg-image { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; user-select:none; }
 #login-anim-image { position:absolute; left:0; top:63.75%; width:78.28125%; height:36.25%; object-fit:fill; pointer-events:none; user-select:none; }
-#login-title-layer { position:absolute; z-index:3; left:3.1%; top:14%; width:30.8%; color:#f7df91; text-shadow:0 2px 4px #000,0 0 6px #000; }
-#login-title-layer h1 { margin:0 0 2.5%; font-size:clamp(14px,2.05vw,31px); line-height:1.15; color:#f5d46c; }
+#login-title-layer { position:absolute; z-index:3; left:3.1%; top:14%; width:30.8%; color:#f7df91; text-shadow:0 2px 4px #000,0 0 6px #000; container-type:inline-size; }
+/* 🔤 v3.4.22 標題字級改用 cqw（跟隨標題框寬度）而非 vw：修正「寬而矮視窗下框縮小但字仍撐到 vw 上限→標題超框」；並整體略縮 */
+#login-title-layer h1 { margin:0 0 2.5%; font-size:clamp(13px,8cqw,30px); line-height:1.15; color:#f5d46c; }
 #login-title-layer p { margin:0; font-size:clamp(9px,1.05vw,16px); color:#e7d7b5; }
 #main-menu { position:absolute; z-index:4; left:50.4%; top:48.5%; width:25%; margin:0 !important; display:flex; flex-direction:column; align-items:stretch; gap:clamp(10px,1.45vw,22px) !important; }
 #main-menu.hidden { display:none !important; }
@@ -799,44 +1024,44 @@
 #login-version { margin-bottom:3%; font-size:clamp(12px,1.05vw,18px) !important; font-weight:700; color:#f2d77f; }
 #login-disclaimer { max-width:none !important; padding:0 !important; margin:0 !important; font-size:clamp(8px,.6vw,11px) !important; line-height:1.45; color:#eee2c7; }
 
-/* ===== 🎨 v3.0.55 1.8 原版風格技能魔法視窗（移植參考版）＋底部 S.power(魔法傷害)/M.resist(MR) 數值 ===== */
+/* ===== 🎨 新版技能欄位（4 欄 × 6 排）＋底部 S.power(魔法傷害)/M.resist(MR) 數值 ===== */
 #tab-skill { padding:0 !important; overflow:auto !important; align-items:center; justify-content:flex-start; background:#08090d; }
 .classic-skill-window {
-    position:relative; flex:0 0 auto; width:min(100%,510px); aspect-ratio:1023/1537;
+    position:relative; flex:0 0 auto; width:min(100%,510px); aspect-ratio:193/282;
     margin:0 auto; overflow:hidden; user-select:none;
-    background:url('../assets/ui/skill-window-1.8.png') center/100% 100% no-repeat;
+    background:url('../assets/ui/技能欄位.png') center/100% 100% no-repeat;
 }
 .classic-skill-heading {
-    position:absolute; z-index:4; left:23.4%; top:2.2%; width:61.8%; height:2.6%;
+    position:absolute; z-index:4; left:18%; top:1.4%; width:64%; height:5.4%;
     display:flex; align-items:center; justify-content:center; color:#f3df9d;
     font-weight:700; font-size:clamp(9px,1vw,14px); text-shadow:0 1px 3px #000,0 0 4px #000;
 }
 .classic-skill-grid-scroll {
-    position:absolute; z-index:3; left:23.26%; top:5.79%; width:62.37%; height:81.20%;
+    position:absolute; z-index:3; left:13.99%; top:11.35%; width:72.02%; height:73.40%;
     overflow-y:auto; overflow-x:hidden; background:#06070a; scrollbar-width:none; overscroll-behavior:contain;
 }
 .classic-skill-grid-scroll::-webkit-scrollbar { width:0; height:0; }
 .classic-skill-grid {
     position:relative; width:100%; height:100%; min-height:100%; display:grid; grid-template-columns:repeat(4,1fr);
-    grid-auto-rows:12.5%; grid-auto-flow:row; align-content:start;
+    grid-auto-rows:16.666667%; grid-auto-flow:row; align-content:start;
 }
 .classic-skill-cell {
     position:relative; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
     width:100%; height:100%; min-width:0; min-height:0; padding:2%;
-    border:1px solid #5c4923; border-radius:0;
+    border:1px solid #454b47; border-radius:0;
     background:#08090c; color:#fff; box-shadow:inset 0 0 7px #000;
 }
 button.classic-skill-cell { cursor:pointer; }
 .classic-skill-cell img {
-    display:block; width:97%; height:97%; object-fit:contain; pointer-events:none;
+    display:block; width:88%; height:88%; object-fit:contain; pointer-events:none;
     filter:drop-shadow(0 1px 2px #000);
 }
-.classic-skill-cell:hover:not(.classic-skill-empty) { border-color:#e0bd61; background:#111015; box-shadow:inset 0 0 8px rgba(255,214,102,.42); }
+.classic-skill-cell:hover:not(.classic-skill-empty) { border-color:#b8c4bd; background:#111015; box-shadow:inset 0 0 8px rgba(186,207,195,.34); }
 .classic-skill-unlearned img { opacity:.30; filter:grayscale(1) brightness(.75); }
 .classic-skill-unavailable img { opacity:.42; filter:grayscale(.8) brightness(.7); }
 .classic-skill-lock { position:absolute; right:8%; bottom:5%; color:#796f61; font-size:clamp(6px,.7vw,10px); text-shadow:0 1px 2px #000; }
 .classic-skill-tier-strip {
-    position:absolute; z-index:7; left:17.55%; top:5.2%; width:4.2%; height:82.1%;
+    position:absolute; z-index:7; left:5%; top:11.35%; width:5.2%; height:73.40%;
     background-position:center; background-size:100% 100%; background-repeat:no-repeat;
 }
 .classic-skill-tier-hit { position:absolute; left:-110%; width:320%; height:10%; border:0; padding:0; background:transparent; }
@@ -846,7 +1071,7 @@ button.classic-skill-cell { cursor:pointer; }
 .classic-skill-tier-hit.tier-1{top:0}.classic-skill-tier-hit.tier-2{top:10%}.classic-skill-tier-hit.tier-3{top:20%}.classic-skill-tier-hit.tier-4{top:30%}.classic-skill-tier-hit.tier-5{top:40%}
 .classic-skill-tier-hit.tier-6{top:50%}.classic-skill-tier-hit.tier-7{top:60%}.classic-skill-tier-hit.tier-8{top:70%}.classic-skill-tier-hit.tier-9{top:80%}.classic-skill-tier-hit.tier-10{top:90%}
 .classic-skill-mode {
-    position:absolute; z-index:6; left:2.1%; top:28%; width:13.8%; display:flex; flex-direction:column; gap:6px;
+    position:absolute; z-index:6; left:86.5%; top:30%; width:11%; display:flex; flex-direction:column; gap:4px;
 }
 .classic-skill-mode button {
     border:1px solid #6c5529; border-radius:3px; padding:3px 1px; background:rgba(10,10,13,.82);
@@ -855,8 +1080,8 @@ button.classic-skill-cell { cursor:pointer; }
 .classic-skill-mode button:hover,.classic-skill-mode button.active { color:#ffe29a; border-color:#d8a94b; background:rgba(90,57,16,.82); box-shadow:0 0 6px rgba(238,183,73,.55); }
 .classic-skill-scroll { position:absolute; z-index:8; right:3.8%; width:6.2%; height:5.2%; padding:0; border:0; border-radius:50%; background:transparent; opacity:.01; }
 .classic-skill-scroll:hover { opacity:.18; background:#fff3b0; }
-.classic-skill-scroll-up { top:4.4%; }
-.classic-skill-scroll-down { bottom:5.8%; }
+.classic-skill-scroll-up { top:11.4%; }
+.classic-skill-scroll-down { bottom:15.4%; }
 .classic-skill-pager {
     position:absolute; z-index:6; right:3.8%; bottom:3.2%; display:flex; align-items:center; gap:4px;
     color:#ead89d; font-size:clamp(7px,.7vw,10px); text-shadow:0 1px 2px #000;
@@ -865,8 +1090,8 @@ button.classic-skill-cell { cursor:pointer; }
 .classic-skill-pager button:disabled { color:#5e584d; cursor:default; }
 
 .classic-skill-stat { position:absolute; z-index:5; display:flex; align-items:center; justify-content:center; color:#e4ecff; font-weight:700; font-size:clamp(8px,1vw,15px); text-shadow:0 1px 2px #000,0 0 4px #000; pointer-events:none; letter-spacing:.02em; }
-.classic-skill-stat-sp { left:33.7%; top:91.4%; width:12.9%; height:3.9%; }
-.classic-skill-stat-mr { left:70.7%; top:90.4%; width:13.5%; height:4.6%; }
+.classic-skill-stat-sp { left:33.2%; top:89.35%; width:13%; height:4.7%; }
+.classic-skill-stat-mr { left:74.1%; top:89.35%; width:13%; height:4.7%; }
 
 /* 📵 v3.0.74 移植參考版 UI 時移除其手機 media query（@media pointer:coarse）：本專案為「桌機專用」設計（見記憶 desktop-only-layout·手機改 viewport-meta 等比縮小），不再引入手機響應式版面。 */
 #slot-select-panel:not(.hidden) { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(760px,92vw); max-height:92vh; overflow:auto; margin:0 !important; padding:22px; border:2px solid #b89243; border-radius:14px; background:rgba(15,23,42,.96); box-shadow:0 20px 70px #000; }

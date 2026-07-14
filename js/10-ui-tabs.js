@@ -1,6 +1,9 @@
 let _tabPointerDown = false, _tabWheelActive = false, _tabWheelTimer = null, _tabRebuildPending = false, _tabThrottleTimer = null;
 const TAB_REBUILD_THROTTLE_MS = 250;
 const TAB_WHEEL_IDLE_MS = 180;
+const CLASSIC_GRID_COLUMNS = 4;
+const CLASSIC_GRID_ROWS = 6;
+const CLASSIC_PAGE_CELLS = CLASSIC_GRID_COLUMNS * CLASSIC_GRID_ROWS;
 function plainInventoryItemName(item) {
     let tmp = document.createElement('span');
     tmp.innerHTML = getItemFullName(item);
@@ -31,7 +34,7 @@ function _initTabGuard() {
 }
 
 // ===== 🎨 v3.0.55 1.8 原版風格技能魔法視窗（移植參考版 idle-lineage-class）=====
-//   底圖 assets/ui/skill-window-1.8.png（1023×1537）＋左側階級指示 assets/ui/skill-level/539..548.png。
+//   底圖 assets/ui/技能欄位.png（193×282，4 欄 × 6 排）＋左側階級指示 assets/ui/skill-level/539..548.png。
 //   模式：一般（reqM 通用魔法·1~10 階 tier strip 導覽）／職業（各職 req 欄位技能）／裝備（頭盔授予）。
 //   底部 S.power=玩家魔法傷害(player.d.magicDmg)、M.resist=玩家魔防(player.d.mr) 填入黑框。⚠️格 class 帶 tip-host 讓 Fable5 data-tip-skill tooltip 生效。
 let classicSkillBookState = { mode: 'general', tier: 1, page: 0 };
@@ -71,7 +74,7 @@ function classicSkillSyncTierFromScroll(view) {
 function classicSkillScrollRows(direction) {
     let view = document.querySelector('#tab-skill .classic-skill-grid-scroll');
     if (!view) return;
-    view.scrollBy({ top:(direction < 0 ? -1 : 1) * (view.clientHeight / 8), behavior:'smooth' });
+    view.scrollBy({ top:(direction < 0 ? -1 : 1) * (view.clientHeight / CLASSIC_GRID_ROWS), behavior:'smooth' });
 }
 function classicSkillChooseMode(mode) {
     classicSkillBookState.mode = mode;
@@ -115,7 +118,7 @@ function renderClassicSkillBook(sDiv) {
             list.push.apply(list, group);
         });
     }
-    while (list.length < 32) list.push({ id:null, tier:null });
+    while (list.length < CLASSIC_PAGE_CELLS) list.push({ id:null, tier:null });
     let cells = list.map(entry => {
         let id = entry.id;
         if (!id) return '<div class="classic-skill-cell classic-skill-empty"></div>';
@@ -176,12 +179,11 @@ function renderTabs(force) {
     ['tab-items','tab-weapons','tab-armors','tab-equip','tab-skill'].forEach(id => { let el = document.getElementById(id); if(el) { let sc=el.querySelector('.classic-inventory-viewport,.classic-skill-grid-scroll'); _scroll[id] = sc ? sc.scrollTop : el.scrollTop; } });   // 🎨 v3.0.40 1.8皮膚：捲動位置存在內層 viewport（技能頁為 .classic-skill-grid-scroll）
 
     let eDiv = document.getElementById('tab-equip'); eDiv.innerHTML = '';
-    { let _wd = player.d || {}; let _t = _wd.loadTier || 0; let _hdr = document.createElement('div'); _hdr.className = 'classic-list-toolbar text-center py-0.5 rounded bg-slate-900/60 border border-slate-700 text-sm font-bold leading-tight' + (_t >= 1 ? ' cursor-help' : ''); if (_t >= 1) { _hdr.title = _t === 1 ? '負重50%↑：HP/MP不自然恢復' : (_t === 2 ? '負重82%↑：HP/MP不自然恢復、停自動施法、攻速變慢' : '負重100%↑：HP/MP不自然恢復、停自動施法、攻速大幅變慢'); } _hdr.innerHTML = `<span class="text-slate-400">負重 </span><span class="${getLoadColor(_t)}">${_wd.weightPct||0}%</span>`; eDiv.appendChild(_hdr); }
+    { let _wd = player.d || {}; let _t = _wd.loadTier || 0; let _hdr = document.createElement('div'); _hdr.className = 'classic-list-toolbar text-center py-0.5 rounded bg-slate-900/60 border border-slate-700 text-sm font-bold leading-tight' + (_t >= 1 ? ' cursor-help' : ''); if (_t >= 1) { _hdr.title = _t === 1 ? '負重50%↑：HP/MP不自然恢復' : (_t === 2 ? '負重82%↑：HP/MP不自然恢復、停自動施法、攻速變慢' : '負重100%↑：HP/MP不自然恢復、停自動施法、攻速大幅變慢'); } _hdr.innerHTML = `<span class="${getLoadColor(_t)}">負重 ${_wd.weightPct||0}%</span>`; eDiv.appendChild(_hdr); }
     const _baseSlots = [{k:'wpn',n:'武器'}, ...((player.cls === 'warrior' && (player.skills.includes('sk_warrior_dualaxe') || player.eq.offwpn)) ? [{k:'offwpn',n:'副手武器'}] : []), {k:'shield',n:'副手'},{k:'helm',n:'頭盔'},{k:'armor',n:'盔甲'},{k:'shin',n:'脛甲'},{k:'tshirt',n:'T恤'},{k:'cloak',n:'斗篷'},{k:'gloves',n:'手套'},{k:'boots',n:'長靴'},{k:'amulet',n:'項鍊'},{k:'ear1',n:'耳環'},{k:'ear2',n:'耳環'},{k:'ring1',n:'戒指'},{k:'ring2',n:'戒指'},{k:'ring3',n:'戒指'},{k:'ring4',n:'戒指'},{k:'belt',n:'腰帶'},{k:'doll',n:'魔法娃娃'},{k:'arrow',n:'箭矢'}];   // 🦴 v3.3.21 移除已停用的 {k:'pet'} 空格（v3.2.37 玩家 eq.pet 拆除→改亞丁包武保管·此欄恆空）   // ⚔️ offwpn：戰士學會迅猛雙斧後顯示副手武器欄
     const _remSlots = (typeof SHERINE_REMAINS !== 'undefined') ? SHERINE_REMAINS.map(r => ({ k: r.id, n: '遺骸' + r.n })) : [];   // 🦴 v3.1.68 席琳遺骸 8 格（欄位鍵=物品id·浮動裝備視窗 js/19 PAGE_SLOTS 不含→不顯示）
-    // 🦴 v3.1.75 遺骸固定在 1.8 皮膚格線的「最後兩排」：viewport 為 4 欄 × 8 排＝32 格（見 css .classic-inventory-viewport / decorateClassicInventoryTab 補滿 32），
-    //    故一般裝備欄之後補 (32 − 遺骸數 − 基本欄位數) 個空白填充格，讓 8 格遺骸剛好落在第 25~32 格（副手武器欄出現時基本欄位 +1、填充格自動 −1）。
-    const _padCells = Math.max(0, 32 - _remSlots.length - _baseSlots.length);
+    // 🦴 新版第一頁為 4 欄 × 6 排＝24 格；一般裝備補滿第一頁後，8 格遺骸固定落在第 25~32 格（第二頁前兩排）。
+    const _padCells = Math.max(0, CLASSIC_PAGE_CELLS - _baseSlots.length);
     const slots = [..._baseSlots, ...Array.from({ length: _remSlots.length ? _padCells : 0 }, () => ({ filler: true })), ..._remSlots];
     
     let setCheck = {}, _setSeen = {};
@@ -371,7 +373,7 @@ player.inv.forEach(i => {
     // 🎨 v3.0.40 1.8 物品介面：保留原清單事件與功能，只把內容搬入八格皮膚的可捲動區。
     [eDiv,wDiv,aDiv,iDiv].forEach(decorateClassicInventoryTab);
 
-    // 🎨 v3.0.55 技能欄改用 1.8 原版風格技能魔法視窗（skill-window-1.8.png 皮膚·tier strip 導覽·底部 S.power=魔法傷害/M.resist=MR）。
+    // 🎨 技能欄使用新版 4×6 皮膚（技能欄位.png·tier strip 導覽·底部 S.power=魔法傷害/M.resist=MR）。
     //    取代原「依學習來源分組 ICON」排版；仍走 data-tip-skill tooltip、manualCast、updateSummonLock。
     let sDiv = document.getElementById('tab-skill');
     renderClassicSkillBook(sDiv);
@@ -402,9 +404,9 @@ function decorateClassicInventoryTab(div){
     let viewport=document.createElement('div');
     viewport.className='classic-inventory-viewport';
     Array.from(div.children).filter(x=>!x.classList.contains('classic-list-toolbar')&&!x.classList.contains('sticky')).forEach(x=>viewport.appendChild(x));
-    // 532 原圖的實際格線為 4 欄 × 8 排（x=45~191、y=21~309）；內部格位才是捲動內容。
+    // 新版底圖的可視格線為 4 欄 × 6 排＝24 格；更多內容保留在內部捲動區。
     let used=viewport.querySelectorAll('.list-item,.classic-grid-empty').length;   // 🦴 v3.1.75 裝備欄會自行插入 .classic-grid-empty 填充格（把遺骸推到最後兩排）→ 一併計入，否則這裡會重複補格撐出第 9 排
-    for(let n=used;n<32;n++){
+    for(let n=used;n<CLASSIC_PAGE_CELLS;n++){
         let empty=document.createElement('div');
         empty.className='classic-grid-empty';
         empty.setAttribute('aria-hidden','true');
@@ -412,10 +414,10 @@ function decorateClassicInventoryTab(div){
     }
     let up=document.createElement('button');
     up.type='button'; up.className='classic-inventory-scroll classic-inventory-scroll-up'; up.setAttribute('aria-label','向上捲動');
-    up.onclick=()=>viewport.scrollBy({top:-Math.max(32,viewport.clientHeight/8),behavior:'smooth'});
+    up.onclick=()=>viewport.scrollBy({top:-Math.max(32,viewport.clientHeight/CLASSIC_GRID_ROWS),behavior:'smooth'});
     let down=document.createElement('button');
     down.type='button'; down.className='classic-inventory-scroll classic-inventory-scroll-down'; down.setAttribute('aria-label','向下捲動');
-    down.onclick=()=>viewport.scrollBy({top:Math.max(32,viewport.clientHeight/8),behavior:'smooth'});
+    down.onclick=()=>viewport.scrollBy({top:Math.max(32,viewport.clientHeight/CLASSIC_GRID_ROWS),behavior:'smooth'});
     let sortWrap=document.createElement('div');
     sortWrap.className='classic-sort-wrap';
     let sortBtn=document.createElement('button');
@@ -639,6 +641,7 @@ const WEAPON_TAGS = {
     wpn_demon_sword:['單手劍'], wpn_redflame_sword:['單手劍','武士刀'], wpn_demon_dual:['雙刀'],
     wpn_dual_destroy:['雙刀'], wpn_claw_destroy:['鋼爪'],   // 💥 破壞雙刀／破壞鋼爪（猛爆劇毒）
     wpn_old_sword:['單手劍','武士刀'],   // 🏛️ 古老的劍：反擊(單手劍)＋居合(武士刀)
+    wpn_cursed_emperor_blade:['單手劍','武士刀'],   // 🌑 v3.4.0 受詛咒的真．冥皇執行劍：反擊(單手劍)＋居合(武士刀)·貫穿=ignHardSkin·裝備變身死亡騎士(js/02)
     wpn_ancient_darkelf_sword:['單手劍'],   // 🏛️ 古代黑暗妖精之劍：反擊(單手劍)
     wpn_demon_sword_hidden:['單手劍'],   // 👹 隱藏的魔族之劍：反擊(單手劍)
     wpn_demon_claw_hidden:['鋼爪'],   // 👹 隱藏的魔族鋼爪：鋼爪標籤(雙擊33預設＋貫穿＋黑暗妖精可裝)
@@ -703,6 +706,103 @@ Object.keys(DB.items).forEach(function(id){ let d = DB.items[id]; if (d && d.eff
 const CLASSIC_HIDDEN_EFF_LABELS = ['共鳴','魔爆','連射','反擊','出血','穿透','切割','居合','魔擊','鈍擊','重擊','格檔','雙刃'];   // ⚔️ 雙刃＝雙刀 5% 傷害×2（經典停用）；鋼爪額外重擊以「重擊」開頭已涵蓋
 function filterClassicEffLabels(effArr, d){ return (player && player.classicMode && !(d && d.classicOk)) ? effArr.filter(e => !CLASSIC_HIDDEN_EFF_LABELS.some(h => e.startsWith(h))) : effArr; }   // ⚔️ v3.2.38 classicOk 特例（黑虎的雙尾鞭）：經典模式特效照常顯示
 function weaponHasBleed(id){ let d = DB.items[id]; if (d && d.noBleed) return false; let t = getWeaponTags(id); return t.includes('匕首') || t.includes('矛'); }   // 匕首與矛皆帶出血特效（noBleed 旗標可個別停用，如提卡爾雙手矛）
+
+// 🏺 遺物用途摘要：補足舊遺物只有背景敘述、玩家看不出實際用途的問題。
+// 僅整理「一般特效列尚未涵蓋」的遺物專屬欄位；背包、裝備欄與圖鑑 tooltip 共用。
+function relicPurposeLabels(d) {
+    if (!d || !d.relic) return [];
+    const out = [];
+    const eleName = e => ({ fire:'火', water:'水', wind:'風', earth:'地', none:'無' }[e] || e || '指定');
+    const skillName = id => (DB.skills[id] && DB.skills[id].n) || '技能';
+    const pctText = v => `${Math.round(v * 100)}%`;
+
+    if (d.reqAvatar) out.push(`裝備限制（僅限${d.reqAvatar}）`);
+    if (d.armguard) out.push('臂甲（裝於副手，可與雙手武器並用）');
+    if (d.resNone) out.push(`無屬性魔法抗性+${d.resNone}%`);
+    if (d.mrPerWis) out.push(`精神轉魔防（每1點精神，MR+${d.mrPerWis}）`);
+    if (d.type === 'wpn' && d.mr) out.push(`魔防(MR)+${d.mr}`);
+    if (d.mcrit) out.push(`近距離爆擊率+${d.mcrit}%`);
+    if (d.mcritDmg) out.push(`近距離爆擊傷害+${d.mcritDmg}%`);
+    if (d.rcrit) out.push(`遠距離爆擊率+${d.rcrit}%`);
+    if (d.abnormalResist) out.push(`異常狀態抵抗+${d.abnormalResist}%`);
+    if (d.immStone) out.push('免疫石化');
+    if (d.immPoison) out.push('免疫中毒');
+    if (d.immParalyze) out.push('免疫麻痺');
+    if (d.immBurn) out.push('免疫灼燒');
+    if (d.immFreeze) out.push('免疫冰凍');
+    if (d.atkSpdPct) out.push(`攻擊速度${d.atkSpdPct > 0 ? '+' : ''}${d.atkSpdPct}%`);
+    if (d.meleeHaste) out.push(`裝備近戰武器時攻速+${d.meleeHaste}%`);
+    if (d.polyAtkSpdPct) out.push(`變身時攻速+${d.polyAtkSpdPct}%`);
+    if (d.moveSpeedPct) out.push(`移動速度${d.moveSpeedPct > 0 ? '+' : ''}${d.moveSpeedPct}%`);
+    if (d.hitstunReduce) out.push(`受擊硬直縮短${(d.hitstunReduce / 10).toFixed(1)}秒`);
+    if (d.aggroHide) out.push('隱匿仇恨（較不容易成為敵人目標）');
+    if (d.aggroWeight) out.push(`${d.aggroWeight > 0 ? '提高' : '降低'}仇恨（${d.aggroWeight > 0 ? '更' : '較不'}容易被攻擊）`);
+
+    if (d.auraDmg) out.push(`傷害光環（每${((d.auraDmg.interval || 10) / 10).toFixed(1)}秒對全體敵人造成${d.auraDmg.dmg}點傷害）`);
+    if (d.thorns) out.push(`受擊反傷（反彈${d.thorns}點傷害）`);
+    if (d.dmgReflect) out.push(`傷害反射 ${d.dmgReflect}%（免疫該次一般攻擊並反射傷害）`);
+    if (d.hurtExplode) out.push(`受擊爆裂（自己與全體敵人受到${d.hurtExplode}點火焰魔法傷害）`);
+    if (d.hurtRapidfire) out.push('受擊反制（受到傷害時立即觸發一次連射）');
+    if (d.counterBarrierX2) out.push('反擊屏障強化（反擊傷害×2）');
+    if (d.crushDr) out.push(`重擊防護（受到重擊傷害-${d.crushDr}%）`);
+    if (d.physDrGated) out.push(`物理防護（一般攻擊傷害-${d.physDrGated}%，每3秒一次）`);
+    if (d.fireNullify) out.push('火焰化解（每10秒可免疫一次火屬性傷害）');
+    if (d.wearerEle) out.push(`${eleName(d.wearerEle)}之化身（自身轉為${eleName(d.wearerEle)}屬性，承受傷害套用屬性剋制）`);
+    if (d.stealth) out.push('常駐隱身（不主動吸引一般怪物）');
+
+    if (d.fullHpMult) out.push(`滿血狙擊（對滿血敵人一般攻擊傷害×${d.fullHpMult}）`);
+    if (d.fullHpMultTriple) out.push(`滿血三重矢（首箭傷害×${d.fullHpMultTriple}）`);
+    if (d.fullHpMpHalf) out.push('滿血施法（自身滿血時魔力消耗減半）');
+    if (d.lowHpPotionX2) out.push('瀕危急救（低HP時藥水恢復量×2）');
+    if (d.lowMpRegenBonus) out.push(`魔力枯竭回復（MP低於15%時，MP自然恢復+${d.lowMpRegenBonus}）`);
+    if (d.hotHealMult) out.push(`持續治癒強化（持續回復量×${d.hotHealMult}）`);
+    if (d.onDmgHeal) out.push(`受擊自癒（每${d.onDmgHealCd || 5}秒自動施放${skillName(d.onDmgHeal)}）`);
+    if (d.poisonHealMult) out.push(`毒素轉生（受到毒性持續傷害時，改為恢復其${pctText(d.poisonHealMult)}的HP）`);
+    if (d.poisonMult) out.push(`劇毒增幅（附加劇毒傷害×${d.poisonMult}）`);
+
+    if (d.dotCrit) out.push('持續傷害爆擊（我方中毒、出血等持續傷害可爆擊）');
+    if (d.eleWpnMult) out.push(`${eleName(d.eleWpnMult.ele)}武器強化（對應屬性一般攻擊傷害×${d.eleWpnMult.mult}）`);
+    if (d.hardSkinMult) out.push(`破甲專攻（攻擊有硬皮的敵人傷害×${d.hardSkinMult}）`);
+    if (d.softMult) out.push(`柔軟專攻（攻擊無硬皮的敵人傷害×${d.softMult}）`);
+    if (d.hardWear) out.push(`碎甲（命中時額外削減${d.hardWear}點硬皮）`);
+    if (d.heavyRatePct) out.push(`重擊率額外+${d.heavyRatePct}%`);
+    if (d.heavyMult) out.push(`重擊威力（重擊傷害×${d.heavyMult}）`);
+    if (d.missGrazeRate) out.push(`擦傷補正（未命中時${d.missGrazeRate}%改為造成一半傷害）`);
+    if (d.hitEchoMagic) out.push(`元素爆破 ${d.hitEchoMagic.rate}%（追加等同本次傷害的${eleName(d.hitEchoMagic.ele)}屬性魔法傷害）`);
+    if (d.onHitCastSkill) out.push(`命中施法（每${d.onHitCastSkill.cdSec || 5}秒觸發${skillName(d.onHitCastSkill.skId)}）`);
+    if (d.onHitEleVuln) out.push(`元素弱點（命中使目標受到的${eleName(d.onHitEleVuln)}屬性傷害提高）`);
+    if (d.windSpellProcRate) out.push(`風魔法共振 ${d.windSpellProcRate}%（施放風屬性傷害魔法時追加龍捲風）`);
+    if (d.hasteStrike) out.push('加速突擊（加速時命中與傷害+30；命中後失去加速）');
+    if (d.selfBreakProc) out.push(`易碎爆發（3%造成1.5倍傷害，但自身傷害降低${d.selfBreakProc.dur || 5}秒）`);
+    if (d.stoneInstakill) out.push('石化斬殺（命中石化中的非首領敵人時即死）');
+    if (d.instakillFull) out.push(`滿血斬殺 ${pctText(d.instakillFull)}（命中滿血非首領敵人時即死）`);
+    if (d.strawCurse) out.push(`稻草詛咒 ${d.strawCurse.rate}%（命中時附加${d.strawCurse.stacks || 3}層追加傷害）`);
+    if (d.procFireSkillRate) out.push(`火焰法術 ${d.procFireSkillRate}%（攻擊時隨機施放火屬性傷害魔法）`);
+    if (d.procHealFlat) out.push(`命中治癒 ${d.procHealFlat.rate}%（恢復${d.procHealFlat.hp}點HP）`);
+
+    if (d.lvDmgDiv || d.lvHitDiv) out.push(`等級成長（每${d.lvDmgDiv || d.lvHitDiv}級，傷害與命中提高）`);
+    if (d.highestAttrPlus) out.push('主屬性強化（目前最高的六維屬性+1；並列皆增加）');
+    if (d.swordStr) out.push(`握劍強化（裝備單手劍或雙手劍時力量+${d.swordStr}）`);
+    if (d.raceBonus) out.push(`${d.raceBonus.race}剋星（對${d.raceBonus.race}傷害×${d.raceBonus.mult}）`);
+    if (d.raceFlat) out.push(`${d.raceFlat.race}剋星（對${d.raceFlat.race}額外傷害+${d.raceFlat.add}）`);
+    if (d.giantBonus) out.push('巨人剋星（攻擊巨人額外造成1D20傷害）');
+    if (d.weakHitBonus) out.push(`弱點洞察（屬性剋制時額外傷害+${d.weakHitBonus}）`);
+
+    if (d.petDmgAll) out.push(`寵物傷害+${d.petDmgAll}`);
+    if (d.petHitAll) out.push(`寵物命中+${d.petHitAll}`);
+    if (d.petSkillDmgMult) out.push(`寵物技能傷害×${d.petSkillDmgMult}`);
+    if (d.summonDmg) out.push(`召喚物傷害+${d.summonDmg}`);
+    if (d.summonHit) out.push(`召喚物命中+${d.summonHit}`);
+    if (d.partnerHit) {
+        let names = Object.keys(d.partnerHit).map(n => `${n}命中+${d.partnerHit[n]}`);
+        if (names.length) out.push(`夥伴強化（${names.join('、')}）`);
+    }
+    if (d.trackBoost) out.push('追蹤強化（指定怪物出現率由50%提高至70%）');
+    if (d.showMobEle) out.push('元素洞察（顯示敵人的屬性）');
+    if (d.relicDropX2) out.push('遺物尋寶（遺物掉落判定次數×2）');
+
+    return out;
+}
 function buildItemDescHTML(item) {
     let d = DB.items[item.id];
     if(!d) return '';
@@ -771,6 +871,7 @@ function buildItemDescHTML(item) {
         if(d.resWater) desc += ` / 水屬性抗性: ${formatBonus(d.resWater)}`;
         if(d.resWind)  desc += ` / 風屬性抗性: ${formatBonus(d.resWind)}`;
         if(d.resEarth) desc += ` / 地屬性抗性: ${formatBonus(d.resEarth)}`;
+        if(d.resNone)  desc += ` / 無屬性抗性: ${formatBonus(d.resNone)}（只對魔法）`;   // 🛡️ v3.3.29 取代舊「無屬性魔法傷害減少%」
         if(d.meleeHit)  desc += ` / 近距離命中: ${formatBonus(d.meleeHit)}`;
         if(d.rangedHit) desc += ` / 遠距離命中: ${formatBonus(d.rangedHit)}`;
         if(d.meleeDmg)  desc += ` / 近距離傷害: ${formatBonus(d.meleeDmg)}`;
@@ -806,53 +907,62 @@ function buildItemDescHTML(item) {
         }
     }
 
-    // 👇 裝備特效標籤：只顯示特效名稱（不附解說）。涵蓋 武器/防具/飾品。
+    // 👇 裝備特效標籤：顯示「名稱＋精簡機制說明」，讓玩家不必只靠特效名稱猜用途。涵蓋 武器/防具/飾品。
     if (d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') {
         let _eff = [];
-        if (d.unBonus || d.unDice || d.sp === 'elf') _eff.push('不死 / 狼人加成');
-        if (d.eff === 'pierce')     _eff.push('穿透');
-        if (d.eff === 'moonburst')  _eff.push('月光爆裂');
-        if (d.eff === 'dice_death') _eff.push('即死');
-        if (d.eff === 'haste')      _eff.push('自我加速');
-        if (d.eff === 'crush')      _eff.push('重擊');
-        if (d.eff === 'cleave')     _eff.push('切割');
-        if (d.eff === 'combo')      _eff.push('攻擊時有機率發動雙擊');
-        if (d.weakExpose)           _eff.push('弱點曝光');   // 🐉 鎖鏈劍：一般攻擊命中12%附加（最多3層）
-        if (d.vampPct)              _eff.push('攻擊時吸取HP');
-        if (d.ignHardSkin)          _eff.push('貫穿');   // 🗡️ 暗黑十字弓：攻擊無視硬皮額外減傷
-        if (d.redSpecter)           _eff.push('紅惡靈逆襲');   // 👹 隱藏的魔族武器：攻擊4%(+每強化1%)→4D10水魔傷+吸10%HP
-        if (d.blueSpecter)          _eff.push('藍惡靈奪魔');   // 👹 隱藏的魔族武器：攻擊4%(+每強化1%)→回3D6 MP
-        if (d.rapidfire)            _eff.push('連射');
-        if (d.block)                _eff.push('格檔');
+        if (d.unBonus || d.unDice || d.sp === 'elf') _eff.push('不死／狼人加成（額外造成1D20傷害）');
+        if (d.eff === 'pierce')     _eff.push('穿透 ' + (d.pierceChance !== undefined ? d.pierceChance : 100) + '%（命中後追加攻擊另一名敵人）');
+        if (d.alsoPierce)           _eff.push('穿透 ' + (d.pierceChance !== undefined ? d.pierceChance : 100) + '%（命中後追加攻擊另一名敵人）');   // 主特效槽被占用時仍可附帶「穿透」；與無視硬皮的「貫穿」不同
+        if (d.eff === 'moonburst')  _eff.push('月光爆裂（命中時8%造成1D30＋強化×2風傷）');
+        if (d.eff === 'dice_death') _eff.push('即死（命中時1%使非首領目標死亡）');
+        if (d.eff === 'haste')      _eff.push('自我加速（裝備時常駐加速）');
+        if (d.eff === 'crush')      _eff.push('重擊（提高重擊機率，重擊取武器最大傷害）');
+        if (d.eff === 'cleave')     _eff.push('切割（重擊時攻速+20%，持續2秒）');
+        if (d.eff === 'combo')      _eff.push('雙擊 ' + (d.comboRate || 0) + '%（追加一次完整一般攻擊）');
+        if (d.weakExpose)           _eff.push('弱點曝光（命中12%疊加，供屠宰者增傷）');   // 🐉 鎖鏈劍：一般攻擊命中12%附加（最多3層）
+        if (d.vampPct)              _eff.push('吸取HP ' + Math.round(d.vampPct * 100) + '%（依本次傷害恢復）');
+        if (d.ignHardSkin)          _eff.push('貫穿（無視硬皮額外減傷）');   // 🗡️ 暗黑十字弓：攻擊無視硬皮額外減傷
+        if (d.redSpecter)           _eff.push('紅惡靈逆襲（4%＋每強化1%，造成水魔傷並吸取10%HP）');   // 👹 隱藏的魔族武器
+        if (d.blueSpecter)          _eff.push('藍惡靈奪魔（4%＋每強化1%，恢復3D6 MP）');   // 👹 隱藏的魔族武器
+        if (d.rapidfire)            _eff.push('連射 ' + d.rapidfire + '%（追加1～3箭，每箭30%傷害）');
+        if (d.block)                _eff.push('格檔 ' + d.block + '%（重擊時依此機率減半傷害；一般攻擊為上述機率的30%）');
         if (d.immStone)             _eff.push('免疫石化');
         if (d.immPoison)            _eff.push('免疫中毒');
         if (d.unique)               _eff.push('唯一（最多裝備1個）');
-        if (d.eff === 'magicstrike') _eff.push('魔擊');
-        if (d.eff === 'magicburst') _eff.push('魔爆');   // 🔧 神官魔杖
-        if (d.meleeHitSpell)        _eff.push('攻擊命中時施放' + (d.meleeHitSpell.skn || '附加法術'));
-        if (d.spellProc)            _eff.push('攻擊時有機率施放' + (d.spellProc.skn || '附加法術'));
+        if (d.eff === 'magicstrike') _eff.push('魔擊（攻擊時依力量觸發必中重擊）');
+        if (d.eff === 'magicburst') _eff.push('魔爆（傷害魔法時依智力觸發，追加該次總傷害30%的無屬性傷害）');   // 🔧 神官魔杖
+        if (d.meleeHitSpell)        _eff.push('命中施法（攻擊命中時施放' + (d.meleeHitSpell.skn || '附加法術') + '）');
+        if (d.spellProc) {
+            let _spellRate = (d.procRateBase || 1) + (d.procRatePerEn || 0) * capWpnEn(item.en || 0);
+            _eff.push(`攻擊施法 ${_spellRate}%（觸發${d.spellProc.skn || '附加法術'}）`);
+        }
         if (d.procSkill) {
             let _procName = (DB.skills[d.procSkill] && DB.skills[d.procSkill].n) || '技能';
-            _eff.push('攻擊時有機率施放' + _procName);
+            let _procRate = (d.procRateBase || 1) + (d.procRatePerEn || 0) * capWpnEn(item.en || 0);
+            _eff.push(`攻擊施法 ${_procRate}%（觸發${_procName}）`);
         }
         if (d.procStatusSkill) {
             let _statusName = (DB.skills[d.procStatusSkill.skId] && DB.skills[d.procStatusSkill.skId].n) || '異常狀態';
-            _eff.push('攻擊命中時有機率造成' + _statusName);
+            _eff.push(`異常攻擊 ${d.procStatusSkill.rate || 0}%（命中時造成${_statusName}）`);
         }
-        if (d.procPoison || d.procPoisonRate) _eff.push('攻擊命中時有機率使目標中毒');
-        if (d.procInstakill)         _eff.push('攻擊命中時有機率使目標即死');
-        if (d.procBonusDmg)          _eff.push('攻擊時有機率造成額外傷害');
-        if (d.procDmgReduce)         _eff.push('受傷時有機率減少傷害');
+        if (d.procPoison)            _eff.push(`中毒 ${d.procPoison.rate || 0}%（命中時使目標中毒${d.procPoison.dur ? `，持續${d.procPoison.dur}秒` : ''}）`);
+        else if (d.procPoisonRate)   _eff.push(`中毒 ${d.procPoisonRate}%（命中時使目標中毒）`);
+        if (d.procInstakill) {
+            let _ik = d.procInstakill, _ikCond = _ik.tag === 'undead' ? '不死系' : (_ik.hpBelow ? `HP低於${Math.round(_ik.hpBelow * 100)}%` : '非首領');
+            _eff.push(`即死 ${Math.round((_ik.p || 0) * 100)}%（命中${_ikCond}目標時發動）`);
+        }
+        if (d.procBonusDmg)          _eff.push(`額外傷害 ${d.procBonusDmg.rate}%（攻擊時追加${d.procBonusDmg.dmg}點傷害）`);
+        if (d.procDmgReduce)         _eff.push(`傷害減免 ${d.procDmgReduce.rate}%（受傷時減少${d.procDmgReduce.amount}點傷害）`);
         if (d.allLures)              _eff.push('視為持有全部誘捕狀態');
         if (d.eleBonusDmg) {
             let _bonusEleName = { fire:'火', water:'水', wind:'風', earth:'地' }[d.eleBonusDmg.ele] || '特定屬性';
-            _eff.push('攻擊' + _bonusEleName + '屬性敵人時造成額外傷害');
+            _eff.push(`屬性專攻（攻擊${_bonusEleName}屬性敵人時額外傷害+${d.eleBonusDmg.dmg || d.eleBonusDmg.add || 0}）`);
         }
         if (d.counterAllEle)         _eff.push('一般攻擊剋制所有屬性敵人');
-        if (d.procBurn)              _eff.push('攻擊命中時使目標陷入灼燒');
+        if (d.procBurn)              _eff.push(`灼燒${d.procBurn.rate ? ` ${d.procBurn.rate}%` : ''}（命中後每秒${d.procBurn.dmg || 10}點火傷，持續${d.procBurn.dur || 6}秒）`);
         if (d.onHitEleDmg) {
             let _eleName = { fire:'火焰', water:'寒冰', wind:'風雷', earth:'大地', none:'無屬性' }[d.onHitEleDmg.ele] || '屬性';
-            _eff.push('攻擊命中時附加' + _eleName + '傷害');
+            _eff.push(`${_eleName}附傷${d.onHitEleDmg.rate ? ` ${d.onHitEleDmg.rate}%` : ''}（命中時追加${d.onHitEleDmg.dmg}點傷害）`);
         }
         if (d.freeChill)             _eff.push('施放寒冰氣息不消耗魔力');
         if (d.noConsume && d.isArrow) _eff.push('箭矢不會消耗');
@@ -862,22 +972,23 @@ function buildItemDescHTML(item) {
             _eff.push('一般攻擊化為' + _wpnEleName + '屬性');
         }
         if (d.skillDmgMult) {
-            let _skillNames = Object.keys(d.skillDmgMult).map(skId => (DB.skills[skId] && DB.skills[skId].n) || skId);
-            if (_skillNames.length) _eff.push('強化' + _skillNames.join('、') + '的傷害');
+            let _skillNames = Object.keys(d.skillDmgMult).map(skId => `${(DB.skills[skId] && DB.skills[skId].n) || skId}×${d.skillDmgMult[skId]}`);
+            if (_skillNames.length) _eff.push('技能增幅（' + _skillNames.join('、') + '）');
         }
-        if (d.autoCastMpMult && d.autoCastMpMult > 1) _eff.push('自動施放傷害魔法時魔力消耗增加');
-        if (d.autoCastDmgMult && d.autoCastDmgMult > 1) _eff.push('自動施放傷害魔法時威力提升');
-        if (d.silencedBonusDmg)      _eff.push('攻擊沉默中的目標時傷害提高');
-        if (d.poisonedBonusDmg)      _eff.push('攻擊中毒的目標時傷害提高');
-        if (d.slowedBonusDmg)        _eff.push('攻擊緩速中的目標時傷害提高');
-        if (d.immParalyzeBonusDmg)   _eff.push('對免疫麻痺的目標仍能造成額外傷害');
-        if (typeof weaponHasBleed === 'function' && weaponHasBleed(item.id)) _eff.push('出血');
-        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('單手劍')) _eff.push('反擊');
-        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('武士刀')) _eff.push('居合');
-        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('單手鈍器')) _eff.push('鈍擊');
+        if (d.autoCastMpMult && d.autoCastMpMult > 1) _eff.push(`自動施法代價（MP消耗×${d.autoCastMpMult}）`);
+        if (d.autoCastDmgMult && d.autoCastDmgMult > 1) _eff.push(`自動施法增幅（傷害×${d.autoCastDmgMult}）`);
+        if (d.silencedBonusDmg)      _eff.push(`沉默專攻（攻擊沉默目標額外傷害+${d.silencedBonusDmg}）`);
+        if (d.poisonedBonusDmg)      _eff.push(`中毒專攻（攻擊中毒目標額外傷害+${d.poisonedBonusDmg}）`);
+        if (d.slowedBonusDmg)        _eff.push(`緩速專攻（攻擊緩速目標額外傷害+${d.slowedBonusDmg}）`);
+        if (d.immParalyzeBonusDmg)   _eff.push(`強韌專攻（攻擊免疫麻痺目標額外傷害+${d.immParalyzeBonusDmg}）`);
+        if (typeof weaponHasBleed === 'function' && weaponHasBleed(item.id)) _eff.push('出血（命中疊加8秒流血，每秒造成該次傷害20%）');
+        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('單手劍')) _eff.push('反擊（受一般攻擊命中時50%反擊；格檔時必定）');
+        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('武士刀')) _eff.push('居合（無盾且迴避／敵人未命中時50%反擊）');
+        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('單手鈍器')) _eff.push('鈍擊（命中時延遲目標攻擊1秒）');
         if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('雙刀')) _eff.push('雙刃（有機率造成雙倍傷害）');
-        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('鋼爪')) _eff.push('重擊（有機率造成強力一擊）');
-        if (typeof WAND_LIGHTARROW_IDS !== 'undefined' && WAND_LIGHTARROW_IDS.includes(item.id)) _eff.push('共鳴');
+        if (typeof getWeaponTags === 'function' && getWeaponTags(item.id).includes('鋼爪')) _eff.push('重擊 +5%（重擊取武器最大傷害）');
+        if (typeof WAND_LIGHTARROW_IDS !== 'undefined' && WAND_LIGHTARROW_IDS.includes(item.id)) _eff.push('共鳴（攻擊時依智力免費施放光箭）');
+        if (d.relic) _eff.push(...relicPurposeLabels(d));
         _eff = [...new Set(_eff)];
         _eff = filterClassicEffLabels(_eff, d);   // 🎮 經典模式：移除已停用特效字樣（classicOk 物品不過濾）
         if (_eff.length) desc += `<br><span class="text-rose-300 font-bold">特效：${_eff.join(' / ')}</span>`;
@@ -909,7 +1020,7 @@ function buildItemDescHTML(item) {
     if(d.expBonus) statsArr.push(`經驗值獲得量+${d.expBonus}%`);
     if(d.goldBonus) statsArr.push(`金幣獲得量+${d.goldBonus}%`);
 
-    // 基礎能力保留實際數值；機率觸發類能力已在上方「特效」以不含詳細數值的方式列出。
+    // 基礎能力保留實際數值；機率觸發類能力在上方「特效」以名稱、發動率與精簡機制說明列出。
     if(d.abnormalResist) statsArr.push(`異常狀態抵抗+${d.abnormalResist}%`);
     if(d.freezeResist) statsArr.push(d.freezeResist >= 100 ? '免疫冰凍' : `冰凍抵抗+${d.freezeResist}%`);
     if(d.stunResist) statsArr.push(d.stunResist >= 100 ? '免疫暈眩' : `暈眩抵抗+${d.stunResist}%`);

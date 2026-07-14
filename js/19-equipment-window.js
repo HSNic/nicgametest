@@ -159,6 +159,14 @@
         el('equipment-window-stats').innerHTML = values.map(([key, value]) =>
             `<span class="equipment-stat equipment-stat-${key}">${value}</span>`
         ).join('');
+        const weight = el('equipment-window-weight');
+        if (weight) {
+            const weightPct = Math.max(0, Math.round(Number(d.weightPct) || 0));
+            const loadTier = Math.max(0, Math.min(3, Number(d.loadTier) || 0));
+            weight.textContent = `負重 ${weightPct} %`;
+            weight.dataset.loadTier = String(loadTier);
+            weight.setAttribute('aria-label', `目前負重 ${weightPct}%`);
+        }
     }
 
     function renderMorphSnapshot() {
@@ -372,14 +380,18 @@
             const host = el('tab-content-panel');
             if (!host) return;
             let hostRect = host.getBoundingClientRect();
+            const maxFrameWidth = 366;
             if (innerWidth <= 768) {
-                const mobileHeight = Math.ceil(hostRect.width * 408 / 183);
+                const mobileFrameWidth = Math.min(hostRect.width, maxFrameWidth);
+                const mobileHeight = Math.ceil(mobileFrameWidth * 408 / 183);
                 host.style.setProperty('--equipment-panel-height', mobileHeight + 'px');
                 hostRect = host.getBoundingClientRect();
             }
-            const frameWidth = Math.max(0, innerWidth <= 768
-                ? hostRect.width
-                : Math.min(hostRect.width, hostRect.height * 183 / 408));
+            const frameWidth = Math.max(0, Math.min(
+                hostRect.width,
+                maxFrameWidth,
+                hostRect.height * 183 / 408
+            ));
             win.style.left = hostRect.left + 'px';
             win.style.top = hostRect.top + 'px';
             win.style.right = 'auto';
@@ -387,9 +399,9 @@
             win.style.width = hostRect.width + 'px';
             win.style.height = hostRect.height + 'px';
             frame.style.left = '50%';
-            frame.style.top = '50%';
+            frame.style.top = '0';
             frame.style.setProperty('width', frameWidth + 'px', 'important');
-            frame.style.transform = 'translate(-50%,-50%)';
+            frame.style.transform = 'translateX(-50%)';
             frame.classList.remove('side-open');
             return;
         }
@@ -422,7 +434,7 @@
         if (host) {
             host.classList.toggle('equipment-panel-host', visible);
             if (!visible || innerWidth > 768) host.style.removeProperty('--equipment-panel-height');
-            else host.style.setProperty('--equipment-panel-height', Math.ceil(host.getBoundingClientRect().width * 408 / 183) + 'px');
+            else host.style.setProperty('--equipment-panel-height', Math.ceil(Math.min(host.getBoundingClientRect().width, 366) * 408 / 183) + 'px');
         }
         win.classList.add('equipment-window-embedded');
         win.classList.toggle('hidden', !visible);

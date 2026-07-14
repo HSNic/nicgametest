@@ -32,7 +32,7 @@ const SUMMON_TIERS = [
         { n: '狂野之魔', lv: 28, hp: 160, aspd: 16, ring: true, proc: [{ kind: 'magic', p: 0.10, name: '水泡', ele: 'water' }] } ] },
     { reqLv: 40, div: 8,  cap: 5, ringCap: 6, mobs: [
         { n: '食人妖精',   lv: 32, hp: 450, aspd: 13 },
-        { n: '食人妖精王', lv: 32, hp: 270, aspd: 13, ring: true },
+        { n: '食人妖精王', lv: 32, hp: 400, aspd: 13, ring: true },
         { n: '冰人',       lv: 32, hp: 180, aspd: 17, ring: true, proc: [{ kind: 'magic', p: 0.10, name: '冰錐', ele: 'water' }] } ] },
     { reqLv: 44, div: 8,  cap: 5, ringCap: 6, mobs: [
         { n: '狂暴蜥蜴人', lv: 36, hp: 500, aspd: 17 },
@@ -94,7 +94,7 @@ function _sumCountFor(name, owner) {   // 數量：floor((魅力+6)/div)·上限
     return Math.max(0, Math.min(cap, n));
 }
 // 傷害設計：整隊基準 DPS 由「魅力×玩家等級」連續成長，再由召喚階級按比例逐階增加。
-//   同階怪物不再因 HP 較低而取得過大的基礎傷害；差異改由 HP、攻速與特殊技能形成。
+//   同階以中位 HP 為基準套用溫和反向曲線：(中位HP/自身HP)^0.35；血越少 DPS 越高、血越多 DPS 越低。
 //   🧙 v3.2.23 混合制（用戶拍板）：每隻單價＝隊伍基準 ÷ 該階數量上限（固定·不隨實際隻數變）
 //   → 多隻＝成倍疊加（5 隻＝單隻的 5 倍·「單隻與多隻有正常倍數差」）；
 //   → 後期階級上限縮小（64 階 2 隻·68/72 階固定 1 隻）→ 單隻天生承載半隊/整隊基準，
@@ -117,6 +117,12 @@ function _sumSkillPower(s, owner) {
     const cha = Math.max(0, (owner.d && owner.d.cha) || 0);
     return Math.max(1, Math.floor((s && s.lv || 1) + (owner.lv || 1) * 0.35 + tierIdx * 2 + cha * 0.5));
 }
+function _sumHpDpsMult(t, m) {   // 同階生存力換輸出：低血較痛、高血較坦；0.35 次方避免血量差距被放大成失衡
+    const hps = ((t && t.mobs) || []).map(x => Math.max(1, x.hp || 1)).sort((a, b) => a - b);
+    if (!hps.length) return 1;
+    const refHp = hps[Math.floor(hps.length / 2)];
+    return Math.pow(refHp / Math.max(1, (m && m.hp) || refHp), 0.35);
+}
 function _sumDerive(mob, owner) {
     owner = owner || player;
     const e = _sumTierOf(mob.form || mob.n) || _sumTierOf(mob.n);
@@ -124,7 +130,7 @@ function _sumDerive(mob, owner) {
     const t = e.tier, m = e.mob;
     const tierIdx = Math.max(0, SUMMON_TIERS.indexOf(t));
     const cha = Math.max(0, (owner.d && owner.d.cha) || 0);
-    const squadDps = (39 + 0.09 * cha * (owner.lv || 1)) * (1 + tierIdx * 0.06) * (t.premium || 1);
+    const squadDps = (39 + 0.09 * cha * (owner.lv || 1)) * (1 + tierIdx * 0.06) * (t.premium || 1) * _sumHpDpsMult(t, m);
     const designCount = Math.max(1, t.cap || 1);   // 🧙 v3.2.24 單價＝基準/上限·恆定（每隻獨立·第 6 隻同為全額不稀釋）
     const mean = (squadDps / designCount) * (m.aspd / 10);
     const flat = Math.round(mean * 0.55);
@@ -343,7 +349,7 @@ function summonV2Tick() {
         s._atkCd = d.aspd;
         const t = (typeof _petPickTarget === 'function') ? _petPickTarget(s) : getTarget();
         if (!t) continue;
-        if (s.skId === 'sk_elf_summon' || s.skId === 'sk_elf_summon2') spiritAttackOnce(s, t);   // 🧝 屬性精靈：舊公式攻擊
+        if (s.skId === 'sk_elf_summon' || s.skId === 'sk_elf_summon2') spiritAttackOnce(s, t);   // 🧝 屬性精靈：玩家／傭兵共用公式（傭兵呼叫點見 js/07）
         else summonV2AttackOnce(s, d, t);   // 召喚術/造屍術：flat＋1D骰 模型（殭屍無 proc·由 _sumTierOf 守衛跳過）
     }
     // 死亡殘影過期清理（渲染保留 2 秒）
@@ -354,14 +360,21 @@ function summonV2Tick() {
 }
 function summonV2AttackOnce(s, d, t, owner) {
     owner = owner || player;   // 🩸 v3.3.23 owner 參數化：傭兵召喚術抽象輸出共用（讀 owner 裝備/精通；killMob 仍歸真隊長·不換身）
+    const _ownerDmgMult = (owner !== player && typeof royalAllyMult === 'function') ? royalAllyMult() : 1;   // 👑 傭兵召喚物比照傭兵本體吃隊長魅力；玩家召喚固定1
     const _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(owner) : { dmg: 0, hit: 0 };   // 🏺 喚獸師的訓練鞭等
     const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s) : null;   // 🩹 v3.2.67 幻覺攻擊光環（化身+10傷／歐吉+4傷+4命）全隊生效→注入召喚物普攻（s 非提供者·排除無效果=取全隊）
+    const _ownerIa = (owner !== player && typeof teamIlluAura === 'function') ? teamIlluAura(owner) : null;   // 傭兵 d 已含自身光環；補入其他隊員提供的巫妖魔傷，玩家 d 則已由 recompute 注入
+    const _baseMd = Math.min(12, Math.max(0, (owner.d && owner.d.magicDmg) || 0));
+    const _teamMd = Math.min(12, Math.max(0, _baseMd + ((_ownerIa && _ownerIa.md) || 0)));
+    const _magicAuraRatio = (1 + _teamMd / 80) / (1 + _baseMd / 80);   // _sumDerive/_zmbDerive 已含自身 magicDmg，只補差額避免雙算
+    const _attackMult = d.dmgMult * _magicAuraRatio;
     const hv = stretchHitValue(d.hit + _sgb.hit + (_ia ? _ia.eh : 0) - t.lv + mobEffAC(t));
     const r = roll(1, 20);
     _petAnimAct(s, 'attack', t.uid);   // 🎬 v3.2.73 補跑中不設→回前景不同步爆播
     if (!((r === 20) || (r !== 1 && hv >= r))) { logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
-    let dmg = ((r === 20 ? d.dice : roll(1, d.dice)) + d.flat + _sgb.dmg) * d.dmgMult + (_ia ? _ia.ed : 0);
+    let dmg = ((r === 20 ? d.dice : roll(1, d.dice)) + d.flat + _sgb.dmg) * _attackMult + (_ia ? _ia.ed : 0);
     dmg = Math.max(1, Math.floor(dmg) - (t.dr || 0));
+    dmg = Math.max(1, Math.floor(dmg * _ownerDmgMult));
     markBossPhysicalHit(t);
     t.curHp -= dmg; t.justHit = 'normal'; mobWake(t);
     logCombat(`<span class="text-purple-300">${s.form}</span> 攻擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg}${r === 20 ? '（重擊）' : ''} 點傷害。`, 'player');
@@ -374,17 +387,18 @@ function summonV2AttackOnce(s, d, t, owner) {
             _petAnimAct(s, 'skill');
             if (pr.kind === 'poison') {   // 單體中毒（比照技能類中毒：單層固定 DoT）
                 t.st = t.st || newMobStatus();
-                t.st.poison = 150; t.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2)); t.st.poisonStacks = 1; t.st.poisonUnit = t.st.poisonDmg; t.st.poisonTick = 30;
+                t.st.poison = 150; t.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); t.st.poisonStacks = 1; t.st.poisonUnit = t.st.poisonDmg; t.st.poisonTick = 30;
                 logCombat(`<span class="text-purple-300">${s.form}</span> 發動 <span class="text-green-300 font-bold">${pr.name}</span>，<span class="${getMobColor(t.lv)}">${t.n}</span> 中毒了！`, 'magic');
             } else if (pr.kind === 'poisonAll') {   // 全體中毒
                 const all = mapState.mobs.filter(m => m && m.curHp > 0);
-                all.forEach(m => { m.st = m.st || newMobStatus(); m.st.poison = 150; m.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2)); m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg; m.st.poisonTick = 30; });
+                all.forEach(m => { m.st = m.st || newMobStatus(); m.st.poison = 150; m.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg; m.st.poisonTick = 30; });
                 if (all.length) logCombat(`<span class="text-purple-300">${s.form}</span> 發動 <span class="text-green-300 font-bold">${pr.name}</span>，敵方全體中毒！`, 'magic');
             } else {   // magic / magicAll：屬性魔法傷害（吃魔抗/DR/屬性剋制·summonElementDamage）
                 const targets = (pr.kind === 'magicAll') ? mapState.mobs.filter(m => m && m.curHp > 0) : [t];
                 const texts = [];
                 targets.forEach(m => {
-                    let pd = summonElementDamage([2, Math.max(2, Math.ceil(s.lv * 0.6))], pr.ele || 'none', m, skillPower, d.dmgMult * (pr.heavy || 1), 0);
+                    let pd = summonElementDamage([2, Math.max(2, Math.ceil(s.lv * 0.6))], pr.ele || 'none', m, skillPower, _attackMult * (pr.heavy || 1), 0);
+                    pd = Math.max(1, Math.floor(pd * _ownerDmgMult));
                     m.curHp -= pd; m.justHit = (pr.ele && pr.ele !== 'none') ? pr.ele : 'magic'; mobWake(m);
                     texts.push(`<span class="${getMobColor(m.lv)}">${m.n}</span> ${pd}`);
                     if (pr.slow && Math.random() * 100 < Math.max(0, (100 - (m.mr || 0)) / 2)) { m.st = m.st || newMobStatus(); m.st.slow = Math.max(m.st.slow || 0, 80); }
@@ -398,21 +412,23 @@ function summonV2AttackOnce(s, d, t, owner) {
     if (t.curHp <= 0) { const i = mapState.mobs.findIndex(x => x && x.uid === t.uid); if (i !== -1) killMob(i); }
     else { try { renderMobs(); } catch (e2) {} }
 }
-// 🧝 屬性精靈攻擊（v3.2.21·能力維持舊 summonAttack ranged 分支公式）：
-//   固定值＝魅力×等級/elemScale、魔抗穿透＝mrPenBase＋魅力/10、傷害走 summonElementDamage（吃魔抗/剋制/DR）、命中走 summonHitValue（js/07 共用）
-function spiritAttackOnce(s, t) {
+// 🧝 屬性精靈攻擊（v3.4.11 玩家實體／傭兵無敵抽象召喚共用）：
+//   固定值＝owner魅力×owner等級/elemScale、魔抗穿透＝mrPenBase＋魅力/10；吃 owner 裝備/精通、魔抗/剋制/DR、幻覺光環，傭兵另吃王族隊長倍率。
+function spiritAttackOnce(s, t, owner) {
+    owner = owner || player;   // 🧝 玩家實體／傭兵無敵抽象精靈共用同一傷害公式
     const spec = _spiritSpec(s.skId, s.ele, !!s._king);   // 🧝 v3.2.26 四屬性獨立參數（dice/scale/攻速依屬性·王含 AOE）
-    const cha = (player.d && player.d.cha) || 0;
-    const _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(player) : { dmg: 0, hit: 0 };
-    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s) : null;   // 🩹 v3.2.67 幻覺攻擊光環全隊生效→注入屬性精靈命中(eh)；⚠️v3.2.68 稽核修：md 不再入 flat——summonDamageMult 已吃 player.d.magicDmg(含巫妖光環)·再加＝雙重計算
+    const cha = (owner.d && owner.d.cha) || 0;
+    const _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(owner) : { dmg: 0, hit: 0 };
+    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s) : null;   // 🩹 幻覺光環：精靈命中吃 eh；md 由 owner.d＋下方其他隊員差額進 summonDamageMult，避免重複計算
+    const _ownerIa = (owner !== player && typeof teamIlluAura === 'function') ? teamIlluAura(owner) : null;   // 傭兵補其他隊員的巫妖魔傷；自身光環已在 owner.d，玩家亦已由 recompute 注入
     const smLike = { skId: s.skId, hitLvOff: spec.hitLvOff || 0, dmgMult: spec.dmgMult || 1 };
     _petAnimAct(s, 'attack', t.uid);   // 🎬 v3.2.73 補跑中不設→回前景不同步爆播
-    const hv = summonHitValue(smLike, player, t, _sgb.hit + (_ia ? _ia.eh : 0));
+    const hv = summonHitValue(smLike, owner, t, _sgb.hit + (_ia ? _ia.eh : 0));
     const r = roll(1, 20);
     if (!((r === 20) || (r !== 1 && hv >= r))) { logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
-    const flat = Math.floor(cha * (player.lv || 1) / (spec.scale || 20));
+    const flat = Math.floor(cha * (owner.lv || 1) / (spec.scale || 20));
     const mrPen = (spec.mrPenBase || 0) + Math.floor(cha / 10);
-    const mult = summonDamageMult(smLike, player, true);
+    const mult = summonDamageMult(smLike, owner, true, (_ownerIa && _ownerIa.md) || 0);
     const dmg = summonElementDamage(spec.dice || [1, 40], s.ele, t, flat + _sgb.dmg, mult, mrPen);
     t.justHit = (s.ele && s.ele !== 'none') ? s.ele : 'magic';
     t.curHp -= dmg; mobWake(t);

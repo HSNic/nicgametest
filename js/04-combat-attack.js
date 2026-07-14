@@ -129,6 +129,7 @@ function playerAttack() {
         if (wpn && wpn.eleBonusDmg && target.e === wpn.eleBonusDmg.ele) result.dmg += (wpn.eleBonusDmg.add || 0);   // 🏺 兇殘惡鬼的毒牙：對特定屬性敵人額外固定傷害 +N（如對風屬性+10）
         if (wpn && wpn.immParalyzeBonusDmg && (target.boss || target.immParalyze || target.immStun)) result.dmg += wpn.immParalyzeBonusDmg;   // 🏺 屍毒之針：對免疫麻痺（頭目/免疫）目標額外固定傷害 +N
         target.curHp -= result.dmg;
+        reflectWallOnDamage(target, result.dmg, result.ranged ? 'ranged' : 'melee', null);   // 🌑 血壁空間（吉爾塔斯）：反彈同等傷害給攻擊方
         if (target.curHp > 0 && wpn && wpn.hitEchoMagic && Math.random() * 100 < (wpn.hitEchoMagic.rate || 0)) { let _he = wpn.hitEchoMagic; target.curHp -= result.dmg; target.justHit = _he.ele || 'magic'; target._spellHurt = true; mobWake(target); logCombat(`<span class="font-bold" style="color:#fb923c;text-shadow:0 0 6px #dc2626;">【爆破】</span>烈焰爆開，額外造成 ${result.dmg} 點火屬性魔法傷害。`, 'player-special'); }   // 🏺 火精靈王的爆焰：命中 10% 追加等同本擊的火魔傷
         if (target.curHp > 0) consumeStrawCurse(target);   // 🐍 詛咒稻草人：受到攻擊時額外扣 80 水魔傷（每次消耗 1 層·最多 3 層）
         if (result.dmg > 0) { try { playMobHurt(target); } catch(e){} }   // 🔊 音效：怪物受傷（依怪名對應；全域節流）
@@ -159,7 +160,7 @@ function playerAttack() {
 
 		// 穿透（貝卡合金）：場上有兩名以上敵人時，普攻額外攻擊「主目標以外隨機一名敵人」，
 		// 每個波及目標各自獨立判定是否命中，命中則造成與主目標相同的傷害與屬性；僅一名敵人時與一般近戰相同（不額外攻擊）。
-        if (wpn && wpn.eff === 'pierce' && (!player.classicMode || wpn.classicOk)) {   // 🎮 經典模式：停用穿透（⚔️ v3.2.38 classicOk 特例：黑虎的雙尾鞭經典亦觸發）
+        if (wpn && (wpn.eff === 'pierce' || wpn.alsoPierce) && (!player.classicMode || wpn.classicOk)) {   // 🎮 經典模式：停用穿透（⚔️ v3.2.38 classicOk 特例：黑虎的雙尾鞭經典亦觸發）；🌑 v3.3.33 alsoPierce＝主特效槽已被占用（吉爾塔斯之劍 cleave／腐壞的長弓 rapidfire）仍附帶貫穿
             let _pc = (wpn.pierceChance !== undefined) ? wpn.pierceChance : 100;   // 穿透發動機率(%)，未設定視為100%
             let otherIdx = [];
             mapState.mobs.forEach((m, i) => { if (m && m.curHp > 0 && !m._dead && m !== target) otherIdx.push(i); });
@@ -758,6 +759,19 @@ function bombFlowerExplode(who) {
     else { _w.curHp -= self; logCombat(`<span class="font-bold" style="color:#fca5a5;">【爆彈花蕊】</span>爆裂反噬，協力·${_w._allyName} 受到 ${self} 點火屬性魔法傷害。`, 'enemy'); }   // 🩹 v3.1.76 傭兵自傷扣 curHp（倒地由呼叫端既有檢查結算）
     if (hitAny && !state.ff) renderMobs();
 }
+// 頭目狂暴：當前 HP 嚴格低於門檻時才生效；資料未設定時維持既有戰鬥數值。
+function mobRageActive(mob) {
+    let hpPct = Number(mob && mob.rageHpPct) || 0;
+    return hpPct > 0 && mob.hp > 0 && mob.curHp < mob.hp * hpPct;
+}
+function mobRageHitBonus(mob) {
+    let baseHit = (mob && mob.hit) || 0;
+    return mobRageActive(mob) ? baseHit * (Number(mob.rageHitMult) || 1) : baseHit;
+}
+function mobRageDmgMult(mob) {
+    return mobRageActive(mob) ? (Number(mob.rageDmgMult) || 1) : 1;
+}
+
 function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = null) {   // atkDmg/atkDb：連擊技覆寫骰子/加值（如鐮刀劍氣斬 9×3D70+99，與一般攻擊不同）
     if(player.dead) return;
     if(inAbsBarrier()) return;   // 🛡️ 絕對屏障：不受任何傷害（敵方一般/連擊攻擊完全無效，亦不觸發反擊）
@@ -793,7 +807,7 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
 
     let st = mob.st || newMobStatus();
     if (st.terror > 0 && !_asleep && Math.random() < 0.90) { logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 陷入恐懼，攻擊落空。`, 'miss'); return; }   // 🐉 恐懼無助：90% 攻擊落空
-    let mobHitBonus = (mob.hit || 0) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + ((mob._siegeHitEnd > state.ticks) ? 2 : 0) + tamerAuraHit(mob);   // 暴風神射：額外命中+2；🔧 馴獸光環
+    let mobHitBonus = mobRageHitBonus(mob) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + ((mob._siegeHitEnd > state.ticks) ? 2 : 0) + tamerAuraHit(mob);   // 暴風神射：額外命中+2；🔧 馴獸光環；頭目狂暴倍率只放大自身 hit
     let rawHitValue = mob.lv + mobHitBonus - player.lv + (player.d.ac - teamAcBonus(player));   // 🌟 v3.0.99 傭兵提供的大地祝福/高崙 全隊AC-（排除玩家自身·其自身已計入 player.d.ac）
     let hitValue = stretchHitValue(rawHitValue);
     
@@ -900,10 +914,12 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
             if(_blockChance > 0 && Math.random() * 100 < _blockChance) { let _before = totalDmg; totalDmg = Math.floor(totalDmg * 0.5); blockReduced = _before - totalDmg; blocked = true; }
         }
 
+        totalDmg = Math.floor(totalDmg * mobRageDmgMult(mob));   // 🔥 HP<門檻：一般攻擊／連擊最終傷害倍率
         totalDmg = Math.max(1, totalDmg);
         totalDmg = castleGuardAbsorb(totalDmg, 'phys');   // 🏰 肯特城護衛：承擔 10% 一般攻擊
         totalDmg = Math.floor(totalDmg * riftDamageMult());   // 🌀 時空裂痕 30 分後每分鐘 +20% 怪物攻擊力
         totalDmg = dollDamageReduced(totalDmg);   // 🪆 魔法娃娃：受傷機率傷害減免（史巴托/巫妖）
+        totalDmg = shieldDmgReduceProc(player, totalDmg);   // 🌑 v3.3.33 反叛者的盾牌：受傷 1%(+2%/強化) 機率傷害 -50（物理）
         // 🏺 v3.1.80 魅魔女皇的誘惑：受到一般攻擊時 dmgReflect% 機率使攻擊者受到相同傷害，自身免疫此次傷害
         if (player.d.dmgReflect > 0 && totalDmg > 0 && mob && mob.curHp > 0 && Math.random() * 100 < player.d.dmgReflect) {
             let _rf = Math.max(1, Math.floor(totalDmg * fragileMult(mob)));
@@ -1078,7 +1094,7 @@ function enemyAttackAlly(mob, ally) {
     }
     let st = mob.st || newMobStatus();
     if (st.terror > 0 && Math.random() < 0.90) { logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 陷入恐懼，攻擊落空。`, 'miss', 'enemy'); return; }
-    let mobHitBonus = (mob.hit || 0) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + ((mob._siegeHitEnd > state.ticks) ? 2 : 0) + tamerAuraHit(mob);
+    let mobHitBonus = mobRageHitBonus(mob) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + ((mob._siegeHitEnd > state.ticks) ? 2 : 0) + tamerAuraHit(mob);
     let hitValue = stretchHitValue(mob.lv + mobHitBonus - (ally.lv || 1) + ((d.ac || 0) - teamAcBonus(ally)));   // 🌿 大地的祝福：全隊 AC-7（更難被命中）
     let rollHit = roll(1, 20), hit = false, heavy = false;
     if (rollHit === 20) { hit = true; heavy = true; }
@@ -1113,8 +1129,10 @@ function enemyAttackAlly(mob, ally) {
     if ((d.physDrGated || 0) > 0 && state.ticks >= (ally._physDrCd || 0)) { totalDmg = Math.floor(totalDmg * (1 - Math.min(90, d.physDrGated) / 100)); ally._physDrCd = state.ticks + 30; }   // 🐍 v3.1.76 祭祀儀式陶罐（傭兵）：受一般攻擊傷害 -%·每 3 秒 1 次（每傭兵獨立節流·鏡像玩家 js/04:812）
     // 盾牌/臂甲格檔（同玩家公式；經典模式停用）
     if (ally.eq && ally.eq.shield && !player.classicMode) { let _sh = DB.items[ally.eq.shield.id]; let _bc = (_sh && _sh.block) ? (heavy ? _sh.block : _sh.block * 0.3) : 0; if (_bc > 0 && Math.random() * 100 < _bc) totalDmg = Math.floor(totalDmg * 0.5); }
+    totalDmg = Math.floor(totalDmg * mobRageDmgMult(mob));   // 🔥 HP<門檻：攻擊傭兵也套用狂暴傷害
     totalDmg = Math.max(1, Math.floor(Math.max(1, totalDmg) * riftDamageMult()));   // 🌀 裂痕加成（與玩家一致）
     totalDmg = allyDollDamageReduced(ally, totalDmg);   // 🆕 v2.6.10 #3：魔法娃娃機率減免（受物理傷害）
+    totalDmg = shieldDmgReduceProc(ally, totalDmg);   // 🌑 v3.3.33 反叛者的盾牌（傭兵鏡像·物理）
     // 🏺 v3.1.80 魅魔女皇的誘惑（傭兵）：受一般攻擊 dmgReflect% 機率反射相同傷害＋免疫（鏡像玩家 enemyPhysicalAttack）
     if ((d.dmgReflect || 0) > 0 && totalDmg > 0 && mob.curHp > 0 && Math.random() * 100 < d.dmgReflect) {
         let _rf = Math.max(1, Math.floor(totalDmg * fragileMult(mob)));
@@ -1190,11 +1208,40 @@ function killPlayer() {
 }
 
 // 🤝 Phase4：怪物魔法施放分派。攻擊型(傷害 sk.dmg／CC・DoT 異常狀態)→「全體名單」打玩家+全部傭兵·否則依仇恨權重抽單一受害者(玩家或某傭兵)。其餘(自我增益/治癒/驅散/破甲/邪氣/物理追擊)照原樣交給 applyMobMagic(對玩家或自身)。
+// 🌑 v3.3.33 血壁空間（吉爾塔斯·黑暗妖精聖地.md）：mob._reflectWall={kind,until} 期間內，受到該類型（近距離/遠距離/魔法）傷害→反彈同等傷害給攻擊方（玩家或該傭兵）。
+//    🌑 v3.4.14 覆蓋規則統一（玩家傭兵完全一致）：反射＝「普攻主擊＋主動技能直擊」（物理依武器近/遠、魔法=magic）；不反射＝武器特效 proc/雙擊/副手/連射/魔擊/魔爆/龍擊/穿透波及/反擊/居合/受擊荊棘/DoT(毒血灼燒立方風暴)/寵物/召喚。玩家掛點 js/04:132＋js/03 奇古獸＋js/07(魔法/物理/屠宰/咆哮/粉碎/心破/會心)；傭兵掛點 js/06 鏡像同名路徑；傭兵中央匯流 _allyDamageMob 已移除反射（僅承載 proc 類）。
+//    掛點＝玩家一般攻擊(playerAttack)/玩家法術(js/07 castSkill)/傭兵一般攻擊(js/06)；DoT/寵物/召喚物傷害不反彈（召喚物無HP池概念沿用舊規）。
+function reflectWallOnDamage(mob, dmg, kind, ally) {
+    if (!mob || !mob._reflectWall || !(dmg > 0)) return;
+    let rw = mob._reflectWall;
+    if (state.ticks > rw.until || mob.curHp <= 0) { if (state.ticks > rw.until) mob._reflectWall = null; return; }
+    if (rw.kind !== kind) return;
+    let _k = { melee: '近距離', ranged: '遠距離', magic: '魔法' }[rw.kind] || rw.kind;
+    if (ally) {
+        ally.curHp -= dmg;
+        logCombat(`<span class="font-bold" style="color:#f87171;text-shadow:0 0 6px #dc2626;">【血壁空間】</span><span class="${getMobColor(mob.lv)}">${mob.n}</span> 反彈了${_k}傷害，協力·${ally._allyName} 受到 ${dmg} 點傷害！`, 'enemy');
+        if (ally.curHp <= 0) { ally.curHp = 0; ally._downed = true; ally._reviveCd = 150; logCombat(`<span class="text-amber-400 font-bold">協力傭兵 ${ally._allyName} 倒下了！（可用返生術立即復活，或 15 秒後自動使用復活卷軸，或回村免費復活）</span>`, 'enemy'); try { renderSquadPanel(); } catch (e) {} }
+    } else {
+        player.hp -= dmg;
+        logCombat(`<span class="font-bold" style="color:#f87171;text-shadow:0 0 6px #dc2626;">【血壁空間】</span><span class="${getMobColor(mob.lv)}">${mob.n}</span> 反彈了${_k}傷害，你受到 ${dmg} 點傷害！`, 'enemy');
+        if (player.hp <= 0 && typeof killPlayer === 'function') killPlayer();
+    }
+}
+// 🛡️ v3.3.33 反叛者的盾牌（黑暗妖精聖地.md）：受到傷害時 rate(+per×強化)% 機率該次傷害 -amt（玩家＋傭兵、物理＋魔法四路徑共用）
+function shieldDmgReduceProc(who, dmg) {
+    if (!(dmg > 0) || !who || !who.eq || !who.eq.shield) return dmg;
+    let it = who.eq.shield, d0 = DB.items[it.id];
+    if (!d0 || !d0.dmgReduceProc) return dmg;
+    let p = d0.dmgReduceProc, rate = (p.rate || 0) + (p.per || 0) * (it.en || 0);
+    if (Math.random() * 100 >= rate) return dmg;
+    logCombat(`<span class="font-bold" style="color:#93c5fd;">【${d0.n}】</span>盾牌吸收了部分衝擊（傷害 -${p.amt || 50}）。`, 'player');
+    return Math.max(0, dmg - (p.amt || 50));
+}
 function castMobMagic(mob, sk) {
     if (!sk) return;
     if (mob && mob.curHp > 0 && typeof _mobAnimTrigger === 'function') _mobAnimTrigger(mob, 'skill');   // 🎞️ 序列幀：技能動作（🔒 鎖定·強制放完·播放中的新觸發被忽略）
     if (mob && mob.curHp > 0) { try { if (typeof playMobSkill === 'function') playMobSkill(mob); } catch (e) {} }   // 🔊 怪物技能(施法)音（查 MOB_SKILL_SFX·查無/缺檔靜音·冰之女王 3564）
-    if (mob && mob.curHp > 0 && mob.n === '死亡騎士') { try { if (typeof vfxCastShake === 'function') vfxCastShake(); } catch (e) {} }   // ✨ 死亡騎士施法→整個戰場震動（cosmetic·吃 __vfxOff）
+    if (mob && mob.curHp > 0 && (mob.n === '死亡騎士' || mob.n === '真‧死亡騎士 冥皇丹特斯')) { try { if (typeof vfxCastShake === 'function') vfxCastShake(); } catch (e) {} }   // ✨ 死亡騎士／真‧死亡騎士 冥皇丹特斯 施放死亡騎士技能特效→整個戰場震動（v3.4.8·cosmetic·吃 __vfxOff）
     let redirectable = !!sk.dmg || ['stone', 'paralyze', 'silence', 'magicseal', 'freeze', 'sleep', 'scald', 'stun', 'slowatk', 'poison', 'burn', 'bleed', 'frost_breath'].includes(sk.type);
     if (!redirectable) { applyMobMagic(mob, sk); return; }
     let allies = (player.allies || []).filter(a => a && !a._downed && (a.curHp || 0) > 0);
@@ -1243,8 +1290,8 @@ function applyMobMagicToAlly(mob, sk, ally) {
     if (sk.type === 'stun') { if (Math.random() * 100 < _ch(150)) { st.stun = 60; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 被暈眩了！`, 'enemy'); } return; }
     if (sk.type === 'slowatk') { if (Math.random() * 100 < _ch(150)) { st.slowAtk = (sk.dur || 8) * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 攻擊速度大幅減慢！`, 'enemy'); } return; }
     if (sk.type === 'scald') { if (Math.random() * 100 < _ch(200)) { st.scald = (sk.dur || 15) * 10; st.scaldDmg = _shMul * (sk.d || 100); st.scaldTick = (sk.tick || 3) * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 被燙傷了！`, 'enemy'); } return; }
-    if (sk.type === 'poison') { if (d.immPoison) return; if (Math.random() * 100 < _ch(100)) { st.poison = sk.dur * 10; st.poisonDmg = _shMul * sk.d; st.poisonTick = sk.tick * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 中毒了！`, 'enemy'); } return; }
-    if (sk.type === 'burn') { if (allyStatusResisted(ally, 'burn')) return; st.burn = sk.dur * 10; st.burnDmg = _shMul * sk.d; st.burnTick = sk.tick * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 陷入灼燒！`, 'enemy'); return; }   // 🏺 v3.1.76 immBurn（詛咒三頭獸的犄角·傭兵）：主型灼燒查免疫（映射 js/04 allyStatusResisted 原本無人呼叫）
+    if (sk.type === 'poison') { if (d.immPoison) return; if (Math.random() * 100 < _ch(100)) { st.poison = sk.dur * 10; st.poisonDmg = Math.floor(_shMul * sk.d * mobRageDmgMult(mob)); st.poisonTick = sk.tick * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 中毒了！`, 'enemy'); } return; }
+    if (sk.type === 'burn') { if (allyStatusResisted(ally, 'burn')) return; st.burn = sk.dur * 10; st.burnDmg = Math.floor(_shMul * sk.d * mobRageDmgMult(mob)); st.burnTick = sk.tick * 10; logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，${nm} 陷入灼燒！`, 'enemy'); return; }   // 🏺 v3.1.76 immBurn（詛咒三頭獸的犄角·傭兵）：主型灼燒查免疫（映射 js/04 allyStatusResisted 原本無人呼叫）
     // ❄️ 寒冰吐息：(pbase − 傭兵MR)/2 % 機率驅散該傭兵所有增益（保留變身/迷魅/誘捕/召喚），並使其攻擊速度減慢100%（比照玩家 js/04:1330·全體 AoE 同時打玩家與各傭兵）
     if (sk.type === 'frost_breath') {
         let chance = Math.max(0, ((sk.pbase !== undefined ? sk.pbase : 200) - mr) / 2);
@@ -1268,6 +1315,7 @@ function applyMobMagicToAlly(mob, sk, ally) {
         if (sk.ele === 'water' && d.resWater) resF -= effResistPct(d.resWater) / 100;
         if (sk.ele === 'earth' && d.resEarth) resF -= effResistPct(d.resEarth) / 100;
         if (sk.ele === 'wind' && d.resWind) resF -= effResistPct(d.resWind) / 100;
+        if ((!sk.ele || sk.ele === 'none') && d.resNone) resF -= effResistPct(d.resNone) / 100;   // 🛡️ v3.3.29 無屬性抗性（傭兵鏡像·只對魔法）
         resF = Math.max(0, Math.min(1, resF));
         // 🏺 v3.2.40 稽核修 火熱愛意（傭兵鏡像·魔法）：免疫火屬性法術·與物理路徑共用每傭兵 10 秒節流（鏡像玩家 js/04:1523）
         if (sk.ele === 'fire' && d.fireNullify && state.ticks >= (ally._fireNullCd || 0)) {
@@ -1282,8 +1330,10 @@ function applyMobMagicToAlly(mob, sk, ally) {
         if (ally._setIron3) dmg = Math.floor(dmg * 0.8);
         dmg = Math.floor(dmg * teamDmgReduceMult());   // 🛡️ 鋼鐵防護：全隊受傷 -5%（傭兵受魔法傷害·讀玩家 buff）
         dmg = Math.floor(dmg * allyBuffDmgReduceMult(ally));   // 🆕 v2.6.12 #5a：傭兵聖結界-30%/龍裔-15%/狂怒5-20%（受魔法傷害）
+        dmg = Math.floor(dmg * mobRageDmgMult(mob));   // 🔥 HP<門檻：技能傷害倍率
         dmg = Math.max(1, Math.floor(Math.max(1, dmg) * riftDamageMult()));
         dmg = allyDollDamageReduced(ally, dmg);   // 🆕 v2.6.10 #3：魔法娃娃機率減免（受魔法傷害）
+        dmg = shieldDmgReduceProc(ally, dmg);   // 🌑 v3.3.33 反叛者的盾牌（傭兵鏡像·魔法）
         ally.curHp -= dmg;
         if (dmg > 0 && !ally._stunCycle) { ally._atkCd = (ally._atkCd || 0) + ((ally.d && ally.d.hitstun) || 0); ally._stunCycle = true; }   // ⚔️ 天堂職業硬直（傭兵·魔法）：延遲下次攻擊·每週期一次
         logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，對 ${nm} 造成 ${dmg} 點魔法傷害。`, 'enemy');
@@ -1294,10 +1344,10 @@ function applyMobMagicToAlly(mob, sk, ally) {
             else if (s.type === 'stun') { if (!allyStatusResisted(ally, 'stun') && _sc(150)) st.stun = (s.dur || 6) * 10; }
             else if (s.type === 'sleep') { if (!allyStatusResisted(ally, 'sleep') && _sc(150)) st.sleep = (s.dur || 6) * 10; }
             else if (s.type === 'paralyze') { if (!d.immPoison && !allyStatusResisted(ally, 'paralyze') && _sc(50)) st.paralyze = (s.dur || 6) * 10; }
-            else if (s.type === 'burn') { if (!allyStatusResisted(ally, 'burn') && _sc(100)) { st.burn = s.dur * 10; st.burnDmg = _shMul * s.d; st.burnTick = s.tick * 10; } }   // 🏺 v3.1.76 immBurn（傭兵）：二次狀態灼燒亦查免疫
+            else if (s.type === 'burn') { if (!allyStatusResisted(ally, 'burn') && _sc(100)) { st.burn = s.dur * 10; st.burnDmg = Math.floor(_shMul * s.d * mobRageDmgMult(mob)); st.burnTick = s.tick * 10; } }   // 🏺 v3.1.76 immBurn（傭兵）：二次狀態灼燒亦查免疫
             else if (s.type === 'scald') { if (_sc(200)) { st.scald = s.dur * 10; st.scaldDmg = _shMul * s.d; st.scaldTick = s.tick * 10; } }
             else if (s.type === 'bleed') { if (_sc(200)) { st.bleed = s.dur * 10; st.bleedDmg = _shMul * s.d; st.bleedTick = s.tick * 10; } }
-            else if (s.type === 'poison') { if (!d.immPoison && !allyStatusResisted(ally, 'poison') && _sc(100)) { st.poison = s.dur * 10; st.poisonDmg = _shMul * s.d; st.poisonTick = s.tick * 10; } }
+            else if (s.type === 'poison') { if (!d.immPoison && !allyStatusResisted(ally, 'poison') && _sc(100)) { st.poison = s.dur * 10; st.poisonDmg = Math.floor(_shMul * s.d * mobRageDmgMult(mob)); st.poisonTick = s.tick * 10; } }
         }
         allyReflectOnHit(ally, mob, dmg, true);   // 🆕 v2.6.14 #5c：受魔法反射（疼痛歡愉/致命身軀/泰坦魔法/鏡反射）·置於 vamp/sec 後→反射擊殺不被 mob vamp 復活
         if (ally._setIron5 && ally.eq && ally.eq.wpn && ally._ironSweepTick !== state.ticks) { ally._ironSweepTick = state.ticks; allyIronGuardSweep(ally, '受擊'); }   // 🆕 v2.6.14 #5c：鐵衛5/5 受擊橫掃
@@ -1310,6 +1360,15 @@ function applyMobMagicToAlly(mob, sk, ally) {
 }
 function applyMobMagic(mob, sk) {
     if(!sk) return;
+    // 🌑 v3.3.33 血壁空間（吉爾塔斯）：自我增益·隨機獲得 近距離/遠距離/魔法 反射之一（持續 dur 秒），期間受該類型傷害→反彈同等傷害給攻擊方（不受絕對屏障影響·置於屏障檢查前）
+    if(sk.type === 'reflectwall') {
+        if(!mob || mob.curHp <= 0) return;
+        let _kinds = ['melee', 'ranged', 'magic'];
+        let _k = _kinds[Math.floor(Math.random() * _kinds.length)];
+        mob._reflectWall = { kind: _k, until: state.ticks + (sk.dur || 10) * 10 };
+        logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放 ${sk.skn || '血壁空間'}，獲得了<span class="font-bold" style="color:#f87171;">${{ melee: '近距離', ranged: '遠距離', magic: '魔法' }[_k]}反射</span>（10 秒）！`, 'enemy');
+        return;
+    }
     if(inAbsBarrier()) return;   // 🛡️ 絕對屏障：與世界隔絕，敵方魔法（傷害與異常狀態）一律無效
     if(!mob || mob.curHp <= 0) return;   // 🔧 施法者已死亡（如 mag1 追加攻擊期間被反殺）：mag2/mag3 不得以死怪身分施放
     if(mob.st && mob.st.confuse > 0 && !mob.boss) { logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 思緒混亂，無法施放技能。`, 'magic'); return; }   // 🔮 混亂：非BOSS敵人無法施放技能
@@ -1473,7 +1532,7 @@ function applyMobMagic(mob, sk) {
         let chance = Math.max(0, (base - player.d.mr) / 2);
         if(Math.random() * 100 < chance && !player.dead) {
             if(playerStatusResisted('poison')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了中毒！</span>', 'magic'); return; }   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT；immPoison 已於上方早退
-            let _poD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.d;   // 🔮 席琳的世界：持續傷害×2
+            let _poD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
             player.statuses.poison = sk.dur * 10;
             player.statuses.poisonDmg = _poD;
             player.statuses.poisonTick = sk.tick * 10;
@@ -1484,7 +1543,7 @@ function applyMobMagic(mob, sk) {
     
     if(sk.type === 'burn') {
         if(playerStatusResisted('burn')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了灼燒！</span>', 'magic'); return; }   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT
-        let _buD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.d;   // 🔮 席琳的世界：持續傷害×2
+        let _buD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
         player.statuses.burn = sk.dur * 10;
         player.statuses.burnDmg = _buD;
         player.statuses.burnTick = sk.tick * 10;
@@ -1560,6 +1619,7 @@ function applyMobMagic(mob, sk) {
         if(sk.ele === 'water' && player.d.resWater) resFactor -= effResistPct(player.d.resWater)/100;
         if(sk.ele === 'earth' && player.d.resEarth) resFactor -= effResistPct(player.d.resEarth)/100;
         if(sk.ele === 'wind' && player.d.resWind) resFactor -= effResistPct(player.d.resWind)/100;
+        if((!sk.ele || sk.ele === 'none') && player.d.resNone) resFactor -= effResistPct(player.d.resNone)/100;   // 🛡️ v3.3.29 無屬性抗性：無屬性魔法比照屬性抗性折減（取代舊 magicDrNonEle 乘法減免·只對魔法）
         resFactor = Math.max(0, Math.min(1, resFactor));
         // 🏺 遺物 火熱愛意：免疫受到的火屬性傷害（每 10 秒最多觸發 1 次·player._fireNullCd 節流）
         if (sk.ele === 'fire' && player.d.fireNullify && state.ticks >= (player._fireNullCd || 0)) {
@@ -1584,17 +1644,18 @@ function applyMobMagic(mob, sk) {
         // 🔧 百分比受傷「減免」統一乘算（多層疊加採乘算：例 鐵衛20%×聖結界30%＝1−0.8×0.7＝44%，非相加 50%）
         { let _drMult = 1.0;
           if (player.buffs.sk_holy_barrier > 0) _drMult *= 0.7;                                                  // 聖結界：-30%
-          if (player.d.magicDrNonEle > 0 && !['fire','water','earth','wind'].includes(sk.ele)) _drMult *= (1 - player.d.magicDrNonEle / 100);   // 紅騎士盾牌：無屬性魔法
           if (player._setIron3) _drMult *= 0.8;                                                                  // 🔮 鐵衛 3/5：-20%
           if (player.buffs.sk_set_dragonscion > 0) _drMult *= 0.85;                                              // 🐉 龍血·龍裔：-15%
           if (player._setFury5) _drMult *= (1 - furyRageRatio());                                                // 😡 狂怒 5/5：依失血最多 -20%
           _drMult *= teamDmgReduceMult();                                                                        // 🛡️ 鋼鐵防護：全隊受傷 -5%（魔法亦適用）
           dmg = Math.floor(dmg * _drMult); }
+        dmg = Math.floor(dmg * mobRageDmgMult(mob));   // 🔥 HP<門檻：技能傷害倍率
         dmg = Math.max(1, dmg);
         dmg = castleGuardAbsorb(dmg, 'magic');   // 🏰 風木城護衛：承擔 10% 魔法攻擊
         dmg = Math.floor(dmg * riftDamageMult());   // 🌀 時空裂痕 30 分後每分鐘 +20% 怪物技能傷害
 
         dmg = dollDamageReduced(dmg);   // 🪆 魔法娃娃：受傷機率傷害減免（史巴托/巫妖）
+        dmg = shieldDmgReduceProc(player, dmg);   // 🌑 v3.3.33 反叛者的盾牌：受傷 proc（魔法亦適用）
         player.hp -= dmg;
         if (dmg > 0) _relicOnDamageHeal();   // 🏺 遺物 白螞蟻蛋殼：受魔法傷害時亦觸發受擊自癒（5 秒節流·physical/magic 共用冷卻）
         if (dmg > 0 && typeof applyPlayerHitstun === 'function') applyPlayerHitstun();   // ⚔️ 天堂職業硬直：被魔法直接命中→延遲下次攻擊
@@ -1618,7 +1679,7 @@ function applyMobMagic(mob, sk) {
                 let chance = Math.max(0, ((sk.sec.pbase !== undefined ? sk.sec.pbase : 100) - player.d.mr) / 2);
                 if(Math.random() * 100 < chance && !player.dead) {
                     if(playerStatusResisted('burn')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了灼燒！</span>', 'magic'); } else {   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT
-                    let _sbD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d;   // 🔮 席琳的世界：持續傷害×2
+                    let _sbD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
                     player.statuses.burn = sk.sec.dur * 10; player.statuses.burnDmg = _sbD; player.statuses.burnTick = sk.sec.tick * 10;
                     logCombat(`你陷入了灼燒！每 ${sk.sec.tick} 秒受到 ${_sbD} 點固定傷害。`, 'enemy');
                     }
@@ -1628,7 +1689,7 @@ function applyMobMagic(mob, sk) {
                 let chance = Math.max(0, ((sk.sec.pbase !== undefined ? sk.sec.pbase : 200) - player.d.mr) / 2);
                 if(Math.random() * 100 < chance && !player.dead) {
                     if(playerStatusResisted('scald')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了燙傷！</span>', 'magic'); } else {   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT
-                    let _ssD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d;   // 🔮 席琳的世界：持續傷害×2
+                    let _ssD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
                     player.statuses.scald = sk.sec.dur * 10; player.statuses.scaldDmg = _ssD; player.statuses.scaldTick = sk.sec.tick * 10;
                     logCombat(`你被燙傷了！每 ${sk.sec.tick} 秒受到 ${_ssD} 點固定傷害。`, 'enemy');
                     }
@@ -1638,7 +1699,7 @@ function applyMobMagic(mob, sk) {
                 let chance = Math.max(0, ((sk.sec.pbase !== undefined ? sk.sec.pbase : 200) - player.d.mr) / 2);
                 if(Math.random() * 100 < chance && !player.dead) {
                     if(playerStatusResisted('bleed')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了出血！</span>', 'magic'); } else {   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT
-                    let _sbD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d;   // 🔮 席琳的世界：持續傷害×2
+                    let _sbD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
                     player.statuses.bleed = sk.sec.dur * 10; player.statuses.bleedDmg = _sbD; player.statuses.bleedTick = sk.sec.tick * 10;
                     logCombat(`你陷入了出血！每 ${sk.sec.tick} 秒受到 ${_sbD} 點固定傷害。`, 'enemy');
                     }
@@ -1648,7 +1709,7 @@ function applyMobMagic(mob, sk) {
                 let chance = Math.max(0, ((sk.sec.pbase !== undefined ? sk.sec.pbase : 100) - player.d.mr) / 2);
                 if(Math.random() * 100 < chance && !player.dead) {
                     if(playerStatusResisted('poison')) { logCombat('<span class="text-sky-300 font-bold">你抵抗了中毒！</span>', 'magic'); } else {   // 🪆 抵抗異常（娃娃 abnormalResist）涵蓋 DoT
-                    let _spD = ((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d;   // 🔮 席琳的世界：持續傷害×2
+                    let _spD = Math.floor(((mob._sherine ? (mob._sherineMad ? 3 : 2) : 1) * (mob._grace ? 2 : 1)) * sk.sec.d * mobRageDmgMult(mob));   // 🔮 席琳的世界／🔥頭目狂暴：持續傷害倍率
                     player.statuses.poison = sk.sec.dur * 10; player.statuses.poisonDmg = _spD; player.statuses.poisonTick = sk.sec.tick * 10;
                     logCombat(`你中毒了！每 ${sk.sec.tick} 秒受到 ${_spD} 點固定傷害。`, 'enemy');
                     }

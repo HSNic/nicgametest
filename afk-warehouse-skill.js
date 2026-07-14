@@ -60,6 +60,7 @@
   var CANNOT_USE_CLASS = 'afk-wh-cannot-use';
   var LEARNED_CLASS = 'afk-wh-learned';
   var USABLE_SELECT_ID = 'afk-wh-usable-filter';
+  var USABLE_ROW_ID = 'afk-wh-usable-row';
   var SHERINE_CHK_ID = 'afk-wh-sherine-filter';
 
   function injectStyle() {
@@ -158,7 +159,10 @@
       if (Array.isArray(player.skills) && player.skills.includes(d.sk)) return false;
       var sk = DB.skills[d.sk];
       if (!sk) return false;
-      return skillReqLv(sk, d.sk) === undefined;
+      var reqLv = skillReqLv(sk, d.sk);
+      if (reqLv === undefined) return true;                    // 職業本身學不到
+      if ((player.lv || 0) < reqLv) return true;                // 🔧 2026-07-14 修正:職業符合但等級不夠,也算「不可用」(原本漏判,導致跟綠字「可學」提示矛盾)
+      return false;
     }
     if (d.type === 'wpn' || d.type === 'arm' || d.type === 'acc') {
       if (typeof checkCanEquip !== 'function') return false;
@@ -214,9 +218,12 @@
       if (cannotUse(item)) btn.classList.add(CANNOT_USE_CLASS);
       if (learnedAlready(item)) btn.classList.add(LEARNED_CLASS);
 
-      // 判定 5:狀態篩選(全部/可用/不可用)
-      if (usableFilter === 'usable' && !isUsable(item)) btn.style.display = 'none';
-      else if (usableFilter === 'unusable' && isUsable(item)) btn.style.display = 'none';
+      // 判定 5:狀態篩選(全部/可用/不可用)——不適用的子分類(卡片/卷軸/任務/材料)一律當「全部」處理,
+      // 不套用篩選(避免下拉被隱藏後,舊的篩選值仍讓整排消失、玩家卻看不到是為什麼)。
+      if (usableFilterApplicable()) {
+        if (usableFilter === 'usable' && !isUsable(item)) btn.style.display = 'none';
+        else if (usableFilter === 'unusable' && isUsable(item)) btn.style.display = 'none';
+      }
 
       // 判定 6:只看席琳套裝(遺骸)
       if (sherineOnly && !(d && d.remains)) btn.style.display = 'none';
@@ -239,6 +246,8 @@
       var existingChk = document.getElementById(SHERINE_CHK_ID);
       if (existingChk) existingChk.checked = _sherineOnlyState;
       updateSherineVisibility();
+      var stateRow = document.getElementById(USABLE_ROW_ID);
+      if (stateRow) stateRow.style.display = usableFilterApplicable() ? '' : 'none';
       return;
     }
     // 用「細分類」下拉(呼叫 whSetSubFilter 的那顆)當錨點,插在它後面同一排。
@@ -249,12 +258,14 @@
     var wrap = document.createElement('span');
     wrap.className = 'afk-wh-extra-filter';
     wrap.innerHTML =
-      '<span>狀態：</span>' +
-      '<select id="' + USABLE_SELECT_ID + '">' +
-        '<option value="">全部</option>' +
-        '<option value="usable">可用</option>' +
-        '<option value="unusable">不可用</option>' +
-      '</select>' +
+      '<span id="' + USABLE_ROW_ID + '" style="display:flex;align-items:center;gap:4px;">' +
+        '<span>狀態：</span>' +
+        '<select id="' + USABLE_SELECT_ID + '">' +
+          '<option value="">全部</option>' +
+          '<option value="usable">可用</option>' +
+          '<option value="unusable">不可用</option>' +
+        '</select>' +
+      '</span>' +
       '<label id="afk-wh-sherine-wrap" style="display:flex;align-items:center;gap:4px;margin-left:8px;">' +
         '<input type="checkbox" id="' + SHERINE_CHK_ID + '"><span>只看席琳套裝</span>' +
       '</label>';
@@ -267,6 +278,19 @@
     usableSel.addEventListener('change', function () { _usableFilterState = usableSel.value; markWarehouseSkillBooks(); });
     sherineChk.addEventListener('change', function () { _sherineOnlyState = sherineChk.checked; markWarehouseSkillBooks(); });
     updateSherineVisibility();
+    var newStateRow = wrap.querySelector('#' + USABLE_ROW_ID);
+    if (newStateRow) newStateRow.style.display = usableFilterApplicable() ? 'flex' : 'none';
+  }
+
+  // 🔧 2026-07-14 修正:「狀態(可用/不可用)」篩選只對武器/防具/技能書有意義——卡片/卷軸/
+  // 任務道具/製作材料本來就不分職業(cannotUse 對這些一律回傳 false,永遠「可用」),選「不可用」
+  // 會把整排清空、選「可用」則顯示一堆與篩選無關的雜訊,對玩家來說像壞掉。故這幾個子分類直接
+  // 把「狀態」下拉整個藏起來(呼叫 whItemSubCat/_whFilter 讀本體目前選的主/細分類,不改本體邏輯)。
+  function usableFilterApplicable() {
+    if (typeof _whFilter === 'undefined') return true;
+    if (_whFilter === 'weapon' || _whFilter === 'armor') return true;
+    if (_whFilter === 'item') return _whSubFilter === 'skill';
+    return true;
   }
 
   // 經典模式沒有席琳系統,「只看席琳套裝」整個隱藏(勾選狀態順便清掉,避免藏起來時殘留勾選)。

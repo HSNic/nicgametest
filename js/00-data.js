@@ -1,6 +1,6 @@
 /** 遊戲核心資料庫 */
 // 🏷️ 遊戲版本號（顯示於登入頁面下方·單一真相來源）：更新版本時只改這一行，登入頁面自動同步。
-const GAME_VERSION = 'v3.3.27';
+const GAME_VERSION = 'v3.4.24';
 // ===== 💾 存檔壓縮（LZString compressToUTF16/decompressFromUTF16·MIT, Pieroxy）：localStorage 內部以 UTF-16 壓縮，省 ~89%，繞過 5MB 上限 =====
 //  ⚠️ 只壓 localStorage（存檔位/倉庫/共用桶/_bak）；匯出檔維持明文 JSON（可攜·importSave 用 JSON.parse 驗證）。_lzGet 相容舊明文存檔（無 'LZ1:' 前綴→原樣回傳）。
 var LZString = (function () {
@@ -370,7 +370,7 @@ const DB = {
         // ===== 軍王之室：掉落裝備 =====
         "wpn_assassin_mark": { n: "暗殺軍王之痕", type: "wpn", w2h: true, dmgS: 13, dmgL: 13, hit: 0, dmgBonus: 2, spd: 0.7, req: "dark", safe: 6, p: 25000, eff: "combo", gachaWeight: 10 },   // 雙刀・連擊
         "wpn_priest_wand":   { n: "神官魔杖", type: "wpn", w2h: true, dmgS: 9, dmgL: 9, hit: 0, spd: 1.0, req: "mage", safe: 6, p: 13340, unBonus: true, eff: "magicburst", gachaWeight: 10, d: "神官祈禱經年的法杖，能將信仰化為爆裂的魔力。" },
-        "wpn_laia_wand":     { n: "蕾雅魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: -3, dmgBonus: 0, mdmg: -2, spd: 1.0, req: "mage", safe: 6, p: 23340, legend: true, gachaWeight: 10, meleeHitSpell: { skn: "冰裂術", dice: [6, 10], ele: "water", freezePbase: 200, shatter: 100 }, d: "冰之女王蕾雅愛用的魔杖，杖尖凝結著永不消融的寒霜。" },
+        "wpn_laia_wand":     { n: "蕾雅魔杖", type: "wpn", dmgS: 1, dmgL: 1, hit: -3, dmgBonus: 0, mdmg: -2, spd: 1.0, req: "mage", safe: 6, p: 23340, legend: true, gachaWeight: 1, meleeHitSpell: { skn: "冰裂術", dice: [6, 10], ele: "water", freezePbase: 200, shatter: 100 }, d: "冰之女王蕾雅愛用的魔杖，杖尖凝結著永不消融的寒霜。" },
         "shd_priest_book":   { n: "神官魔法書", type: "arm", slot: "shield", ac: 3, mmp: 50, mpR: 3, req: "mage", safe: 6, p: 93000, gachaWeight: 5 },
         "amr_laia_robe":     { n: "蕾雅長袍", type: "arm", slot: "armor", ac: 2, mmp: 100, req: "mage", safe: 4, p: 58000, gachaWeight: 1 },
         "acc_necro_king_ring": { n: "冥法軍王之戒", legend: true, type: "acc", slot: "amulet", ac: 0, cha: 3, req: "mage,elf", safe: 0, p: 193000, gachaWeight: 1 },
@@ -712,7 +712,7 @@ const DB = {
         "shd_kukulkan":          { n: "提卡爾庫庫爾坎之盾", legend: true, type: "arm", slot: "shield", ac: 3, dr: 2, hitstunReduce: 2, req: "royal,knight,elf", safe: 6, p: 100000, gachaWeight: 1, d: "刻著羽蛇神圖騰的重盾，卸去衝擊如流水般順暢。" },
         "hlm_kukulkan":          { n: "提卡爾庫庫爾坎面具", legend: true, type: "arm", slot: "helm", ac: 3, mr: 5, mpR: 2, req: "all", safe: 4, p: 100000, gachaWeight: 1, d: "庫庫爾坎祭司的黃金羽蛇面具，佩戴者思緒澄澈。" },
         // ===== 🐍 蛇神降臨·提卡爾 遺物（18 件·單一怪物專屬掉落 0.0001%） =====
-        "relic_azt_mirror":     { n: "阿茲特的反光石",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, magicDrNonEle: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特體內折射光線的反光石，扭曲無形的法術。" },
+        "relic_azt_mirror":     { n: "阿茲特的反光石",       type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, resNone: 20, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特體內折射光線的反光石，扭曲無形的法術。" },
         "relic_azt_prism":      { n: "阿茲特的折射寶石",     type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 0, resFire: 5, resWater: 5, resEarth: 5, resWind: 5, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】艾庫阿茲特凝結的折射寶石，分解四方元素之力。" },
         "relic_yuka_blowdart":  { n: "艾庫尤卡的吹箭",       type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, ignHardSkin: true, rapidfire: 30, atkSpdPct: 30, dmgS: 2, dmgL: 2, hit: 12, dmgBonus: 9, req: "elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡的毒吹箭，快若疾風、連發如雨（需裝備箭矢）。" },
         "relic_yuka_quiver":    { n: "艾庫尤卡的永續箭筒",   type: "wpn", isArrow: true, noConsume: true, relic: true, noEnhance: true, dmgS: 15, dmgL: 7, req: "royal,knight,elf,mage,dark,illusion", p: 10000, gachaWeight: 0, d: "【遺物】艾庫尤卡取之不盡的永續箭筒。" },
@@ -842,7 +842,7 @@ const DB = {
         "arm_104": { n: "阿克海盾牌", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 28, gachaWeight: 100, block: 30 },
         "arm_105": { n: "大盾牌", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 1680, gachaWeight: 100, block: 50 },
         "shd_gnome": { n: "侏儒圓盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 240, gachaWeight: 100, block: 30 },
-        "arm_106": { n: "反射之盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 28000, immStone: true, magicDrNonEle: 10, d: "盾面如鏡，能將敵人的法術回擲其身。", gachaWeight: 1, block: 40 },
+        "arm_106": { n: "反射之盾", type: "arm", slot: "shield", ac: 2, req: "knight,elf", safe: 4, p: 28000, immStone: true, resNone: 10, d: "盾面如鏡，能將敵人的法術回擲其身。", gachaWeight: 1, block: 40 },
         "arm_107": { n: "伊娃之盾", type: "arm", slot: "shield", ac: 3, req: "all", safe: 4, p: 5200, mhp: 20, eff: "haste", gachaWeight: 0, block: 40 },
         "arm_108": { n: "塔盾", type: "arm", slot: "shield", ac: 3, req: "knight", safe: 4, p: 9800, gachaWeight: 50, block: 70 },
         "arm_109": { n: "木盾", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 16, gachaWeight: 100, block: 30 },
@@ -850,7 +850,7 @@ const DB = {
         "arm_111": { n: "皮盾牌", type: "arm", slot: "shield", ac: 1, req: "all", safe: 4, p: 32, gachaWeight: 100, block: 20 },
         "arm_112": { n: "銀釘皮盾", type: "arm", slot: "shield", ac: 2, req: "all", safe: 4, p: 255, gachaWeight: 100, block: 30 },
         "shd_bone": { n: "骷髏盾牌", type: "arm", slot: "shield", ac: 3, req: "all", safe: 0, p: 255, gachaWeight: 100, block: 30 },
-		"shd_redknight": { n: "紅騎士盾牌", type: "arm", slot: "shield", ac: 2, req: "knight", safe: 6, p: 9800, immStone: true, magicDrNonEle: 20, d: "紅騎士團傳承的戰盾，染血的盾面磨礪出抗魔的韌性。", gachaWeight: 20, block: 50 },
+		"shd_redknight": { n: "紅騎士盾牌", type: "arm", slot: "shield", ac: 2, req: "knight", safe: 6, p: 9800, immStone: true, resNone: 20, d: "紅騎士團傳承的戰盾，染血的盾面磨礪出抗魔的韌性。", gachaWeight: 20, block: 50 },
         "arm_113": { n: "鋼鐵盾牌", type: "arm", slot: "shield", ac: 3, req: "knight", safe: 4, p: 16500, gachaWeight: 20, block: 60 },
         "arm_115": { n: "魔法能量之書", type: "arm", slot: "shield", ac: 2, req: "mage", safe: 4, p: 9800, int: 1, gachaWeight: 20, block: 10 },
         "acc_116": { n: "傳送控制戒指", type: "acc", slot: "ring", ac: 0, req: "all", safe: 0, p: 150000, gachaWeight: 1, unique: true, d: "刻著古老座標的戒指，撕裂空間之餘總會引來潛伏的強敵。攜帶在背包即可生效（無需裝備）：手動施放傳送術/使用瞬移卷軸時必定遭遇 BOSS。" },
@@ -953,6 +953,34 @@ const DB = {
 		"blt_mr": { n: "抗魔皮帶", type: "acc", slot: "belt", ac: 0, req: "all", safe: 0, p: 11000, weightCap: 130, gachaWeight: 1 },   // 🔧 取消MR+5，增加負重上限+130
         "blt_titan": { n: "泰坦皮帶", type: "acc", slot: "belt", ac: 0, weightCap: 500, req: "all", safe: 0, p: 92000, gachaWeight: 1, d: "傳說中泰坦束於腰間的巨帶，承載著撼動山岳之力。" },
         "blt_giant_ring": { n: "古代巨人戒指", type: "acc", slot: "belt", legend: true, ac: 2, str: 1, req: "all", safe: 0, p: 352000, gachaWeight: 1, d: "雖名為戒指，實為古代巨人腰間的一環，於常人已是一圈鐵帶（部位：腰帶）。" },
+        // ===== 🌑 黑暗妖精聖地（依《黑暗妖精聖地.md》·v3.3.33）：任務道具／材料／裝備／真．冥皇套裝 =====
+        "item_dk_book":        { n: "死亡騎士之書", type: "etc", p: 0, c: "text-amber-300", noUse: true, noSell: true, gachaWeight: 0, d: "記載死亡騎士祕儀的古書。交給長老會議廳的 真．冥皇丹特斯，可選擇進入 黑暗妖精聖地 或 受詛咒的黑暗妖精聖地（每次進入消耗 1 本）。在受詛咒的黑暗妖精聖地擊敗吉爾塔斯後，牠每次復活會再消耗 1 本；身上沒有時將被逐出。" },
+        "item_giltas_seal":    { n: "吉爾塔斯的封印", type: "etc", p: 0, c: "text-red-300", noUse: true, noSell: true, gachaWeight: 0, d: "封印著吉爾塔斯之力的印記。交給 真．冥皇丹特斯 後，會被傳送至 崩壞的長老會議廳（消耗 1 個）。在廳中擊敗冥皇丹特斯後，牠每次復活會再消耗 1 個；身上沒有時將被逐出。" },
+        "mat_ascetic_classic": { n: "修行者經典", type: "etc", p: 5000, gachaWeight: 0, d: "修行者傳承的典籍，鍛造 真．冥皇 系列防具的材料。" },
+        "mat_summonorb_core":  { n: "召喚球之核", type: "etc", p: 10000, gachaWeight: 0, d: "凝聚召喚之力的核心。搭配 4 個召喚球碎片，可請亞提利歐合成 完整的召喚球 或 真．冥皇製作防具秘笈。" },
+        "mat_summonorb_shard": { n: "召喚球碎片", type: "etc", p: 2000, gachaWeight: 0, d: "破碎的召喚球殘片，集齊四片可供亞提利歐合成。" },
+        "item_summonorb_full": { n: "完整的召喚球", type: "etc", p: 0, c: "text-cyan-300", noUse: true, noSell: true, gachaWeight: 0, d: "完整無缺的召喚球。挑戰吉爾塔斯期間若持有，以任何方式離開（回村、瞬移、切換地圖或戰敗）都會消耗 1 顆，使吉爾塔斯的 HP 保持不變（暫停回血）直到你再次進入；若身上沒有完整的召喚球，重新進入將面對全新的吉爾塔斯。" },
+        "mat_emperor_manual":  { n: "真．冥皇製作防具秘笈", type: "etc", p: 0, c: "text-amber-300", noSell: true, gachaWeight: 0, d: "記載 真．冥皇 系列防具鍛造祕法的秘笈，每鍛造一件消耗 1 本。" },
+        "mat_de_soul_crystal": { n: "黑暗妖精的靈魂水晶", type: "etc", p: 3000, gachaWeight: 0, d: "受詛咒的黑暗妖精殘留的靈魂結晶，鍛造 真．冥皇 系列防具的材料。" },
+        "wpn_giltas_sword":  { n: "吉爾塔斯之劍", type: "wpn", w2h: true, legend: true, dmgS: 43, dmgL: 53, hit: 7, dmgBonus: 30, spd: 1, req: "knight,dragon", safe: 0, p: 990000, gachaWeight: 0, eff: "cleave", ignHardSkin: true, str: 2, con: 1, cha: 2, d: "吉爾塔斯魔力凝成的雙手魔劍，劍身纏繞著異界的沙塵與血氣。切割（一般限定）、貫穿、力量+2、體質+1、魅力+2；擊殺敵人後，獲得額外傷害+10，持續10秒。" },
+        "wpn_giltas_wand":   { n: "吉爾塔斯魔杖", type: "wpn", w2h: true, legend: true, dmgS: 15, dmgL: 15, hit: 0, dmgBonus: 0, spd: 1.0, req: "mage,illusion", safe: 0, p: 990000, gachaWeight: 0, eff: "magicburst", int: 2, wis: 2, mpR: 15, d: "吉爾塔斯魔力凝成的雙手魔杖，杖端迴盪著異界的低語。魔爆（一般限定）、貫穿、智力+2、精神+2、MP自然恢復量+15；擊殺敵人後，獲得額外魔法點數+10，持續10秒。" },
+        "wpn_rotten_longbow":{ n: "腐壞的長弓", type: "wpn", w2h: true, isBow: true, ranged: true, legend: true, dmgS: 5, dmgL: 4, hit: 7, dmgBonus: 5, rapidfire: 100, ignHardSkin: true, req: "elf,illusion", safe: 6, p: 850000, gachaWeight: 1, d: "在聖地深處腐朽多年的長弓，弓身雖朽、殺意未減。連射100%（一般限定）、貫穿（需裝備箭矢）。" },
+        "wpn_cursed_emperor_blade": { n: "受詛咒的真．冥皇執行劍", type: "wpn", legend: true, dmgS: 19, dmgL: 22, hit: 4, dmgBonus: 0, spd: 1, ignHardSkin: true, hpR: -30, req: "royal,knight,elf,mage,dark", safe: 6, p: 990000, gachaWeight: 0, d: "冥皇的詛咒滲入劍身的漆黑執行劍，握柄傳來刺骨的死寂。反擊（一般限定）、居合（一般限定）、貫穿、HP自然恢復量-30；裝備時變身為 死亡騎士。" },   // 🌑 v3.4.0 裝備時變身死亡騎士＝js/02 _setPoly 管線；反擊+居合＝WEAPON_TAGS 雙標籤（js/10）
+        "shd_rebel":    { n: "反叛者的盾牌", type: "arm", slot: "shield", legend: true, ac: 3, hitstunReduce: 5, dmgReduceProc: { rate: 1, per: 2, amt: 50 }, req: "royal,knight", safe: 4, p: 700000, gachaWeight: 1, d: "反叛者們代代相傳的堅盾。硬質減少0.5秒；受到傷害時 1% 機率使該次傷害減少 50，每強化 +1 機率 +2%。" },
+        "shd_official": { n: "武官之盾", type: "arm", slot: "shield", ac: 3, mhp: 10, hpR: 4, req: "knight,dragon", safe: 6, p: 80000, gachaWeight: 10, d: "武官配發的制式盾牌。HP+10、HP自然恢復量+4。" },
+        "amu_pain":     { n: "苦痛項鍊", type: "acc", slot: "amulet", ac: 0, stunResist: 50, hpR: -5, req: "all", safe: 0, p: 20000, gachaWeight: 30, d: "凝聚苦痛意志的項鍊。50% 機率免疫暈眩；HP自然恢復量-5。" },
+        "amu_doom":     { n: "厄運項鍊", type: "acc", slot: "amulet", ac: 0, hitstunReduce: 2.5, mpR: -5, req: "all", safe: 0, p: 20000, gachaWeight: 30, d: "散發不祥氣息的項鍊。硬質減少0.25秒；MP自然恢復量-5。" },
+        "ear_cursed_black": { n: "受詛咒的黑色耳環", type: "etc", p: 60000, gachaWeight: 0, d: "受詛咒的黑暗妖精遺留的黑色耳環，環上縈繞著微弱的怨念。經亞提利歐以淨化藥水洗去怨念後，可重生為靈魂耳環。" },
+        "rng_sage":     { n: "賢者之戒", type: "acc", slot: "ring", ac: 0, int: 1, wis: 1, mhp: 30, req: "all", safe: 0, p: 2000000, gachaWeight: 1, d: "傳說中賢者佩戴的戒指，助人凝神靜思。智力+1、精神+1、HP上限+30。" },
+        "mat_purify_potion": { n: "淨化藥水", type: "etc", p: 3000, gachaWeight: 0, d: "融合土／風／水／火四大元素氣息與品質綠寶石煉成的淨化之水，能洗去受詛咒黑色耳環上的怨念。亞提利歐製作靈魂耳環的材料。" },
+        "ear_soul_mage":    { n: "靈魂耳環(法師)", type: "acc", slot: "ear", ac: 0, mmp: 30, mpR: 2, mdmg: 1, req: "mage,illusion,elf", safe: 0, p: 30000, gachaWeight: 0, d: "淨化怨念後重生的靈魂耳環，蘊含充沛魔力。MP上限+30、MP自然恢復量+2、魔法傷害+1。" },
+        "ear_soul_fighter": { n: "靈魂耳環(鬥士)", type: "acc", slot: "ear", ac: 0, mhp: 20, mmp: 10, meleeDmg: 1, req: "dark,warrior", safe: 0, p: 30000, gachaWeight: 0, d: "淨化怨念後重生的靈魂耳環，剛柔並濟。HP上限+20、MP上限+10、近距離傷害+1。" },
+        "ear_soul_knight":  { n: "靈魂耳環(騎士)", type: "acc", slot: "ear", ac: 0, mhp: 40, hpR: 3, meleeHit: 1, req: "royal,knight,dragon", safe: 0, p: 30000, gachaWeight: 0, d: "淨化怨念後重生的靈魂耳環，堅毅不拔。HP上限+40、HP自然恢復量+3、近距離命中+1。" },
+        "clk_emperor":  { n: "真．冥皇披風", type: "arm", slot: "cloak",  legend: true, set: "emperor", ac: 7,  req: "royal,knight,dark,dragon,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "真．冥皇套裝之一。集齊披風／鎧甲／面甲／護手／鋼靴五件：防禦-20、HP+100、MP+20、HP自然恢復量+10、攻擊速度額外+30%（可與加速、勇敢藥水堆疊）、額外傷害+5。" },
+        "amr_emperor":  { n: "真．冥皇鎧甲", type: "arm", slot: "armor",  legend: true, set: "emperor", ac: 10, req: "royal,knight,dark,dragon,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "真．冥皇套裝之一。集齊披風／鎧甲／面甲／護手／鋼靴五件：防禦-20、HP+100、MP+20、HP自然恢復量+10、攻擊速度額外+30%（可與加速、勇敢藥水堆疊）、額外傷害+5。" },
+        "hlm_emperor":  { n: "真．冥皇面甲", type: "arm", slot: "helm",   legend: true, set: "emperor", ac: 6,  req: "royal,knight,dark,dragon,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "真．冥皇套裝之一。集齊披風／鎧甲／面甲／護手／鋼靴五件：防禦-20、HP+100、MP+20、HP自然恢復量+10、攻擊速度額外+30%（可與加速、勇敢藥水堆疊）、額外傷害+5。" },
+        "glv_emperor":  { n: "真．冥皇護手", type: "arm", slot: "gloves", legend: true, set: "emperor", ac: 5,  req: "royal,knight,dark,dragon,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "真．冥皇套裝之一。集齊披風／鎧甲／面甲／護手／鋼靴五件：防禦-20、HP+100、MP+20、HP自然恢復量+10、攻擊速度額外+30%（可與加速、勇敢藥水堆疊）、額外傷害+5。" },
+        "bot_emperor":  { n: "真．冥皇鋼靴", type: "arm", slot: "boots",  legend: true, set: "emperor", ac: 7,  req: "royal,knight,dark,dragon,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "真．冥皇套裝之一。集齊披風／鎧甲／面甲／護手／鋼靴五件：防禦-20、HP+100、MP+20、HP自然恢復量+10、攻擊速度額外+30%（可與加速、勇敢藥水堆疊）、額外傷害+5。" },
         "potion_heal": { n: "紅色藥水", type: "pot", p: 37, c: "text-red-300", d: "亞丁冒險者最常攜帶的治癒藥水，飲用後能恢復少量體力。", val: 15, valMin: 10, valMax: 20, gachaWeight: 0 },
         "potion_strong": { n: "橙色藥水", type: "pot", req: "all", p: 200, c: "text-orange-300", d: "以濃縮藥草調製的治癒藥水，能迅速修復較重的傷勢。", val: 40, valMin: 30, valMax: 50, gachaWeight: 0 },
         "potion_ult": { n: "白色藥水", type: "pot", req: "all", p: 600, c: "text-white", d: "散發柔和白光的高級治癒藥水，能為瀕危的冒險者帶來生機。", val: 70, valMin: 60, valMax: 80, gachaWeight: 0 },
@@ -2014,6 +2042,17 @@ const DB = {
         "de_elder_ramas":  { n: "長老．拉曼斯", lv: 93, s: "L", beh: "主動", race: "拉斯塔巴德", e: "none", boss: true, hard: true, hp: 22382, ac: -98, mr: 81, exp: 13692, goldMin: 0, goldMax: 0, atkSpd: 1, dmg: [3, 86], db: 26, hit: 128, mag: { skn: "火焰爆發", cd: 110, chance: 0.5, dmg: [1, 900], db: 100, ele: "fire", alwaysHit: true } },
         "de_elder_taimas": { n: "長老．泰瑪斯", lv: 90, s: "L", beh: "主動", race: "拉斯塔巴德", e: "none", boss: true, hard: true, hp: 21773, ac: -94, mr: 89, exp: 12962, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [5, 79], db: 101, hit: 128, mag: { skn: "黑暗流星雨", cd: 110, chance: 0.4, dmg: [1, 1000], db: 200, ele: "fire", alwaysHit: true } },
         "de_elder_adiel":  { n: "長老．艾迪爾", lv: 80, s: "L", beh: "主動", race: "拉斯塔巴德", e: "none", boss: true, hard: true, hp: 17746, ac: -85, mr: 75, exp: 10242, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [4, 99], db: 100, hit: 118, mag: { skn: "光球．闇", cd: 110, chance: 0.5, dmg: [4, 160], db: 100, ele: "none", alwaysHit: true } },
+        // ===== 🌑 黑暗妖精聖地（依《黑暗妖精聖地.md》·v3.3.33）：7 新一般怪＋2 頭目（重裝歐姆戰士沿用 de_necro_omheavy）=====
+        "sanct_hellslave":      { n: "地獄奴隸", lv: 48, s: "S", beh: "主動", race: "異界生物", e: "earth", hp: 900, ac: -77, mr: 80, exp: 2305, goldMin: 150, goldMax: 400, atkSpd: 2, dmg: [2, 60], db: 30, hit: 53 },   // 聖地版（拉斯塔巴德訓練場另有 de_train_hellslave lv43·同名同動畫）
+        "sanct_cursed_fighter": { n: "受詛咒的黑暗妖精鬥士", lv: 46, s: "S", beh: "主動", race: "黑暗妖精", e: "fire", hp: 800, ac: -43, mr: 60, exp: 2117, goldMin: 150, goldMax: 400, atkSpd: 1, dmg: [1, 55], db: 6, hit: 58, mag: { skn: "衝擊之暈", cd: 90, chance: 0.3, type: "stun", pbase: 150 } },   // 每9秒判定30%·全體暈眩(150-MR)/2%
+        "sanct_cursed_mage":    { n: "受詛咒的黑暗妖精法師", lv: 48, s: "S", beh: "主動", race: "黑暗妖精", e: "wind", hp: 750, ac: -38, mr: 120, exp: 2305, goldMin: 150, goldMax: 400, atkSpd: 2, dmg: [2, 60], db: 30, hit: 53, mag: { skn: "黑暗落雷", cd: 60, dmg: [3, 50], db: 40, ele: "wind", alwaysHit: true } },
+        "sanct_cursed_knight":  { n: "受詛咒的黑暗妖精騎士", lv: 50, s: "S", beh: "主動", race: "黑暗妖精", e: "earth", hp: 1100, ac: -52, mr: 50, exp: 2501, goldMin: 180, goldMax: 420, atkSpd: 1, dmg: [1, 70], db: 7, hit: 63, mag: { skn: "黑暗地裂斬", cd: 80, dmg: [3, 60], db: 50, ele: "earth", alwaysHit: true } },
+        "sanct_scavenger":      { n: "食腐獸", lv: 50, s: "S", beh: "主動", race: "異界生物", e: "none", hp: 1500, ac: -50, mr: 50, exp: 2501, goldMin: 180, goldMax: 420, atkSpd: 1, dmg: [1, 70], db: 7, hit: 63, mag: { skn: "腐蝕毒液", cd: 90, type: "poison", pbase: 200, d: 20, tick: 3, dur: 12 } },
+        "sanct_tethys":         { n: "特提斯", lv: 52, s: "L", beh: "主動", race: "異界生物", e: "none", hp: 1700, ac: -55, mr: 75, exp: 2705, goldMin: 180, goldMax: 420, atkSpd: 2, dmg: [2, 72], db: 37, hit: 57, mag: { skn: "震裂踏擊", cd: 90, dmg: [2, 50], db: 50, ele: "earth", alwaysHit: true } },   // 震裂踏擊已在 MOB_PARTY_AOE_SKILLS
+        "sanct_wyvern":         { n: "翼龍", lv: 54, s: "L", beh: "主動", race: "飛龍", e: "none", hp: 2000, ac: -61, mr: 100, exp: 2917, goldMin: 200, goldMax: 450, atkSpd: 1.5, dmg: [1, 84], db: 9, hit: 66, mag: { skn: "龍捲風", cd: 70, dmg: [2, 50], db: 60, ele: "wind", alwaysHit: true } },
+        // 吉爾塔斯：一般攻擊＝龍的2倍傷害(基準 法利昂 5D79+101 ×2)；血壁空間＝type:'reflectwall'(js/04 隨機 近/遠/魔法反射 10 秒·反彈同等傷害給攻擊方)
+        "sanct_giltas": { n: "吉爾塔斯", lv: 99, s: "L", beh: "主動", race: "異界生物", boss: true, hard: true, noDmgCurve: true, e: "none", hp: 440000, ac: -99, mr: 300, exp: 9802, goldMin: 50000, goldMax: 200000, atkSpd: 2, dmg: [5, 158], db: 403, hit: 132, rageHpPct: 0.30, rageHitMult: 1.20, rageDmgMult: 1.20, mag: { skn: "沙塵暴", cd: 70, chance: 0.15, type: "silence", pbase: 350 }, mag2: { skn: "岩漿流星雨", cd: 130, dmg: [10, 150], db: 500, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 300, d: 200, tick: 3, dur: 18 } }, mag3: { skn: "毒氣風暴", cd: 120, type: "poison", pbase: 350, d: 200, tick: 3, dur: 18 }, mag4: { skn: "血壁空間", cd: 160, chance: 0.5, type: "reflectwall", dur: 10 } },
+        "sanct_dantes": { n: "真‧死亡騎士 冥皇丹特斯", lv: 99, s: "S", beh: "主動", race: "不死", un: true, boss: true, hard: true, noDmgCurve: true, e: "none", hp: 150000, ac: -120, mr: 200, exp: 9802, goldMin: 50000, goldMax: 200000, atkSpd: 0.25, dmg: [2, 40], db: 39, hit: 132, rageHpPct: 0.30, rageHitMult: 1.20, rageDmgMult: 1.20, mag: { skn: "吸血鬼之吻", cd: 70, chance: 0.2, dmg: [5, 150], db: 100, ele: "none", alwaysHit: true, vampFull: true }, mag2: { skn: "地面震裂", cd: 130, dmg: [6, 150], db: 500, ele: "none", alwaysHit: true }, mag3: { skn: "集體衝暈", cd: 120, dmg: [3, 150], db: 300, ele: "none", alwaysHit: true, sec: { type: "stun", pbase: 300 } } },
         // ===== 軍王之室 BOSS（法令／冥法／暗殺） =====
         "de_king_laia":   { n: "法令軍王蕾雅", lv: 65, s: "S", beh: "被動", race: "拉斯塔巴德", e: "earth", boss: true, hard: true, hp: 15070, ac: -57, mr: 80, exp: 4226, goldMin: 1250, goldMax: 4000, atkSpd: 2, dmg: [4, 86], db: 87, hit: 101, mag: { skn: "冰裂術", cd: 50, chance: 0.5, dmg: [8, 30], db: 128, ele: "water", alwaysHit: true, ext_freeze: 200, extUnfreeze: true, sec: { type: "freeze", pbase: 200 } }, mag2: { skn: "高級治癒術", cd: 130, chance: 0.7, type: "heal_allies", healDice: [2, 200] } },
         "de_king_heruby": { n: "冥法軍王海露拜", lv: 70, s: "L", beh: "被動", race: "拉斯塔巴德", e: "earth", boss: true, hard: true, hp: 22672, ac: -78, mr: 85, exp: 4901, goldMin: 2250, goldMax: 5000, atkSpd: 2, dmg: [4, 92], db: 93, hit: 107, mag: { skn: "流星雨", cd: 110, dmg: [8, 50], db: 128, ele: "fire", alwaysHit: true }, mag2: { skn: "黑暗流星雨", cd: 130, chance: 0.5, dmg: [10, 100], db: 250, ele: "none", alwaysHit: true } },
@@ -2363,6 +2402,13 @@ const DB = {
                 { id: "npc_upni", n: "烏普尼", title: "製作", type: "craft", d: "通曉禁忌符文的烏普尼，能將塔之力封入一紙。以 傲慢之塔傳送符 與 移動卷軸 製作 傲慢之塔支配符。" },
                 { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的寵物。" },
                 { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 20 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上「一般型態」的寵物進化——用進化果實→對應高等，或用勝利果實→黃金龍（兩種果實都帶著時可自選）；高等型態與黃金龍皆為最終型態。" }
+            ]
+        },
+        "town_elder_council": {   // 🌑 黑暗妖精聖地樞紐（依《黑暗妖精聖地.md》·v3.3.33）
+            n: "長老會議廳",
+            npcs: [
+                { id: "npc_dantes_lord", n: "真．冥皇丹特斯", title: "聖地引路人", type: "quest", d: "端坐於骸骨王座的真．冥皇丹特斯。交出 死亡騎士之書 可進入 黑暗妖精聖地 或 受詛咒的黑暗妖精聖地（各消耗 1 本）；交出 吉爾塔斯的封印 則會被傳送至 崩壞的長老會議廳（消耗 1 個）。" },
+                { id: "npc_atelier", n: "亞提利歐", title: "製作", type: "craft", d: "沉默寡言的矮人鐵匠亞提利歐，爐火中鍛著冥皇的遺志。以召喚球之核與碎片合成 完整的召喚球／真．冥皇製作防具秘笈，並以秘笈與材料鍛造 真．冥皇 系列防具。" }
             ]
         },
         "town_pride": {
@@ -2799,7 +2845,7 @@ const DB = {
         "rastabad_cave2": ["de_remnant_bow", "de_remnant_sword", "de_remnant_xbow", "de_remnant_mage", "de_remnant_2h"],
         "rastabad_cave3": ["de_remnant_bow", "de_remnant_sword", "de_remnant_xbow", "de_remnant_mage", "de_remnant_2h", "dark_spirit_caller"],
         "rastabad_gate": ["de_gate_xbow", "de_gate_apprentice", "de_gate_spear", "de_gate_patrol", "de_gate_soldier", "de_gate_general"],
-        "rastabad_beast": ["de_gate_general", "de_train_blacktiger", "de_train_tamer", "de_train_cursetamer", "de_train_hellhound", "de_train_soulknight", "de_train_hellslave", "de_train_summoner", "de_train_gatekeeper"],
+        "rastabad_beast": ["de_gate_general", "de_train_blacktiger", "de_train_tamer", "de_train_cursetamer", "de_train_hellhound", "de_train_soulknight", "de_train_summoner", "de_train_gatekeeper"],   // 🌑 v3.4.21 地獄奴隸(de_train_hellslave)移出：地獄奴隸改為只在黑暗妖精聖地(sanct_hellslave)出沒
         "king_baranka_room": ["de_king_baranka"],
         "law_king_room": ["de_king_laia"],
         "necro_king_room": ["de_king_heruby"],
@@ -2813,9 +2859,10 @@ const DB = {
         "dark_magic_lab": ["de_lab_earth", "de_lab_water", "de_lab_wind", "de_lab_fire", "de_lab_mage", "de_lab_blackmage", "de_train_gatekeeper"],
         "necro_training": ["de_necro_avenger", "de_necro_warlock", "de_necro_omwarrior", "de_necro_darklord", "de_necro_bloodknight", "de_necro_omheavy", "de_train_gatekeeper"],
         "elder_room": ["de_elder_guard", "de_elder_captain", "de_elder_follower", "de_lab_blackmage", "de_train_soulknight", "de_necro_bloodknight", "dark_spirit_king", "darkdweller", "de_lab_earth", "de_lab_water", "de_lab_fire", "de_lab_wind", "dark_spirit_caller", "de_elder_kina", "de_elder_andis", "de_elder_batas", "de_elder_balos", "de_elder_balud", "de_elder_ramas", "de_elder_taimas", "de_elder_adiel"],   // 🏛️ 格蘭肯神殿．長老之室：3 新一般怪 + 既有出沒怪物 + 8 長老 BOSS（BOSS 出場由 spawnMob 節流：場上最多 2 隻、第 1 隻存活滿 3 分鐘才出第 2 隻）
-        // ===== 🌑 黑暗妖精聖地：一般區沿用守軍／黑魔法系；受詛咒區改用較高階的冥法軍與神殿近衛 =====
-        "dark_elf_sanctuary": ["de_gate_xbow", "de_gate_spear", "de_gate_patrol", "de_gate_soldier", "de_gate_general", "de_lab_mage", "de_lab_blackmage", "dark_spirit_caller", "de_elder_guard"],
-        "cursed_dark_elf_sanctuary": ["de_necro_avenger", "de_necro_warlock", "de_necro_omwarrior", "de_necro_darklord", "de_necro_bloodknight", "de_necro_omheavy", "de_elder_guard", "de_elder_captain", "de_elder_follower"],
+        // ===== 🌑 黑暗妖精聖地（依《黑暗妖精聖地.md》設定·v3.3.33）：三張圖皆「無法從地圖選單選擇」＝只在 DB.maps（隱藏區前例 hidden-area）·入口＝長老會議廳(town_elder_council) NPC 真．冥皇丹特斯（消耗 死亡騎士之書／吉爾塔斯的封印）=====
+        "dark_elf_sanctuary": ["sanct_hellslave", "de_necro_omheavy", "sanct_cursed_fighter", "sanct_cursed_mage", "sanct_cursed_knight", "sanct_scavenger", "sanct_tethys", "sanct_wyvern"],
+        "cursed_dark_elf_sanctuary": ["sanct_giltas"],   // 純BOSS房：吉爾塔斯（完整的召喚球＝戰敗保留其HP·見 js/05 revive／js/03 spawnMob）
+        "collapsed_elder_council_hall": ["sanct_dantes"],   // 純BOSS房：真‧死亡騎士 冥皇丹特斯（交出吉爾塔斯的封印後傳送）
         "antaras_lair": ["antaras"],
         "fafurion_lair": ["fafurion"],
         "valakas_lair": ["valakas"],
@@ -3102,6 +3149,7 @@ const DB = {
     Object.keys(DB.mobs).forEach(id => {
         let mob = DB.mobs[id];
         if (!mob || !mob.boss || mob.race === '建築' || mob.siegeEnemy || mob.noAttack || (mob.hp || 0) <= 1) return;
+        if (mob.noDmgCurve) return;   // 🌑 v3.4.4 豁免旗標（用戶拍板）：吉爾塔斯/真‧死亡騎士 冥皇丹特斯＝普攻與技能傷害照定義原值（普攻自調 DPS≈400·技能照《黑暗妖精聖地.md》）·不吃本曲線
 
         let lv = Math.max(1, mob.lv || 1);
         let interval = clamp(mob.atkSpd || 1.5, 0.5, 4);
@@ -3115,6 +3163,47 @@ const DB = {
         normalizeSkill(mob, mob.mag2);
         normalizeSkill(mob, mob.mag3);
     });
+
+    // 🐉 四大龍傷害錨定吉爾塔斯：普攻原始 DPS 約為吉爾塔斯 52.5%；技能單次傷害依冷卻落在約 42%～60%，DoT 完整傷害為 52.5%。
+    // 置於通用頭目曲線之後，避免四龍再次被同級曲線壓低；保留各龍原有攻速、冷卻、屬性、觸發率與控場特色。
+    const giltas = DB.mobs.sanct_giltas;
+    if (giltas && giltas.dmg && giltas.mag2 && giltas.mag2.dmg) {
+        const DRAGON_GILTAS_RATIO = 0.525;
+        const giltasPhysicalDps = rollAverage(giltas.dmg, giltas.db) / Math.max(0.5, giltas.atkSpd || 2);
+        const dragonPhysicalDps = giltasPhysicalDps * DRAGON_GILTAS_RATIO;
+        const giltasSkillImpact = rollAverage(giltas.mag2.dmg, giltas.mag2.db);
+        const dragonSkillImpact = giltasSkillImpact * DRAGON_GILTAS_RATIO;
+        const giltasDot = giltas.mag3;
+        const giltasDotTicks = Math.max(1, Math.ceil((giltasDot.dur || giltasDot.tick || 3) / Math.max(1, giltasDot.tick || 3)));
+        const dragonDotImpact = (giltasDot.d || 0) * giltasDotTicks * DRAGON_GILTAS_RATIO;
+
+        function anchorDragonDot(holder) {
+            if (!holder || typeof holder.d !== 'number') return;
+            let tick = Math.max(1, holder.tick || 3);
+            let dur = Math.max(tick, holder.dur || tick);
+            holder.d = Math.max(1, Math.round(dragonDotImpact / Math.max(1, Math.ceil(dur / tick))));
+        }
+        function anchorDragonSkill(sk) {
+            if (!sk) return;
+            if (sk.dmg) {
+                let cooldownWeight = clamp(Math.sqrt((sk.cd || 130) / Math.max(1, giltas.mag2.cd || 130)), 0.8, 1.15);
+                setAverageRoll(sk, 'dmg', 'db', dragonSkillImpact * cooldownWeight, sk.dmg[0]);
+            }
+            anchorDragonDot(sk);
+            anchorDragonDot(sk.sec);
+            if (typeof sk.ext_freeze === 'number') sk.ext_freeze = Math.max(1, Math.round(dragonSkillImpact * 0.30));
+        }
+
+        ['antaras', 'fafurion', 'valakas', 'lindvior'].forEach(id => {
+            let dragon = DB.mobs[id];
+            if (!dragon) return;
+            let targetMean = dragonPhysicalDps * Math.max(0.5, dragon.atkSpd || 1.5);
+            setAverageRoll(dragon, 'dmg', 'db', targetMean, dragon.dmg && dragon.dmg[0]);
+            anchorDragonSkill(dragon.mag);
+            anchorDragonSkill(dragon.mag2);
+            anchorDragonSkill(dragon.mag3);
+        });
+    }
 })();
 
 // ===== 套裝代碼初始化：將 DB.sets 反向掛到各裝備的 .set 屬性 =====

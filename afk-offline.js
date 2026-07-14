@@ -581,7 +581,7 @@
           if (player.gold >= FAST_REFILL_BATCH * unit) { player.gold -= FAST_REFILL_BATCH * unit; gainItem(id, FAST_REFILL_BATCH, true, true); return true; }
           return false;
         }
-        var buyChk = { potion_haste: 'set-auto-buy-haste', potion_brave: 'set-auto-buy-brave', potion_blue: 'set-auto-buy-blue', new_item_140: 'set-auto-buy-cautious', new_item_139: 'set-auto-buy-elfcookie', scroll_poly: 'set-auto-buy-poly', scroll_teleport: 'set-auto-buy-teleport' }[id];
+        var buyChk = { potion_haste: 'set-haste', potion_brave: 'set-brave', potion_blue: 'set-blue', new_item_140: 'set-cautious', new_item_139: 'set-elfcookie', scroll_poly: 'set-poly', scroll_teleport: 'set-teleport' }[id];
         if (buyChk && on(buyChk)) {   // 增益藥水/卷軸:批量補貨(同上,原本只買1瓶)
           var p = shopPrice(DB.items[id].p);
           if (player.gold >= FAST_REFILL_BATCH * p) { player.gold -= FAST_REFILL_BATCH * p; gainItem(id, FAST_REFILL_BATCH, true, true); return true; }
@@ -658,10 +658,10 @@
         // 頂層條件照 autoActions(js/07):攻城區/純BOSS房 BOSS 即目標不逃;攀登/遺忘之島/時空裂痕本就不走快速段,照抄不吃虧
         if (isSiegeArea(mapState.current) || PURE_BOSS_MAPS.includes(mapState.current)) return false;
         if (state.prideClimb || state.oblivion || state.riftRun) return false;
-        // 找卷軸,沒有就依 set-auto-buy-teleport 自動買 1 張(與 autoActions 完全一致)
+        // 找卷軸,沒有就依 set-teleport 自動買 1 張(與 autoActions 完全一致)
         var item = player.inv.find(function (i) { return i && i.id === 'scroll_teleport'; });
         if (!item) {
-          var buyChk = document.getElementById('set-auto-buy-teleport');
+          var buyChk = document.getElementById('set-teleport');
           var cost = shopPrice(DB.items.scroll_teleport.p);
           if (buyChk && buyChk.checked && player.gold >= cost) { player.gold -= cost; gainItem('scroll_teleport', 1, true, true); item = player.inv.find(function (i) { return i && i.id === 'scroll_teleport'; }); }
         }

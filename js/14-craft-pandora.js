@@ -396,7 +396,22 @@ const CRAFT_RECIPES = {
         { result: 'amr_old_plate', req: [{ id: 'item_forgotten_plate', cnt: 1 }, { id: 'item_ancient_scroll', cnt: 1 }] }
     ],
     // 🔷🔶 象牙塔・神秘的魔法師（魔杖改造）：僅有客製配方（見 MYSTICWAND_RECIPES），空陣列讓 renderUniversalCraft 通過並附加客製區塊
-    'npc_mystic_mage': []
+    'npc_mystic_mage': [],
+    // 🌑 v3.3.33 長老會議廳・亞提利歐（黑暗妖精聖地.md）：召喚球合成＋真．冥皇系列防具鍛造
+    npc_atelier: [
+        { result: 'item_summonorb_full', req: [{ id: 'mat_summonorb_core', cnt: 1 }, { id: 'mat_summonorb_shard', cnt: 4 }] },
+        { result: 'mat_emperor_manual',  req: [{ id: 'mat_summonorb_core', cnt: 1 }, { id: 'mat_summonorb_shard', cnt: 4 }] },
+        { result: 'clk_emperor', req: [{ id: 'mat_emperor_manual', cnt: 1 }, { id: 'mat_ascetic_classic', cnt: 5 },  { id: 'mat_de_soul_crystal', cnt: 50 },  { id: 'mat_black_powder', cnt: 15 }, { id: 'arm_official_cloak', cnt: 1 }, { id: 'mat_blackmithril_plate', cnt: 5 },  { id: 'new_item_159', cnt: 10 }] },
+        { result: 'amr_emperor', req: [{ id: 'mat_emperor_manual', cnt: 1 }, { id: 'mat_ascetic_classic', cnt: 10 }, { id: 'mat_de_soul_crystal', cnt: 100 }, { id: 'mat_black_powder', cnt: 30 }, { id: 'amr_official', cnt: 1 },        { id: 'mat_blackmithril_plate', cnt: 10 }, { id: 'new_item_153', cnt: 20 }] },
+        { result: 'hlm_emperor', req: [{ id: 'mat_emperor_manual', cnt: 1 }, { id: 'mat_ascetic_classic', cnt: 5 },  { id: 'mat_de_soul_crystal', cnt: 50 },  { id: 'mat_black_powder', cnt: 15 }, { id: 'hlm_official', cnt: 1 },        { id: 'mat_blackmithril_plate', cnt: 5 },  { id: 'new_item_162', cnt: 10 }] },
+        { result: 'glv_emperor', req: [{ id: 'mat_emperor_manual', cnt: 1 }, { id: 'mat_ascetic_classic', cnt: 5 },  { id: 'mat_de_soul_crystal', cnt: 50 },  { id: 'mat_black_powder', cnt: 15 }, { id: 'glv_official', cnt: 1 },        { id: 'mat_blackmithril_plate', cnt: 5 },  { id: 'new_item_156', cnt: 10 }] },
+        { result: 'bot_emperor', req: [{ id: 'mat_emperor_manual', cnt: 1 }, { id: 'mat_ascetic_classic', cnt: 5 },  { id: 'mat_de_soul_crystal', cnt: 50 },  { id: 'mat_black_powder', cnt: 15 }, { id: 'bot_official', cnt: 1 },        { id: 'mat_blackmithril_plate', cnt: 5 },  { id: 'new_item_153', cnt: 10 }] },
+        // 🌑 靈魂耳環系列（淨化藥水＝四大氣息×10＋品質綠寶石；受詛咒黑色耳環＋淨化藥水→對應職業靈魂耳環）
+        { result: 'mat_purify_potion', req: [{ id: 'mat_earth_breath', cnt: 10 }, { id: 'mat_wind_breath', cnt: 10 }, { id: 'mat_water_breath', cnt: 10 }, { id: 'mat_fire_breath', cnt: 10 }, { id: 'new_item_155', cnt: 1 }] },
+        { result: 'ear_soul_mage',    req: [{ id: 'ear_cursed_black', cnt: 1 }, { id: 'mat_purify_potion', cnt: 1 }] },
+        { result: 'ear_soul_fighter', req: [{ id: 'ear_cursed_black', cnt: 1 }, { id: 'mat_purify_potion', cnt: 1 }] },
+        { result: 'ear_soul_knight',  req: [{ id: 'ear_cursed_black', cnt: 1 }, { id: 'mat_purify_potion', cnt: 1 }] }
+    ]
 };
 
 // 製作數量選擇器 + 製作按鈕（預設數量 1）
@@ -1110,71 +1125,30 @@ function refreshGachaTicketCount() {
 // 🔧 已刪除重複定義的 getWeightedGachaResult（死碼）：與下方版本逐行等價，僅後者生效。
 
 // ==========================================
-// 👇 新增：1. 權重初始化函數 (遊戲載入時自動執行一次)
+// 👇 權重初始化（遊戲載入時執行一次）：🎯 v3.4.2 用戶拍板「物品權重完全看標示」＋ v3.4.3 兩項補充——
+//    ① 有標示 gachaWeight → 一律照標示（唯一真相·不再有 商店/製作→0、僅BOSS掉落→1、逐件強制 等覆寫層）。
+//    ② 未標示＋是「商店販賣物」（SHOP_LISTS 聯集）→ 依價格自動分配（1/10/20/50/100 五階·無價/鑰匙/地圖→0）。
+//    ③ 未標示＋非商店販賣物 → 0（要進抽獎池必須顯式標 >0）。
+//    ④ 遺物（relic:true）→ 一律 0（最後執行·蓋過標示·永不進黑市/抽獎/10連抽/血盟野外/裂痕池）。
 // ==========================================
 (function initGachaWeights() {
+    let SHOP_SOLD = new Set();
+    if (typeof SHOP_LISTS !== 'undefined') for (let _k in SHOP_LISTS) (SHOP_LISTS[_k] || []).forEach(_id => SHOP_SOLD.add(_id));
     for (let id in DB.items) {
         let item = DB.items[id];
-        
-        // 如果已經有手動設定權重就跳過
-        if (item.gachaWeight !== undefined) continue;
-
-        // 任務道具、沒價格的物品，不放進抽獎池 (權重 0)
-        if (!item.p || item.p <= 1 || (item.n && (item.n.includes("鑰匙") || item.n.includes("地圖")))) {
-            item.gachaWeight = 0;
-            continue;
+        if (!item) continue;
+        if (item.gachaWeight === undefined) {
+            if (SHOP_SOLD.has(id)) {   // 未標示的商店販賣物 → 依價格自動分配
+                if (!item.p || item.p <= 1 || (item.n && (item.n.includes("鑰匙") || item.n.includes("地圖")))) item.gachaWeight = 0;
+                else if (item.p > 100000) item.gachaWeight = 1;     // 十萬以上極度稀有
+                else if (item.p > 30000) item.gachaWeight = 10;     // 三萬以上稀有
+                else if (item.p > 10000) item.gachaWeight = 20;     // 一萬以上罕見
+                else if (item.p > 1000) item.gachaWeight = 50;      // 一千以上一般
+                else item.gachaWeight = 100;                        // 便宜貨超容易抽到
+            } else item.gachaWeight = 0;   // 其他未標示 → 0
         }
-
-        // 依照價格 (p) 自動分配機率權重
-        if (item.p > 100000) {
-            item.gachaWeight = 1;     // 十萬以上極度稀有
-        } else if (item.p > 30000) {
-            item.gachaWeight = 10;    // 三萬以上稀有
-        } else if (item.p > 10000) {
-            item.gachaWeight = 20;    // 一萬以上罕見
-        } else if (item.p > 1000) {
-            item.gachaWeight = 50;   // 一千以上一般
-        } else {
-            item.gachaWeight = 100;  // 便宜貨超容易抽到
-        }
+        if (item.relic) item.gachaWeight = 0;   // 🏺 遺物一律 0（蓋過標示）
     }
-    // 🔧 v3.0.81 使用者規格：移除「權重 ≥50 ×2」出現率加倍——黑市出現機率全部以原始權重計算
-})();
-
-// ==========================================
-// 🔧 潘朵拉黑市權重覆寫（於 initGachaWeights 之後執行，覆蓋上方權重）：
-//    ① 商店有販售的物品（武器／防具／道具）＋ 製作材料 → 權重 0（不會出現在黑市）
-//    ② 只有 BOSS 才會掉落的物品 → 權重 1（黑市稀有商品）
-//    ⚠️ PANDORA_SHOP_SOLD_IDS 需與 getShopItemsForNpc 的各商人販售清單保持一致；日後新增商店商品請同步補上。
-// ==========================================
-(function applyPandoraWeightRules() {
-    // 商店販售品聯集（所有商人清單，不分職業；對應 getShopItemsForNpc）
-    let PANDORA_SHOP_SOLD_IDS = new Set();
-    for (let _k in SHOP_LISTS) (SHOP_LISTS[_k] || []).forEach(_id => PANDORA_SHOP_SOLD_IDS.add(_id));   // 🔧 商店販售品聯集（單一來源：SHOP_LISTS）
-    // 製作材料：所有配方 req 輸入
-    let craftMatSet = new Set();
-    if (typeof CRAFT_RECIPES !== 'undefined') for (let npc in CRAFT_RECIPES) (CRAFT_RECIPES[npc] || []).forEach(r => (r.req || []).forEach(m => craftMatSet.add(m.id)));
-    // 掉落來源彙整：itemId → { boss:有BOSS掉, normal:有非BOSS掉 }（怪名→怪物以判斷 boss 旗標）
-    let mobByName = {};
-    for (let mid in DB.mobs) { let mb = DB.mobs[mid]; if (mb && mb.n) mobByName[mb.n] = mb; }
-    let dropFrom = {};
-    let addDrop = (mobName, itemId) => { let mob = mobByName[mobName]; let e = dropFrom[itemId] || (dropFrom[itemId] = { boss: false, normal: false }); if (mob && mob.boss) e.boss = true; else e.normal = true; };
-    let scan = tbl => { if (!tbl) return; for (let nm in tbl) (tbl[nm] || []).forEach(en => { let id = Array.isArray(en) ? en[0] : en; if (id) addDrop(nm, id); }); };
-    if (typeof MOB_DROPS !== 'undefined') scan(MOB_DROPS);
-    if (typeof DARK_WEAPON_DROPS !== 'undefined') scan(DARK_WEAPON_DROPS);
-    if (typeof DARK_CRYSTAL_DROPS !== 'undefined') scan(DARK_CRYSTAL_DROPS);
-    // 套用覆寫
-    for (let id in DB.items) {
-        let item = DB.items[id];
-        if (PANDORA_SHOP_SOLD_IDS.has(id) || craftMatSet.has(id)) { item.gachaWeight = 0; continue; }   // 商店品／製作材料 → 0
-        let df = dropFrom[id];
-        if (df && df.boss && !df.normal) item.gachaWeight = 1;   // 僅 BOSS 掉落 → 1
-    }
-    ['wpn_dragonslayer','wpn_baless'].forEach(_id => { if (DB.items[_id]) DB.items[_id].gachaWeight = 1; });   // 🔧 屠龍劍／巴列斯魔杖：固定權重 1
-    ['hlm_icequeen_charm','amr_icequeen_charm','bot_icequeen_charm'].forEach(_id => { if (DB.items[_id]) DB.items[_id].gachaWeight = 1; });   // ❄️👸 冰之女王魅力套裝：雖兼任寒冰製作素材(會被 craftMatSet 設0)，仍強制黑市權重 1
-    [['hlm_official',10],['amr_official',10],['wpn_baranka_claw',10],['wpn_assassin_mark',10],['wpn_priest_wand',10],['wpn_laia_wand',1],['shd_priest_book',5]].forEach(([_id,_w]) => { if (DB.items[_id]) DB.items[_id].gachaWeight = _w; });   // 🔧 BOSS掉落但指定較高潘朵拉權重（不套用 BOSS專屬→1）；🔧 v2.6.67 蕾雅魔杖 10→1（傳說級稀有度對齊）
-    // 🏺 遺物（relic:true）：永不進潘朵拉黑市／抽獎／10連抽／血盟野外特殊掉落／時空裂痕獎勵池。最後執行→覆蓋以上所有權重規則（含 BOSS→1）；四個抽獎池皆已排除 gachaWeight<=0。
-    for (let _rid in DB.items) { if (DB.items[_rid] && DB.items[_rid].relic) DB.items[_rid].gachaWeight = 0; }
 })();
 
 // ==========================================
@@ -1186,7 +1160,7 @@ function getWeightedGachaResult(doubleNonRare) {
 
     // 建立抽獎池並計算總權重
     for (let id in DB.items) {
-        let weight = DB.items[id].gachaWeight !== undefined ? DB.items[id].gachaWeight : 100;
+        let weight = DB.items[id].gachaWeight !== undefined ? DB.items[id].gachaWeight : 0;   // 🎯 v3.4.2 沒有標示視同 0（initGachaWeights 已正規化·此為雙保險）
         if (weight > 0) {
             if (doubleNonRare && weight !== 1) weight *= 2;   // 🔧 血盟野外特殊掉落：潘朵拉權重 1 以外的物品以 2 倍權重計算（權重100→200）
             totalWeight += weight;
@@ -1778,42 +1752,89 @@ window.onload = () => {
         }
         if(d.type === 'wpn' || d.type === 'arm' || d.type === 'acc'){
             let _eff = [];
-            if(d.unBonus || d.unDice || d.sp === 'elf') _eff.push('不死 / 狼人加成');
-            if(d.eff === 'pierce')     _eff.push('穿透' + (d.pierceChance !== undefined ? ' ' + d.pierceChance + '%' : ''));
-            if(d.eff === 'moonburst')  _eff.push('月光爆裂');
-            if(d.eff === 'dice_death') _eff.push('即死');
-            if(d.eff === 'haste')      _eff.push('自我加速');
-            if(d.eff === 'crush')      _eff.push('重擊');
-            if(d.eff === 'cleave')     _eff.push('切割');
-            if(d.eff === 'combo')      _eff.push('雙擊 ' + (d.comboRate||0) + '%');   // 🔧 鋼爪/雙刀：雙擊特效（comboRate%機率發動，額外攻擊＝完整一般攻擊）
-            if(d.weakExpose)           _eff.push('弱點曝光');   // 🐉 鎖鏈劍
-            if(d.vampPct)              _eff.push('吸取HP ' + Math.round(d.vampPct * 100) + '%');   // 🐉 嗜血者鎖鏈劍
-            if(d.ignHardSkin)          _eff.push('貫穿');   // 🗡️ 暗黑十字弓：攻擊無視硬皮額外減傷
-            if(d.redSpecter)           _eff.push('紅惡靈逆襲');   // 👹 隱藏的魔族武器
-            if(d.blueSpecter)          _eff.push('藍惡靈奪魔');   // 👹 隱藏的魔族武器
-            if(d.block)                _eff.push('格檔：' + d.block + '%');
-            if(d.eff === 'magicburst') _eff.push('魔爆');
+            if(d.unBonus || d.unDice || d.sp === 'elf') _eff.push('不死／狼人加成（額外造成1D20傷害）');
+            if(d.eff === 'pierce')     _eff.push('穿透 ' + (d.pierceChance !== undefined ? d.pierceChance : 100) + '%（命中後追加攻擊另一名敵人）');
+            if(d.alsoPierce)           _eff.push('穿透 ' + (d.pierceChance !== undefined ? d.pierceChance : 100) + '%（命中後追加攻擊另一名敵人）');   // 🌑 v3.3.33 附帶穿透
+            if(d.eff === 'moonburst')  _eff.push('月光爆裂（命中時8%造成1D30＋強化×2風傷）');
+            if(d.eff === 'dice_death') _eff.push('即死（命中時1%使非首領目標死亡）');
+            if(d.eff === 'haste')      _eff.push('自我加速（裝備時常駐加速）');
+            if(d.eff === 'crush')      _eff.push('重擊（提高重擊機率，重擊取武器最大傷害）');
+            if(d.eff === 'cleave')     _eff.push('切割（重擊時攻速+20%，持續2秒）');
+            if(d.eff === 'combo')      _eff.push('雙擊 ' + (d.comboRate||0) + '%（追加一次完整一般攻擊）');   // 🔧 鋼爪/雙刀：雙擊特效
+            if(d.weakExpose)           _eff.push('弱點曝光（命中12%疊加，供屠宰者增傷）');   // 🐉 鎖鏈劍
+            if(d.vampPct)              _eff.push('吸取HP ' + Math.round(d.vampPct * 100) + '%（依本次傷害恢復）');   // 🐉 嗜血者鎖鏈劍
+            if(d.ignHardSkin)          _eff.push('貫穿（無視硬皮額外減傷）');   // 🗡️ 暗黑十字弓
+            if(d.redSpecter)           _eff.push('紅惡靈逆襲（4%＋每強化1%，造成水魔傷並吸取10%HP）');   // 👹 隱藏的魔族武器
+            if(d.blueSpecter)          _eff.push('藍惡靈奪魔（4%＋每強化1%，恢復3D6 MP）');   // 👹 隱藏的魔族武器
+            if(d.block)                _eff.push('格檔 ' + d.block + '%（重擊時依此機率減半傷害；一般攻擊為上述機率的30%）');
+            if(d.eff === 'magicburst') _eff.push('魔爆（傷害魔法時依智力觸發，追加該次總傷害30%的無屬性傷害）');
             if(d.eff === 'mp_drain' || d.mpOnHit)   _eff.push('命中恢復MP');
             if(d.immStone)             _eff.push('免疫石化');
             if(d.immPoison)            _eff.push('免疫中毒');
             if(d.unique)               _eff.push('唯一（最多裝備1個）');
             // 🏹 與背包資訊欄一致補齊：弓連射 / 魔杖共鳴・魔擊 / 蕾雅冰裂術 / 附魔施放（經典模式由 filterClassicEffLabels 過濾停用者）
-            if(d.rapidfire)            _eff.push('連射 ' + d.rapidfire + '%');
-            if(d.eff === 'magicstrike') _eff.push('魔擊');
-            if(d.meleeHitSpell)        _eff.push(d.meleeHitSpell.skn || '命中觸發');
-            if(d.spellProc)            _eff.push('施放' + (d.spellProc.skn || ''));
-            if(d.procSkill)            _eff.push('施放' + ((DB.skills[d.procSkill] && DB.skills[d.procSkill].n) || ''));
-            if(typeof WAND_LIGHTARROW_IDS !== 'undefined' && WAND_LIGHTARROW_IDS.includes(id)) _eff.push('共鳴');
+            if(d.rapidfire)            _eff.push('連射 ' + d.rapidfire + '%（追加1～3箭，每箭30%傷害）');
+            if(d.eff === 'magicstrike') _eff.push('魔擊（攻擊時依力量觸發必中重擊）');
+            if(d.meleeHitSpell)        _eff.push('命中施法（攻擊命中時施放' + (d.meleeHitSpell.skn || '附加法術') + '）');
+            if(d.spellProc) {
+                let _rateText = `${d.procRateBase || 1}%${d.procRatePerEn ? `＋每強化${d.procRatePerEn}%` : ''}`;
+                _eff.push(`攻擊施法 ${_rateText}（觸發${d.spellProc.skn || '附加法術'}）`);
+            }
+            if(d.procSkill) {
+                let _procName = (DB.skills[d.procSkill] && DB.skills[d.procSkill].n) || '技能';
+                let _rateText = `${d.procRateBase || 1}%${d.procRatePerEn ? `＋每強化${d.procRatePerEn}%` : ''}`;
+                _eff.push(`攻擊施法 ${_rateText}（觸發${_procName}）`);
+            }
+            if(d.procStatusSkill) {
+                let _statusName = (DB.skills[d.procStatusSkill.skId] && DB.skills[d.procStatusSkill.skId].n) || '異常狀態';
+                _eff.push(`異常攻擊 ${d.procStatusSkill.rate || 0}%（命中時造成${_statusName}）`);
+            }
+            if(d.procPoison)          _eff.push(`中毒 ${d.procPoison.rate || 0}%（命中時使目標中毒${d.procPoison.dur ? `，持續${d.procPoison.dur}秒` : ''}）`);
+            else if(d.procPoisonRate) _eff.push(`中毒 ${d.procPoisonRate}%（命中時使目標中毒）`);
+            if(d.procInstakill) {
+                let _ik = d.procInstakill, _ikCond = _ik.tag === 'undead' ? '不死系' : (_ik.hpBelow ? `HP低於${Math.round(_ik.hpBelow * 100)}%` : '非首領');
+                _eff.push(`即死 ${Math.round((_ik.p || 0) * 100)}%（命中${_ikCond}目標時發動）`);
+            }
+            if(d.procBonusDmg)  _eff.push(`額外傷害 ${d.procBonusDmg.rate}%（攻擊時追加${d.procBonusDmg.dmg}點傷害）`);
+            if(d.procDmgReduce) _eff.push(`傷害減免 ${d.procDmgReduce.rate}%（受傷時減少${d.procDmgReduce.amount}點傷害）`);
+            if(d.allLures) _eff.push('誘捕萬用（視為持有全部誘捕狀態）');
+            if(d.eleBonusDmg) {
+                let _bn = {fire:'火',water:'水',wind:'風',earth:'地'}[d.eleBonusDmg.ele] || '指定';
+                _eff.push(`屬性專攻（攻擊${_bn}屬性敵人時額外傷害+${d.eleBonusDmg.dmg || d.eleBonusDmg.add || 0}）`);
+            }
+            if(d.counterAllEle) _eff.push('萬象剋制（一般攻擊剋制所有屬性敵人）');
+            if(d.procBurn) _eff.push(`灼燒${d.procBurn.rate ? ` ${d.procBurn.rate}%` : ''}（命中後每秒${d.procBurn.dmg || 10}點火傷，持續${d.procBurn.dur || 6}秒）`);
+            if(d.onHitEleDmg) {
+                let _en = {fire:'火焰',water:'寒冰',wind:'風雷',earth:'大地',none:'無屬性'}[d.onHitEleDmg.ele] || '屬性';
+                _eff.push(`${_en}附傷${d.onHitEleDmg.rate ? ` ${d.onHitEleDmg.rate}%` : ''}（命中時追加${d.onHitEleDmg.dmg}點傷害）`);
+            }
+            if(d.freeChill) _eff.push('寒冰氣息不消耗魔力');
+            if(d.noConsume && d.isArrow) _eff.push('箭矢不會消耗');
+            if(d.oneHand && d.isBow) _eff.push('可單手持握');
+            if(d.ele && d.ele !== 'none') _eff.push(`一般攻擊化為${({fire:'火',water:'水',wind:'風',earth:'地'}[d.ele] || d.ele)}屬性`);
+            if(d.skillDmgMult) {
+                let _skills = Object.keys(d.skillDmgMult).map(skId => `${(DB.skills[skId] && DB.skills[skId].n) || skId}×${d.skillDmgMult[skId]}`);
+                if(_skills.length) _eff.push('技能增幅（' + _skills.join('、') + '）');
+            }
+            if(d.autoCastMpMult && d.autoCastMpMult > 1) _eff.push(`自動施法代價（MP消耗×${d.autoCastMpMult}）`);
+            if(d.autoCastDmgMult && d.autoCastDmgMult > 1) _eff.push(`自動施法增幅（傷害×${d.autoCastDmgMult}）`);
+            if(d.silencedBonusDmg) _eff.push(`沉默專攻（攻擊沉默目標額外傷害+${d.silencedBonusDmg}）`);
+            if(d.poisonedBonusDmg) _eff.push(`中毒專攻（攻擊中毒目標額外傷害+${d.poisonedBonusDmg}）`);
+            if(d.slowedBonusDmg) _eff.push(`緩速專攻（攻擊緩速目標額外傷害+${d.slowedBonusDmg}）`);
+            if(d.immParalyzeBonusDmg) _eff.push(`強韌專攻（攻擊免疫麻痺目標額外傷害+${d.immParalyzeBonusDmg}）`);
+            if(typeof WAND_LIGHTARROW_IDS !== 'undefined' && WAND_LIGHTARROW_IDS.includes(id)) _eff.push('共鳴（攻擊時依智力免費施放光箭）');
             // 🔧 武器標籤特效（反擊/居合/鈍擊/出血）：來自 WEAPON_TAGS（非 eff 欄位），與背包資訊欄一致顯示
             if(d.type === 'wpn' && typeof getWeaponTags === 'function'){
-                if(typeof weaponHasBleed === 'function' && weaponHasBleed(id)) _eff.push('出血');
+                if(typeof weaponHasBleed === 'function' && weaponHasBleed(id)) _eff.push('出血（命中疊加8秒流血，每秒造成該次傷害20%）');
                 let _tg = getWeaponTags(id);
-                if(_tg.includes('單手劍'))   _eff.push('反擊');
-                if(_tg.includes('武士刀'))   _eff.push('居合');
-                if(_tg.includes('單手鈍器')) _eff.push('鈍擊');
+                if(_tg.includes('單手劍'))   _eff.push('反擊（受一般攻擊命中時50%反擊；格檔時必定）');
+                if(_tg.includes('武士刀'))   _eff.push('居合（無盾且迴避／敵人未命中時50%反擊）');
+                if(_tg.includes('單手鈍器')) _eff.push('鈍擊（命中時延遲目標攻擊1秒）');
                 if(_tg.includes('雙刀'))     _eff.push('雙刃 5%（傷害×2）');   // ⚔️ 雙刀內建特性
-                if(_tg.includes('鋼爪'))     _eff.push('重擊 +5%');   // ⚔️ 鋼爪內建特性：一般攻擊額外 5% 重擊
+                if(_tg.includes('鋼爪'))     _eff.push('重擊 +5%（重擊取武器最大傷害）');   // ⚔️ 鋼爪內建特性：一般攻擊額外 5% 重擊
             }
+            if(d.relic && typeof relicPurposeLabels === 'function') _eff.push(...relicPurposeLabels(d));
+            _eff = [...new Set(_eff)];
             _eff = filterClassicEffLabels(_eff, d);   // 🎮 經典模式：移除已停用特效字樣（classicOk 物品不過濾）
             if(_eff.length) parts.push(`<div class="text-rose-300 font-bold" style="font-size:12px;">特效：${_eff.join(' / ')}</div>`);
         }

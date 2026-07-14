@@ -8,8 +8,8 @@ function summonAttackCount(sm, owner) {
     // 👑 v3.2.25 精靈精通改版：不再增加精靈數量/攻擊段數（改為 召喚強力屬性精靈→精靈王·見 _elfSpiritKingOverride）
     return 1;
 }
-// 👑 v3.2.26 屬性精靈規格鏡像（傭兵舊管線·buildSummon/refreshSummonBalance 兩處套用）：
-//   兩個精靈技能都改讀 js/23 的四屬性表（dice/scale/倍率/穿透/命中/攻速依屬性·王=精靈精通時的 sk_elf_summon2）；AOE 為玩家精靈王專屬（舊管線 proc 不支援全體）。
+// 👑 v3.2.26→v3.4.11 屬性精靈規格鏡像（buildSummon/refreshSummonBalance 兩處套用）：
+//   玩家與傭兵都讀 js/23 四屬性表；傭兵保持無敵抽象召喚，但攻擊轉交 spiritAttackOnce 共用命中、傷害與精靈王 AOE。
 function _elfSpiritKingOverride(sm, owner) {
     if (!sm || (sm.skId !== 'sk_elf_summon' && sm.skId !== 'sk_elf_summon2') || typeof _spiritSpec !== 'function') return sm;
     const king = sm.skId === 'sk_elf_summon2' && owner && owner.mastery === 'e_spirit';
@@ -17,12 +17,15 @@ function _elfSpiritKingOverride(sm, owner) {
     sm.dmgDice = spec.dice; sm.elemScale = spec.scale; sm.dmgMult = spec.dmgMult;
     sm.mrPenBase = spec.mrPenBase; sm.hitLvOff = spec.hitLvOff; sm.interval = spec.aspd;
     if (king && typeof SPIRIT_ELE_ZH !== 'undefined' && sm.ele && SPIRIT_ELE_ZH[sm.ele]) sm.n = '夥伴：' + SPIRIT_ELE_ZH[sm.ele] + '之精靈王';
+    sm._king = king;   // 🧝 傭兵走無敵抽象召喚管線，但保留玩家 v2 的精靈王判定與 15% 全體技能
+    sm.form = sm.n || sm.form;
     return sm;
 }
-function summonDamageMult(sm, owner, magicBased) {
-    let magicDmg = Math.min(12, Math.max(0, (owner.d && owner.d.magicDmg) || 0));
+function summonDamageMult(sm, owner, magicBased, teamMagicDmg) {
+    let magicDmg = Math.min(12, Math.max(0, ((owner.d && owner.d.magicDmg) || 0) + (teamMagicDmg || 0)));
     let mult = (sm.dmgMult || 1) * (1 + magicDmg / (magicBased ? 40 : 80));
     if(isMageSummonMastered(sm, owner)) mult *= 1.20;
+    if(owner && owner !== player && typeof royalAllyMult === 'function') mult *= royalAllyMult();   // 👑 傭兵召喚傷害亦吃隊長魅力倍率；玩家召喚不受影響
     return mult;
 }
 function summonHitValue(sm, owner, target, gearHit) {
@@ -50,6 +53,14 @@ function summonAttack(sm, owner) {
         }
         let _cnt = Math.max(1, sm._v2count || 1);
         for(let i = 0; i < _cnt; i++) { let _t = getTarget(); if(!_t) break; summonV2AttackOnce(_s0, _d, _t, owner); }
+        return;
+    }
+    // 🧝 傭兵屬性精靈保持無敵抽象實體，但攻擊完整改走玩家 v2 精靈公式：四屬性骰值/攻速、命中、裝備、MR穿透、剋制、幻覺光環及精靈王15%全體技。
+    if((sm.skId === 'sk_elf_summon' || sm.skId === 'sk_elf_summon2') && typeof spiritAttackOnce === 'function') {
+        let _st = getTarget(); if(!_st) return;
+        sm.form = sm.form || sm.n || '屬性精靈';
+        sm._king = sm.skId === 'sk_elf_summon2' && owner.mastery === 'e_spirit';
+        spiritAttackOnce(sm, _st, owner);
         return;
     }
     let t = getTarget(); if(!t) return;
@@ -365,6 +376,7 @@ function castSkillInner(skId) {
         let dmg = Math.max(1, Math.floor(raw * mult));   // MP 佔比倍率（必定爆擊已含於 base.dmg）
         if (_t.race === '血盟') dmg *= 2;                                 // 對血盟敵人 x2
         _t.curHp -= dmg; _t.justHit = getWpnEle(player.eq.wpn, wpn); mobWake(_t);
+        if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(_t, dmg, (wpn && (wpn.isBow || wpn.ranged)) ? 'ranged' : 'melee', null);   // 🌑 v3.4.14 血壁空間：會心一擊＝技能直擊反射（玩家傭兵一致）
         logCombat(`<span class="font-bold" style="color:#f0abfc;text-shadow:0 0 8px #d946ef;">【會心一擊】</span>對 <span class="${getMobColor(_t.lv)}">${_t.n}</span> 造成 ${dmg} 點致命傷害！`, 'player-crit');
         let _i = mapState.mobs.findIndex(m => m && m.uid === _t.uid);
         if (_t.curHp <= 0) { if (_i !== -1) killMob(_i); } else renderMobs();
@@ -479,6 +491,7 @@ function castSkillInner(skId) {
                 dmg = Math.floor(dmg * weakExposeDmgMult(t));   // 🏅 鎖刃精通：每層弱點曝光最終傷害+10%
                 if (sk.hpCost && player._setDragonblood5) dmg = Math.max(1, Math.floor(dmg * 1.2));   // 🐉 龍血5/5：HP消耗技傷害+20%（屠宰者＝物理HP消耗技·與魔法路徑 js/07 一致）
                 t.curHp -= dmg; t.justHit = getWpnEle(player.eq.wpn, wpn); total += dmg; mobWake(t);
+                if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(t, dmg, 'melee', null);   // 🌑 v3.4.14 血壁空間：屠宰者每擊＝近距離技能直擊反射（玩家傭兵一致）
                 log.push(dmg + (res.heavy ? '(重)' : ''));
                 if (t.curHp > 0) wearHardSkin(t, player.eq.wpn ? player.eq.wpn.id : null, res.heavy, false, true, player.classicMode);
             }
@@ -495,7 +508,7 @@ function castSkillInner(skId) {
             player.mp -= cost; player.cds.atkSk = getAutoCastInterval();
             if (sk.hpCost) player.hp = Math.max(1, player.hp - effHpCost(sk));
             let base = 50 + Math.max(0, (player.lv || 1) - 30);
-            targets.forEach(m => { if (!m || m.curHp <= 0 || m._dead) return; let dmg = Math.max(1, Math.floor(base * fragileMult(m))); m.curHp -= dmg; m.justHit = 'magic'; m._spellHurt = true; mobWake(m); });   // 🎬 v3.0.14 _spellHurt：法術傷害→hurt 動畫(含頭目)
+            targets.forEach(m => { if (!m || m.curHp <= 0 || m._dead) return; let dmg = Math.max(1, Math.floor(base * fragileMult(m))); m.curHp -= dmg; m.justHit = 'magic'; m._spellHurt = true; mobWake(m); if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(m, dmg, 'magic', null); });   // 🎬 v3.0.14 _spellHurt：法術傷害→hurt 動畫(含頭目)；🌑 v3.3.33 血壁空間魔法反射
             logCombat(`施放 <span style="font-weight:700;color:#7dd3fc">${sk.n}</span>，咆哮震懾全場，對所有敵人造成約 ${base} 點固定傷害。`, 'skill');
             targets.forEach(m => { if (m && m.curHp <= 0 && !m._dead) { let i = mapState.mobs.findIndex(x => x && x.uid === m.uid); if (i !== -1) killMob(i); } });
             renderMobs();
@@ -558,6 +571,7 @@ function castSkillInner(skId) {
             }
             dmg = Math.max(1, Math.floor(dmg * fragileMult(t) * illuLvMult(player) * wpnEnFinalMult(player.eq.wpn) * elementCounterMult(sk.weaponDmg ? getWpnEle(player.eq.wpn, player.eq.wpn ? DB.items[player.eq.wpn.id] : null) : 'none', t.e)));   // 🔮 幻術士等級加成 ×(1+等級/50)；🔧 武器強化 +11~+20 最終倍率；⚔️ 屬性剋制(僅武器傷害技吃武器屬性)
             t.curHp -= dmg; t.justHit = sk.weaponDmg ? getWpnEle(player.eq.wpn, player.eq.wpn ? DB.items[player.eq.wpn.id] : null) : 'magic'; if (!sk.weaponDmg) t._spellHurt = true; mobWake(t);   // 🎬 v3.0.14 純魔法技→hurt(含頭目)
+            if (typeof reflectWallOnDamage === 'function' && t._reflectWall) { let _rwW = player.eq.wpn && DB.items[player.eq.wpn.id]; reflectWallOnDamage(t, dmg, sk.weaponDmg ? ((_rwW && (_rwW.isBow || _rwW.ranged)) ? 'ranged' : 'melee') : 'magic', null); }   // 🌑 v3.3.33 血壁空間：玩家技能傷害反射
             if (sk.mpDmgPct && t.st && t.st.mrhalf > 0) t.st.mrhalf = 0;   // 🔧 心靈破壞（魔法）：受一次魔法傷害後解除魔抗減半（與其他魔法路徑一致）
             logCombat(`施放 <span style="font-weight:700;color:#7dd3fc">${sk.n}</span>，對 <span class="${getMobColor(t.lv)}">${t.n}</span> 造成 ${dmg} 點傷害。`, 'skill');
             if (t.curHp > 0 && sk.status) applyMobStatus(t, sk.status, sk.n);
@@ -607,6 +621,7 @@ function castSkillInner(skId) {
                 if(!delayDone && t.curHp === t.hp && t.beh === '被動' && res.ranged) { t._delayTicks = 30; delayDone = true; }
                 t.curHp -= res.dmg;
                 t.justHit = getWpnEle(player.eq.wpn, wpn);
+                if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(t, res.dmg, res.ranged ? 'ranged' : 'melee', null);   // 🌑 v3.4.14 血壁空間：物理技能每擊反射（衝擊之暈/三重矢·玩家傭兵一致）
                 totalDmg += res.dmg;
                 let mark = (res.heavy && res.crit) ? '會心' : (res.crit ? '爆' : (res.heavy ? '重' : ''));
                 hitsLog.push(res.dmg + (mark ? '(' + mark + ')' : ''));
@@ -706,6 +721,7 @@ function castSkillInner(skId) {
                     _burstDmg += totalDmg;   // 🔧 魔爆累計
                     t.justHit = (sk.ele && sk.ele !== 'none') ? sk.ele : 'magic';
                     t._spellHurt = true;   // 🎬 v3.0.14 法術傷害→hurt 動畫(含頭目·renderMobs 頭目閘放行)
+                    if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(t, totalDmg, 'magic', null);   // 🌑 v3.4.14 血壁空間：傷害魔法技能（單體/全體）＝魔法反射（玩家傭兵一致）
                     let multiText = hitsLog.length > 1 ? `[${hitsLog.join(", ")}] (總和: ${totalDmg})` : `${totalDmg}`;
                     if (isCrit) multiText += " (爆擊!)";
                     totalDmgText.push(`對 <span class="${getMobColor(t.lv)}">${t.n}</span> 造成 <span class="${isCrit?'text-yellow-500 font-bold':'text-cyan-300'}">${multiText} 點傷害</span>`);

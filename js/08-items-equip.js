@@ -743,6 +743,19 @@ function equipItem(item) {
         returnEquipToInv('wpn');
         logSys(`裝備盾牌，已卸下雙手武器。`);
     }
+    // ⚔️ v3.4.21 副手位置互斥：戰士副手武器（迅猛雙斧 offwpn）與 盾牌／臂甲 共用副手位置，只能擇一裝備
+    if (slot === 'offwpn' && player.eq.shield) {   // 裝副手武器 → 卸下盾牌/臂甲
+        if (isEquipCursed('shield')) { logSys('<span class="text-red-400 font-bold">被詛咒的副手裝備無法卸下，無法持用副手武器！</span>'); return; }
+        let _sd = DB.items[player.eq.shield.id];
+        let _snm = (_sd && _sd.armguard) ? '臂甲' : '盾牌';
+        returnEquipToInv('shield');
+        logSys(`副手改持武器，已卸下${_snm}。`);
+    } else if (slot === 'shield' && player.eq.offwpn) {   // 裝盾牌/臂甲 → 卸下副手武器
+        if (isEquipCursed('offwpn')) { logSys('<span class="text-red-400 font-bold">被詛咒的副手武器無法卸下，無法裝備' + (d.armguard ? '臂甲' : '盾牌') + '！</span>'); return; }
+        let _on = DB.items[player.eq.offwpn.id];
+        returnEquipToInv('offwpn');
+        logSys(`副手改裝${d.armguard ? '臂甲' : '盾牌'}，已卸下副手武器${_on ? ' ' + _on.n : ''}。`);
+    }
 
     let invItem = player.inv.find(i => i.uid === item.uid);
     if (!invItem) return;
@@ -1192,10 +1205,12 @@ function _updateUIImpl() {
     document.getElementById('dt-mdmg').innerText = sign(player.d.meleeDmg + _ed);
     document.getElementById('dt-mhit').innerText = sign(player.d.meleeHit + _eh);
     document.getElementById('dt-mcrit-p').innerText = `${player.d.meleeCrit}%`;
+    { let _el = document.getElementById('dt-mcritdmg'); if (_el) _el.innerText = `${player.d.meleeCritDmg || 0}%`; }
     // 遠距離
     document.getElementById('dt-rdmg').innerText = sign(player.d.rangedDmg + _ed);
     document.getElementById('dt-rhit').innerText = sign(player.d.rangedHit + _eh);
     document.getElementById('dt-rcrit').innerText = `${player.d.rangedCrit}%`;
+    { let _el = document.getElementById('dt-rcritdmg'); if (_el) _el.innerText = `${player.d.rangedCritDmg || 0}%`; }
     // 額外（已折入近/遠距離，列固定隱藏）
     document.getElementById('dt-edmg').innerText = sign(_ed);
     document.getElementById('dt-ehit').innerText = sign(_eh);
@@ -1209,12 +1224,20 @@ function _updateUIImpl() {
     document.getElementById('dt-sp').innerText = sign(player.d.extraMp);
     document.getElementById('dt-mhit-mag').innerText = sign(player.d.magicHit);
     document.getElementById('dt-mcrit').innerText = `${player.d.magicCrit}%`;
+    { let _el = document.getElementById('dt-mgcritdmg'); if (_el) _el.innerText = `${player.d.magicCritDmg || 0}%`; }
     document.getElementById('dt-mpreduce').innerText = `${player.d.mpReduce}%`;
 	if(document.getElementById('dt-mpr')) document.getElementById('dt-mpr').innerText = formatBonus(player.d.mpR);
 	if(document.getElementById('dt-hpr')) document.getElementById('dt-hpr').innerText = formatBonus(player.d.hpR || 0);
     document.getElementById('dt-er').innerText = `${effResistPct(player.d.er)}%`;   // 🔧 顯示有效迴避率（>50 每+5才+1%）
     document.getElementById('dt-dr').innerText = player.d.dr;
     document.getElementById('dt-spd').innerText = `${player.d.aspd.toFixed(2)}s`;
+    { let _potionPct = (typeof getConPotionPct === 'function' ? getConPotionPct(player.d.con || 0) : 0);
+      try { _potionPct += (typeof dollFieldVal === 'function' ? dollFieldVal('potionBonus') : 0) + (player._miscPotionBonus || 0); } catch (e) {}
+      let _el = document.getElementById('dt-potion'); if (_el) _el.innerText = `${_potionPct}%`;
+      _el = document.getElementById('dt-movespeed'); if (_el) _el.innerText = `${100 + (player.d.moveSpeedPct || 0)}%`;
+      _el = document.getElementById('dt-mpkill'); if (_el) _el.innerText = (typeof getWisMpOnKill === 'function' ? getWisMpOnKill(player.d.wis || 0) : 0);
+      _el = document.getElementById('dt-mr'); if (_el) _el.innerText = player.d.mr || 0;
+      _el = document.getElementById('dt-resnone'); if (_el) _el.innerText = `${effResistPct(player.d.resNone || 0)}%`; }
     if(document.getElementById('dt-resfire')) {
         document.getElementById('dt-resfire').innerText  = `${effResistPct(player.d.resFire  || 0)}%`;   // 🔧 顯示有效減傷%（>50 每+5才+1%）
         document.getElementById('dt-reswater').innerText = `${effResistPct(player.d.resWater || 0)}%`;
@@ -1230,10 +1253,11 @@ function _updateUIImpl() {
         let _ptsLeft = _respecOn ? respecPtsLeft() : (player.bonus || 0);
         document.querySelectorAll('.alloc-plus').forEach(el => el.classList.toggle('hidden', !_editing));
         document.querySelectorAll('.alloc-minus').forEach(el => el.classList.toggle('hidden', !_respecOn));   // 只有蠟燭重置可退點
+        let _tabStats = document.getElementById('tab-stats'); if (_tabStats) _tabStats.classList.toggle('is-respec', _respecOn);
         let _bar = document.getElementById('alloc-edit-bar');
         if (_bar) {
-            _bar.classList.toggle('hidden', !_editing);
-            let _lbl = document.getElementById('alloc-bar-label'); if (_lbl) _lbl.textContent = (_respecOn ? '剩餘配點：' : '升級點數：') + _ptsLeft;
+            _bar.classList.toggle('hidden', !_respecOn);   // 配點框只在使用回憶蠟燭時顯示；一般升級點僅顯示屬性旁的＋按鈕
+            let _lbl = document.getElementById('alloc-bar-label'); if (_lbl) { _lbl.textContent = _ptsLeft; _lbl.title = `剩餘配點：${_ptsLeft}`; }
             let _hint = document.getElementById('alloc-bar-hint'); if (_hint) _hint.classList.toggle('hidden', !_respecOn);
             let _cf = document.getElementById('alloc-confirm-btn'); if (_cf) _cf.classList.toggle('hidden', !_respecOn);
             let _cc = document.getElementById('alloc-cancel-btn'); if (_cc) _cc.classList.toggle('hidden', !_respecOn);

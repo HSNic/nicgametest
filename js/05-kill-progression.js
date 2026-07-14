@@ -248,6 +248,15 @@ function killMob(idx) {
     // 🐾 v3.2.17 誘捕捕捉：身上有對應誘捕狀態且擊殺對應動物 → 寵物保管獲得基本等級寵物並失去該狀態
     //   （舊「肉→taming→項圈」與「屬性怪掉舊進化果實」已隨項圈系統移除；新進化果實改由亞丁諾斯製作）
     if (typeof petCaptureOnKill === 'function') petCaptureOnKill(mob);
+    // 🗡️ 吉爾塔斯之劍：任意擊殺後獲得額外傷害+10，持續10秒（刷新制·持劍者各自計時；傷害端＝js/03 getPhysicalDmg／js/06 傭兵普攻）
+    if (player.eq && player.eq.wpn && player.eq.wpn.id === 'wpn_giltas_sword') player._giltasFuryUntil = state.ticks + 100;
+    if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && !a._downed && a.eq && a.eq.wpn && a.eq.wpn.id === 'wpn_giltas_sword') a._giltasFuryUntil = state.ticks + 100; });
+    // 🪄 吉爾塔斯魔杖：任意擊殺後額外魔法點數+10，持續10秒；再次擊殺刷新時間。
+    let _giltasWandTriggered = [];
+    if (player.eq && player.eq.wpn && player.eq.wpn.id === 'wpn_giltas_wand') { player._giltasWandFuryUntil = state.ticks + 100; _giltasWandTriggered.push(player); }
+    if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && !a._downed && a.eq && a.eq.wpn && a.eq.wpn.id === 'wpn_giltas_wand') { a._giltasWandFuryUntil = state.ticks + 100; _giltasWandTriggered.push(a); } });
+    if (_giltasWandTriggered.includes(player)) calcStats();
+    _giltasWandTriggered.forEach(a => { if (a !== player && typeof _allyLevelRecompute === 'function') _allyLevelRecompute(a); });
 
     // === 🔧 卡瑞：擊殺後扣除四樣任務道具各一個 ===
     if (mob.n === '卡瑞') {
@@ -881,6 +890,24 @@ function checkLvUp() {
     }
 }
 
+// 🌑 v3.4.16 吉爾塔斯 HP 保留（統一收口·用戶：戰鬥中「離開」也適用）：離開 受詛咒的黑暗妖精聖地 的所有路徑
+//    （回村/戰敗復活/切換地圖→changeMap js/11、瞬移→doTeleport js/02）皆呼叫本函式（內自帶地圖 gate·各路徑一次觸發不重複）。
+//    吉爾塔斯存活「且已受傷」＋身上有 完整的召喚球 → 消耗 1 顆、記錄 player.giltasKeep={hp}（js/03 spawnMob 還原·一次性）＋系統提示；
+//    沒有球 → 清除殘留紀錄（重進＝全新吉爾塔斯）；滿血未傷 → 不消耗（保留滿血＝重生等效·省球）。
+function giltasKeepOnLeave() {
+    if (!mapState || mapState.current !== 'cursed_dark_elf_sanctuary') return;
+    let _gb = mapState.mobs && mapState.mobs.find(m => m && m.n === '吉爾塔斯' && m.curHp > 0);
+    let _oi = player.inv.findIndex(i => i.id === 'item_summonorb_full' && (i.cnt || 1) >= 1);
+    if (_gb && _gb.curHp < _gb.hp && _oi >= 0) {
+        let _ob = player.inv[_oi];
+        if ((_ob.cnt || 1) > 1) _ob.cnt -= 1; else player.inv.splice(_oi, 1);
+        player.giltasKeep = { hp: Math.max(1, Math.floor(_gb.curHp)) };
+        logSys(`<span class="text-cyan-300">完整的召喚球碎裂，將吉爾塔斯的傷勢（剩餘 HP ${player.giltasKeep.hp.toLocaleString()}）封印在原地——直到你再次進入前，牠不會恢復。</span>`);
+        try { renderTabs(true); } catch (e) {}
+    } else if (player.giltasKeep) {
+        player.giltasKeep = null;   // 沒有完整的召喚球（或吉爾塔斯滿血）：清除殘留紀錄（重新進入＝全新吉爾塔斯）
+    }
+}
 function revive() {
     player.dead = false;
     player.statuses = { stun: 0, freeze: 0, stone: 0, poison: 0, poisonDmg: 0, poisonTick: 0, burn: 0, burnDmg: 0, burnTick: 0, scald: 0, scaldDmg: 0, scaldTick: 0, bleed: 0, bleedDmg: 0, bleedTick: 0, sleep: 0, silence: 0, paralyze: 0, magicseal: 0 };  // 復活清除所有異常(含中毒/灼燒/燙傷)，避免復活後立即被持續傷害再次擊殺
@@ -897,6 +924,7 @@ function revive() {
     }
     if (state.riftRun) riftEndRun();   // 🌀 裂痕內死亡：結算停留時間並產生待領獎勵
     if (state.oblivion) { state.oblivion = null; state._oblivionAdvance = false; }   // 🏝️ 旅程中死亡：回村並結束遺忘之島旅程
+    // 🌑 v3.4.16 吉爾塔斯 HP 保留：改統一收口 giltasKeepOnLeave()——本函式尾端 changeMap(true) 會在切換地圖前觸發（回村/瞬移/切圖亦同一路徑），此處不再 inline 處理（避免雙重消耗）。
     // 👇 正確的新版起點邏輯
     let startMap = 'town_silver_knight';
     if (player.cls === 'mage') startMap = 'town_talking';
