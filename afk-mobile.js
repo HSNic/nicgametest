@@ -1081,7 +1081,14 @@
       // 上限還是會超出畫面;量出來之前先給 100vh 保底(容器還沒建立/量測時,行為等同原作,不會
       // 更差)。
       'body.m-mobile #tab-content-panel.equipment-panel-host{height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;min-height:min(var(--equipment-panel-height),var(--afk-eq-max-h,100vh)) !important;}',
-      'body.m-mobile .equipment-window.equipment-window-embedded{overflow-y:auto !important;-webkit-overflow-scrolling:touch;}',
+      'body.m-mobile .equipment-window.equipment-window-embedded{overflow-y:auto !important;-webkit-overflow-scrolling:touch;pointer-events:auto !important;}',
+      // 2026-07-14 使用者實測「完全滑不動」(不是滑不到頂,連整個手指滑動都毫無反應):追出真正根因——
+      // #equipment-window 本身(css/floating-ui.css 的 .equipment-window)桌機版是 pointer-events:none
+      // (它在桌機只是拿來置中用的透明外殼,真正可互動的是裡面的 .equipment-window-frame)。我們手機版
+      // 把這個外殼直接改成 overflow-y:auto 想讓它捲動,但一個 pointer-events:none 的元素不會被瀏覽器
+      // 判定成「觸控滑動手勢」的目標容器(滑鼠滾輪不受此限,這也是為何滾輪測得到、手指測不到的原因)。
+      // 解法:手機內嵌模式下這個外殼不再是「純定位透明殼」,而是真正的可視捲動容器,所以要讓它恢復接受
+      // pointer 事件(上面那行加 pointer-events:auto !important)。
       // 2026-07-14 使用者再回報:開了上面的滑動後,能滑到最下方,但滑不到最上方(一開始就卡在
       // 角色圖片中間)。根因:css/floating-ui.css 的 .equipment-window-frame 是用
       // left:50%;top:50%;transform:translate(-50%,-50%) 「上下置中」貼在容器裡的——當畫框本身的
@@ -1091,6 +1098,14 @@
       // 解法:改成「貼齊容器頂端」(top:0,只保留水平置中),畫框就從容器的 y=0 開始往下畫,上半部
       // 不再跑到負座標,直接看得到;下半部超出的部分交給上面已經開的滑動捲到。
       'body.m-mobile .equipment-window-embedded .equipment-window-frame{top:0 !important;transform:translateX(-50%) !important;}',
+      // 2026-07-14 使用者再回報:上面兩條修完,手機仍完全滑不動(不是滑不到頂,是整個手指滑動完全沒反應;
+      // 滑鼠滾輪測是通的,只有「手指拖曳」不通)。根因:css/floating-ui.css 的 .equipment-window-frame
+      // 本身被原作者設成 touch-action:none——猜測是為了配合視窗上方 .equipment-window-drag(桌機用滑鼠拖曳
+      // 整個視窗移動位置的把手)不要跟捲動手勢打架,但這個 touch-action:none 蓋住了整個畫框範圍(不只拖曳把手
+      // 那一小條),連底下裝備清單本該能滑動的區域,手指觸控時也完全不被判定成「捲動手勢」。
+      // 解法:手機內嵌模式不需要「拖整個視窗移動位置」這個桌機專屬功能,直接把畫框整體的觸控手勢改回「允許
+      // 上下滑動」(pan-y),不動 css/floating-ui.css 本體、只在手機才生效,桌機的拖曳視窗功能不受影響。
+      'body.m-mobile .equipment-window-embedded .equipment-window-frame{touch-action:pan-y !important;}',
       'body.m-mobile #automation-panel{flex:1 1 auto !important;}',   /* 設定欄:原生 flex:none 害填不滿 → 還原撐滿 */
       'body.m-mobile #automation-panel > div:last-child{max-height:none !important;}',   /* 解除原生 220px 內捲上限,讓內容隨欄高自然捲動 */
 

@@ -23,8 +23,8 @@
  *
  * 圖桶失效走 reconcileImages 逐張對帳(見上);不再背景預抓——圖片一律 on-demand 用到才抓、不主動下載整包。
  * ========================================================================== */
-const CODE_VERSION = 'code-eba8ccf45638';   // ← scripts/stamp-sw-version.mjs 自動覆寫,勿手改
-const BUILD_ID     = '0714-0149'; // ← stamp 在 CODE_VERSION 變動時一起更新成台灣時間 MMDD-HHMM(僅供畫面辨識版本)
+const CODE_VERSION = 'code-c2c2fcfb360d';   // ← scripts/stamp-sw-version.mjs 自動覆寫,勿手改
+const BUILD_ID     = '0714-1608'; // ← stamp 在 CODE_VERSION 變動時一起更新成台灣時間 MMDD-HHMM(僅供畫面辨識版本)
 const IMG_VERSION  = 'img-v3';    // 固定桶名,不再 bump(失效改走逐張對帳,見 reconcileImages)
 const CODE_CACHE = CODE_VERSION;
 const IMG_CACHE  = IMG_VERSION;
@@ -63,17 +63,28 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d === 'skip-waiting' || d.type === 'skip-waiting') { self.skipWaiting(); return; }
+  // ⚠️ 2026-07-14:兩段都補 .catch——任何 Cache API 例外(含本檔修過的 AbortError)一律吞掉+警告,
+  //   絕不能讓 reconcile 失敗變成 Console 的「Uncaught (in promise)」。
   if (d.type === 'reconcile-images' && Array.isArray(d.manifest)) {
-    e.waitUntil(reconcileImages(d.manifest, e.source));
+    e.waitUntil(reconcileImages(d.manifest, e.source).catch((err) => console.warn('[sw] reconcileImages 失敗:', err)));
   }
   if (d.type === 'reconcile-anim' && Array.isArray(d.folders)) {
-    e.waitUntil(reconcileAnim(d.folders, e.source));
+    e.waitUntil(reconcileAnim(d.folders, e.source).catch((err) => console.warn('[sw] reconcileAnim 失敗:', err)));
   }
 });
 
-// manifest 每筆可能是 [path, sha](新格式)或純 path 字串(舊格式/降級)→ 統一成 {path, sha}。
+// manifest 每筆可能是 {path,sha,...}(scripts/sync-*.mjs 實際產生的格式)、[path,sha](舊格式殘留)、
+//   或純 path 字串(更早期/降級)→ 統一成 {path, sha}。
+//   ⚠️ 2026-07-14 修正:原本只認 [path,sha] 陣列格式,但實際 assets-manifest.json/anim-manifest.json
+//   一直是 {path,sha,size} 物件格式 → 每筆都落到「純字串」分支、en.path 變成整個物件、en.sha 永遠 null,
+//   導致 reconcileImages 的 `if (!en.sha) continue` 每筆必中,逐張對帳形同虛設(圖片永遠不會因作者換圖而被清除,
+//   只是悄悄失效、不會出錯,故一直沒被發現)。
 function manifestEntries(manifest) {
-  return (manifest || []).map((e) => (Array.isArray(e) ? { path: e[0], sha: e[1] } : { path: e, sha: null }));
+  return (manifest || []).map((e) => {
+    if (e && typeof e === 'object' && !Array.isArray(e) && 'path' in e) return { path: e.path, sha: e.sha || null };
+    if (Array.isArray(e)) return { path: e[0], sha: e[1] };
+    return { path: e, sha: null };
+  });
 }
 
 // git blob sha(跟 GitHub 樹狀 API、sync-upstream 同演算法):sha1("blob "+len+"\0"+bytes)。
@@ -141,6 +152,61 @@ async function writeAnimHashes(cache, map) {
   await cache.put(ANIM_HASH_KEY, new Response(JSON.stringify(map), { headers: { 'content-type': 'application/json' } }));
 }
 
+// anim-manifest.json 每筆是 {dir,name,files,size,sha}(scripts/sync-*.mjs 產生的實際格式,不是陣列 tuple)。
+function animEntries(folders) {
+  return (folders || []).map((e) => (e && typeof e === 'object' ? { folder: e.dir, sha: e.sha } : null)).filter(Boolean);
+}
+
+// 每隻怪自己的小索引(只記這一怪抓過哪些 URL,不是全桶):鍵是 '/__afk-anim-idx__/<資料夾 encode>'。
+//   ⚠️ 2026-07-14 修正根因:原本每次 reconcileAnim 都會對「整個圖桶」跑一次 cache.keys() 分組,
+//   但圖桶累積到數萬張圖(assets/anim 一款就近 9 萬張)後,cache.keys() 本身會直接拋出
+//   `AbortError: Failed to execute 'keys' on 'Cache': operation too large`(Console 回報的原始錯誤)。
+//   改成「每隻怪自己記自己抓過哪些檔案」,清除時只讀寫這一隻怪的小索引,不再掃全桶。
+function animIndexKey(folder) { return '/__afk-anim-idx__/' + encodeURIComponent(folder); }
+async function readFolderIndex(cache, folder) {
+  try { const r = await cache.match(animIndexKey(folder)); if (r) return await r.json(); } catch (err) {}
+  return null;   // null = 沒有索引(從沒抓過,或是這次修復上線前留下的舊快取,交給下面的一次性遷移處理)
+}
+async function writeFolderIndex(cache, folder, list) {
+  try { await cache.put(animIndexKey(folder), new Response(JSON.stringify(list), { headers: { 'content-type': 'application/json' } })); } catch (err) {}
+}
+// fetch 階段每抓到一張動畫幀就呼叫這個,把它記進「自己那隻怪」的小索引(見下方 fetch handler)。
+async function indexAnimFrame(req) {
+  let decoded; try { decoded = decodeURIComponent(new URL(req.url).pathname); } catch (err) { return; }
+  const m = decoded.match(/\/(assets\/anim\/[^/]+)\//);
+  if (!m) return;
+  const cache = await caches.open(IMG_CACHE);
+  const list = (await readFolderIndex(cache, m[1])) || [];
+  if (!list.includes(req.url)) { list.push(req.url); await writeFolderIndex(cache, m[1], list); }
+}
+
+let _legacyScanFailed = false;   // 本次 SW 生命週期內,「一次性遷移掃描」若失敗過就不再重試,避免反覆觸發同一個大量錯誤
+// 清掉某隻怪的快取幀:優先用這隻怪自己的小索引(便宜,不掃全桶);
+//   完全沒有索引(這次修復上線前就快取的舊資料,還沒建過索引)→ 退回「全桶掃描一次」做遷移,
+//   且整段包 try/catch——真的因為快取量太大掃不動,就放棄這次清除(不 crash),
+//   之後只要該怪的幀被重新抓過一次,索引就會建立,下次即可正常靠小索引清除。
+async function evictFolder(cache, folder) {
+  let list = await readFolderIndex(cache, folder);
+  if (list == null && !_legacyScanFailed) {
+    try {
+      list = [];
+      for (const req of await cache.keys()) {
+        let decoded; try { decoded = decodeURIComponent(new URL(req.url).pathname); } catch (err) { continue; }
+        if (decoded.indexOf('/' + folder + '/') >= 0) list.push(req.url);
+      }
+    } catch (err) {
+      _legacyScanFailed = true;
+      console.warn('[sw] reconcileAnim 舊快取遷移掃描失敗(多半是快取量過大),本次略過,之後該怪重新被抓到會自動建立索引:', err);
+      list = null;
+    }
+  }
+  if (!list) return 0;
+  let n = 0;
+  for (const p of list) { try { if (await cache.delete(p)) n++; } catch (err) {} }
+  try { await cache.delete(animIndexKey(folder)); } catch (err) {}
+  return n;
+}
+
 // 怪物動畫幀逐「怪」對帳:anim/ 幀太多不進逐張 manifest(見檔頭),改用 anim-manifest.json——
 //   每個 assets/anim/<怪>/ 資料夾一個「合併 sha」(幀有增/刪/換該 sha 就變)。SW 記下「自己快取的某怪是哪個 sha」,
 //   比對後只把「sha 對不上的那一隻怪」整包快取清掉(下次看到該怪時 on-demand 抓新版),不碰其他怪、不重載整包 62MB。
@@ -149,34 +215,18 @@ async function writeAnimHashes(cache, map) {
 //   ▸ 沒快取過的怪:只記雜湊、不動作,日後該怪被換才會觸發清除。
 //   ▸ 作者移除的怪(不在 manifest):連快取帶記錄一起清掉。
 async function reconcileAnim(folders, client) {
-  const wanted = new Map(folders.filter((e) => Array.isArray(e) && e[1]).map((e) => [e[0], e[1]]));
+  const wanted = new Map(animEntries(folders).map((e) => [e.folder, e.sha]));
   const cache = await caches.open(IMG_CACHE);
   const recorded = await readAnimHashes(cache);
-
-  // 走訪一次圖桶,把已快取的 anim 幀依「怪資料夾」分組,避免每個資料夾各掃一次全桶。
-  const byFolder = new Map();
-  for (const req of await cache.keys()) {
-    let path; try { path = decodeURIComponent(new URL(req.url).pathname); } catch (err) { continue; }  // 中文資料夾名在 URL 是 %XX,要 decode 才對得上 manifest 的原始名
-    const m = path.match(/\/(assets\/anim\/[^/]+)\//);
-    if (!m) continue;
-    if (!byFolder.has(m[1])) byFolder.set(m[1], []);
-    byFolder.get(m[1]).push(req);
-  }
-  async function evictFolder(folder) {
-    const reqs = byFolder.get(folder);
-    if (!reqs) return 0;
-    for (const r of reqs) await cache.delete(r);
-    return reqs.length;
-  }
 
   let evicted = 0;
   for (const [folder, sha] of wanted) {
     if (recorded[folder] === sha) continue;   // 記錄相符 → 該怪是最新,跳過
-    evicted += await evictFolder(folder);     // 換過 / 首次未記過且有快取 → 清該怪快取(下次 on-demand 抓新)
+    evicted += await evictFolder(cache, folder);   // 換過 / 首次未記過且有快取 → 清該怪快取(下次 on-demand 抓新)
     recorded[folder] = sha;                    // 記成最新(沒快取的怪也記,日後才偵測得到變動)
   }
   for (const folder of Object.keys(recorded)) {  // 作者移除的怪 → 清快取與記錄
-    if (!wanted.has(folder)) { evicted += await evictFolder(folder); delete recorded[folder]; }
+    if (!wanted.has(folder)) { evicted += await evictFolder(cache, folder); delete recorded[folder]; }
   }
   await writeAnimHashes(cache, recorded);
   if (client) client.postMessage({ type: 'reconcile-anim-done', evicted });
@@ -239,6 +289,8 @@ self.addEventListener('fetch', (e) => {
   // 圖桶:同源 assets 圖
   if (sameOrigin && url.pathname.includes('/assets/')) {
     e.respondWith(cacheFirst(req, IMG_CACHE));
+    // 動畫幀額外記進「這隻怪自己的小索引」(不阻塞回應),供 reconcileAnim 之後清除用,見 indexAnimFrame 說明。
+    if (url.pathname.includes('/assets/anim/')) e.waitUntil(indexAnimFrame(req).catch(() => {}));
     return;
   }
 

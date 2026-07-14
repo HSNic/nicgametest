@@ -411,6 +411,7 @@
 
   // ----- 離線補跑(時間切片) ----------------------------------------------
   var catchingUp = false;
+  var _profBuying = false;   // ⏱️ profiler:true 時代表目前的 gainItem 是 fastRefill 自動補貨(不算掉落),見下方 gainItem 包裝
   var killTally = null;   // 📜 非 null 時(只在補跑中)累計各怪擊殺數 {怪名:次數};線上遊玩為 null → killMob 包裝零開銷
   var gainTally = null;   // ⚡ 非 null 時(只在補跑中)累計各物品獲得數 {物品id:數量};供快速結算把「淨變化」還原成「真實消耗」(消耗=期初+獲得−期末)
   var _forceNoFast = false;   // 🧪 debug:forceCatchup(mins, true) 可強制全模擬(A/B 比對快速結算保真度用)
@@ -420,6 +421,17 @@
     if (window.__afk) window.__afk.busy = true;   // 🏦 對外曝光補跑中旗標(供 afk-batch-settle.js 批次結算多存檔位時輪詢,知道何時可換下一個存檔位)
     killTally = {};   // 📜 本次補跑的擊殺計數歸零
     gainTally = {};   // ⚡ 本次補跑的獲得計數歸零
+    var everFastMode = false;      // ⏱️ profiler:本次補跑是否曾經進入過快速結算(evalSample 內設true;fastMode 變數只反映"當下"狀態,不夠用)
+    var _profHitsPerKill = 0, _profDps = null;   // ⏱️ profiler:平均拍數/DPS,finish() 時一併回報
+    var _profRealSimTicks = 0;   // ⏱️ profiler:真正呼叫過 tick() 的拍數(全模擬+BOSS真打),≠ done——done 連快速結算「公式估算」的拍數都算進去,
+    //   但 _dps 這個原作全域統計只在 tick() 內才會累加傷害,快速結算的殺完全不會計入 _dps。
+    //   DPS 分母一定要用「_dps 真的有累積到的那段秒數」,不能用 done(全段時間),不然快速結算佔比越高、算出來的 DPS 就越被稀釋失真。
+    try {
+      if (window.AFKOfflineProfiler) {
+        var _profOfflineSecs = (timing && timing.closeTs) ? (Date.now() - timing.closeTs) / 1000 : (totalTicks * TICK_MS / 1000);
+        window.AFKOfflineProfiler.begin({ offlineSeconds: _profOfflineSecs });
+      }
+    } catch (e) {}
 
     // 🎯 魔物追蹤:until 是牆鐘時間,離線中過期的話補跑時 spawnMob 的「until > Date.now()」整段不成立
     //   → 明明關遊戲時追蹤還有效,離線收益卻完全吃不到追蹤。使用者決定(2026-07-07):離線當下追蹤仍有效
@@ -539,7 +551,7 @@
         var used = (sampleCnt0[k] || 0) + ((gainTally[k] || 0) - (sampleGain0[k] || 0)) - (cnt1[k] || 0);
         if (used > 0) consumePerTick[k] = used / winTicks;   // 每「拍」速率:消耗跟時間走(BOSS 一場耗時長、耗得多,按殺算會低估)
       }
-      fastMode = true;
+      fastMode = true; everFastMode = true;
       console.info('[AFK] ⚡ 快速結算啟動:平均 ' + ticksPerKill.toFixed(1) + ' 拍/殺,每拍消耗 ' + JSON.stringify(consumePerTick));
     }
     // 🍶 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:分析發現快速結算幾乎都被消耗品
@@ -560,6 +572,7 @@
       return (typeof window.__afkAutobuyPotionThreshold === 'function') ? window.__afkAutobuyPotionThreshold() : 0;
     }
     function fastRefill(id) {   // 斷貨(或低於提前補貨門檻) → 比照原作 autoActions / 外掛 autobuy 的自動購買;補不了 → false(退回全模擬)
+      _profBuying = true;   // ⏱️ profiler:這整段的 gainItem 都是「自動補貨」,不算掉落(finally 還原,異常也不卡死旗標)
       try {
         var on = function (cid) { var el = document.getElementById(cid); return !!(el && el.checked); };
         var potSel = document.getElementById('set-pot');
@@ -578,7 +591,7 @@
           window.__afkAutobuyCheck();
           for (var i = 0; i < player.inv.length; i++) if (player.inv[i] && player.inv[i].id === id) return true;
         }
-      } catch (e) {}
+      } catch (e) {} finally { _profBuying = false; }
       return false;
     }
     function fastConsumeOne(id) {   // 消耗 1 個;箭矢直接走原作 consumeArrow(自動換裝/自動買箭/沙哈之箭不扣,行為 1:1)
@@ -709,7 +722,10 @@
                (performance.now() - t0) < (_holdStart ? HOLD_SLICE_MS : sliceMs)) {   // 按住放棄時切片縮小,讓 1.5 秒一到就立刻停
           if (fastMode) {
             if (fastBossUid != null) {   // 🐲 BOSS 對打中:逐拍真模擬(死亡由外層撞死即停接手;打不動就照實耗完時間)
+              if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('boss');
               tick();
+              if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('boss');
+              _profRealSimTicks++;
               settleDeadMobs();
               done++;
               var _hpB = (player.mhp > 0) ? (player.hp / player.mhp) : 1;
@@ -731,7 +747,10 @@
               continue;
             }
             // ⚡ 快速段:一次一殺(真實獎勵管線);失敗(斷貨/出怪異常)→ 退回全模擬跑完剩餘
-            if (!fastKillOnce()) { fastMode = false; fastOff = true; console.info('[AFK] ⚡ 快速結算退回全模擬(消耗品斷貨或步驟異常),剩餘時間照真模擬。'); continue; }
+            if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('fastMode');
+            var _profFastOk = fastKillOnce();
+            if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('fastMode');
+            if (!_profFastOk) { fastMode = false; fastOff = true; console.info('[AFK] ⚡ 快速結算退回全模擬(消耗品斷貨或步驟異常),剩餘時間照真模擬。'); continue; }
             if (player.lv !== lastLv) {   // 升級 → 戰力變了 → 重新取樣殺速
               lastLv = player.lv;
               fastMode = false; sampleGrew = false; sampleEnd = done + FAST_RESAMPLE_TICKS;
@@ -739,7 +758,10 @@
             }
             continue;
           }
+          if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('fullSim');
           tick();
+          if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('fullSim');
+          _profRealSimTicks++;
           settleDeadMobs();
           done++;
           if (fastEligible && !fastOff) {   // 取樣段:記錄最低血量,窗滿就評估要不要切快速
@@ -767,11 +789,23 @@
         if (_holdStart && (performance.now() - _holdStart) >= HOLD_MS) _abortCatchup = true;
       }
     } catch (e) {
+      try { if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.addError(e); } catch (e2) {}
       console.error('[AFK] 離線補跑發生例外，已中止:', e);
     } finally {
       killTicker();   // 補跑結束(完成/死亡/例外)→ 關掉背景節拍器 Worker,不殘留
       settleDeadMobs();
     }
+
+    // ⏱️ profiler:DPS 要在這裡(戰鬥迴圈剛結束、還沒呼叫任何 gotoMap/enterXxx 之前)就把 _dps 讀走存起來——
+    //   下面「結算後落點」的 gotoMap()/enterPrideFloor() 等會呼叫原作 changeMap()→auditReset()→_dpsReset(),
+    //   把 _dps 歸零;若在那之後才讀,不管本次補跑打了多少傷害,讀到的永遠是 0(已實測踩過這個坑)。
+    var _profDmgSnap = 0;
+    try {
+      if (window.AFKOfflineProfiler && typeof _dps !== 'undefined') {
+        _profDmgSnap = (_dps.player || 0) + (_dps.summon || 0) + (_dps.pet || 0);
+        for (var _ak0 in (_dps.allies || {})) _profDmgSnap += (_dps.allies[_ak0].dmg || 0);
+      }
+    } catch (e) {}
 
     var after = snapshot();
     var oblEndMap = isObl ? (mapState && mapState.current) : null;   // 落點前先記下旅程實際結束地圖(死亡會被改成村莊,先存起來給摘要用)
@@ -888,10 +922,42 @@
         });
       }
     } catch (e) { console.warn('[AFK] 寫離線紀錄失敗:', e); }
+
+    // ⏱️ profiler:Exp/Gold/平均拍數/DPS 一律算(不受上面「有無 timing」限制,forceCatchup 除錯也能看到數字)
+    try {
+      if (window.AFKOfflineProfiler) {
+        var _profExp, _profGold;
+        if (climbSegs && climbSegs.length) {
+          _profExp = 0; _profGold = 0;
+          climbSegs.forEach(function (s) { _profExp += s.exp || 0; _profGold += s.gold || 0; });
+        } else {
+          _profExp = expTotal(after.lv, after.exp) - expTotal(before.lv, before.exp); if (_profExp < 0) _profExp = 0;
+          _profGold = (after.gold || 0) - (before.gold || 0);
+        }
+        window.AFKOfflineProfiler.addReward('exp', _profExp);
+        window.AFKOfflineProfiler.addReward('gold', _profGold);
+        window.AFKOfflineProfiler.mark('fastModeUsed', everFastMode);
+        window.AFKOfflineProfiler.mark('fallbackToFullSimulation', fastOff);
+        var _profTotalKills = tallySum(killTally);
+        _profHitsPerKill = _profTotalKills > 0 ? (done / _profTotalKills) : 0;
+        // DPS:重用原作既有的 _dps 統計(本圖累積傷害,已在戰鬥迴圈剛結束時存進 _profDmgSnap,見上方說明);
+        //   攀登/遺忘之島途中會換圖重置 _dps,數據不可信 → 留 N/A。
+        // ⚠️ 分母一定要用 _profRealSimTicks(真正呼叫過 tick() 的拍數),不能用 done(含快速結算公式估算的拍數)——
+        //   _dps 只有 tick() 內才會累加,快速結算的殺完全不計入,用 done 當分母會把 DPS 稀釋到接近 0(已實測踩過)。
+        if (!isClimb && !isObl && _profRealSimTicks > 0) {
+          var _profSecs = _profRealSimTicks * TICK_MS / 1000;
+          if (_profSecs > 0) _profDps = _profDmgSnap / _profSecs;
+        }
+      }
+    } catch (e) {}
+
     killTally = null;   // 📜 補跑結束,回到「線上 killMob 不計數」狀態
     gainTally = null;   // ⚡ 同上,線上 gainItem 不計數
+    if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('ui');
     try { if (typeof updateUI === 'function') updateUI(); } catch (e) {}
     try { if (typeof renderTabs === 'function') renderTabs(true); } catch (e) {}
+    if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('ui');
+    try { if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.finish({ hitsPerKill: _profHitsPerKill, dps: _profDps }); } catch (e) {}
     removeOverlay();
     // 手機:離線結算摘要寫在系統日誌,自動打開日誌浮動面板(切到系統)讓玩家一進來就看到
     try {
@@ -1004,11 +1070,18 @@
 
   // 📜 包住 killMob:只在離線補跑期間(killTally 非 null)依怪名累計擊殺數,供離線歷史紀錄的「擊殺」欄。
   //   線上遊玩 killTally=null → 只多一次 if 判斷、零累計開銷。比照原作 killMob 的冪等(已死的怪不重複計)。
+  //   ⏱️ 順便供 profiler 統計「怪物數/Boss數」(依 m.boss 分流,同一次 if 判斷內不額外開銷)。
   if (typeof window.killMob === 'function') {
     var _killMob = window.killMob;
     window.killMob = function (idx) {
       if (killTally) {
-        try { var m = mapState.mobs[idx]; if (m && !m._dead && m.n) killTally[m.n] = (killTally[m.n] || 0) + 1; } catch (e) {}
+        try {
+          var m = mapState.mobs[idx];
+          if (m && !m._dead && m.n) {
+            killTally[m.n] = (killTally[m.n] || 0) + 1;
+            if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.increment(m.boss ? 'bossKills' : 'monsterKills', 1);
+          }
+        } catch (e) {}
       }
       return _killMob.apply(this, arguments);
     };
@@ -1016,11 +1089,46 @@
 
   // ⚡ 包住 gainItem:只在離線補跑期間(gainTally 非 null)累計各物品「獲得數量」,供混合快速結算
   //   把取樣窗的「庫存淨變化」還原成「真實消耗」(消耗 = 期初 + 期間獲得 − 期末)。線上 gainTally=null → 零開銷。
+  //   ⏱️ 順便供 profiler 統計「Drop」:_profBuying 為 true 時(fastRefill 自動補貨呼叫的 gainItem)不計入,
+  //   避免把「快速結算自動買藥水/卷軸」誤算成掉落件數(定義見 afk-offline-profiler.js)。
   if (typeof window.gainItem === 'function') {
     var _gainItem = window.gainItem;
     window.gainItem = function (id, cnt) {
       if (gainTally && id) { try { gainTally[id] = (gainTally[id] || 0) + (cnt == null ? 1 : cnt); } catch (e) {} }
+      if (catchingUp && !_profBuying && window.AFKOfflineProfiler) {
+        try { window.AFKOfflineProfiler.increment('dropCount', cnt == null ? 1 : cnt); } catch (e) {}
+      }
       return _gainItem.apply(this, arguments);
+    };
+  }
+
+  // ⏱️ 包住 settleDeadMobs:只在離線補跑期間計時,供 profiler 的「Loot 花費」(掉落/經驗/升級/收集冊等結算成本)。
+  if (typeof window.settleDeadMobs === 'function') {
+    var _settleDeadMobs = window.settleDeadMobs;
+    window.settleDeadMobs = function () {
+      if (catchingUp && window.AFKOfflineProfiler) {
+        window.AFKOfflineProfiler.startSection('loot');
+        try { return _settleDeadMobs.apply(this, arguments); }
+        finally { window.AFKOfflineProfiler.endSection('loot'); }
+      }
+      return _settleDeadMobs.apply(this, arguments);
+    };
+  }
+
+  // ⏱️ 包住 castSkill:只在離線補跑期間計數,供 profiler 的「Skill/Buff」統計。
+  //   Skill = 每次實際呼叫 castSkill(不論攻擊/治癒);Buff = 該技能定義有 dur(持續時間)欄位 → 視為buff類施放/刷新
+  //   (定義寫在這裡,供日後回頭確認統計口徑)。
+  if (typeof window.castSkill === 'function') {
+    var _castSkill = window.castSkill;
+    window.castSkill = function (skId) {
+      if (catchingUp && window.AFKOfflineProfiler) {
+        try {
+          window.AFKOfflineProfiler.increment('skillCount', 1);
+          var _sd = (typeof DB !== 'undefined' && DB.skills) ? DB.skills[skId] : null;
+          if (_sd && _sd.dur) window.AFKOfflineProfiler.increment('buffCount', 1);
+        } catch (e) {}
+      }
+      return _castSkill.apply(this, arguments);
     };
   }
 
