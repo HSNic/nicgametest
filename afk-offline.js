@@ -73,8 +73,14 @@
   // 遺忘之島旅程:原作 saveGame 不存 state.oblivion(且 loadGame 一律回村),同攀登由外掛自己記一份,
   //   登入後還原並接回島上續掛。島/途中地圖(oblivion_island/oblivion_travel)非選單地圖,走 enterOblivionMap 進場(不能用 gotoMap)。
   function readObl()    { try { var s = localStorage.getItem(oblKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  // 蓋時間戳,順手記下「即時所在地圖」(changeMap 不會存檔,光看存檔 blob 會誤判還在村莊)
+  // 蓋時間戳(=現在),順手記下「即時所在地圖」(changeMap 不會存檔,光看存檔 blob 會誤判還在村莊)。
+  // ⚠ 補跑期間(catchingUp)一律跳過:錨點只能由下方檢查點以「已結算到的時間點」推進——
+  //   否則心跳/存檔/落點 changeMap 會把錨點蓋成「現在」,結算一被中斷,整段離線時間就此蒸發。
   function stamp() {
+    if (catchingUp) return;
+    stampCore(Date.now());
+  }
+  function stampCore(ts) {
     try {
       if (!validSlot()) return;
       // 只在「真的進到遊戲畫面」時記錄。開始選單/創角/載入前 game-screen 是 hidden,此時
@@ -82,7 +88,7 @@
       // afk_map 蓋成 training(且只波及 slot 1),害離線結算跑錯地圖。守在這裡根治。
       var gs = document.getElementById('game-screen');
       if (!gs || gs.classList.contains('hidden')) return;
-      localStorage.setItem(tsKey(), Date.now());
+      localStorage.setItem(tsKey(), ts);
       if (typeof mapState !== 'undefined' && mapState && mapState.current) localStorage.setItem(mapKey(), mapState.current);
       // 攀登中才記攀登狀態(在第幾樓/是否排名);非攀登就清掉,避免下次登入誤判
       if (typeof state !== 'undefined' && state && state.prideClimb) {
@@ -268,14 +274,18 @@
     out.sort(function (a, b) { return b.cnt - a.cnt; });
     return out;
   }
-  // ⚠ 唯一寫入點:把一筆紀錄塞進 afk_hist_<slot> 陣列頭、截到上限。純 localStorage.setItem,不動原作者存檔、不 saveGame。
+  // ⚠ 唯一寫入點:把一筆紀錄寫進 afk_hist_<slot> 陣列、截到上限。純 localStorage.setItem,不動原作者存檔、不 saveGame。
+  //   同 closeTs 覆寫(upsert):分段檢查點期間反覆更新「進行中」的同一筆,結算完成時覆寫成最終版,
+  //   同一段離線不會拆成多筆、中途中斷也不會漏記(2026-07-15 加)。
   function recordHistory(rec) {
     try {
       if (!validSlot()) return;
       var arr = [];
       try { var raw = localStorage.getItem(histKey()); if (raw) arr = JSON.parse(raw) || []; } catch (e) { arr = []; }
       if (!Array.isArray(arr)) arr = [];
-      arr.unshift(rec);
+      var hit = -1;
+      for (var j = 0; j < arr.length; j++) { if (arr[j] && arr[j].closeTs === rec.closeTs) { hit = j; break; } }
+      if (hit >= 0) arr[hit] = rec; else arr.unshift(rec);
       if (arr.length > HIST_MAX) arr = arr.slice(0, HIST_MAX);
       localStorage.setItem(histKey(), JSON.stringify(arr));
     } catch (e) { console.warn('[AFK] recordHistory error:', e); }
@@ -714,6 +724,59 @@
     // ═══ 混合快速結算(宣告結束;主迴圈內 fastMode 分支使用) ═════════════════════
 
     var done = 0, died = false;
+
+    // ═══ 💾 分段檢查點(2026-07-15) ═══════════════════════════════════════════
+    // 每 CKPT_MS 真實毫秒把「已結算到的收益」saveGame 固化,並把時間錨點推進到「closeTs + 已結算拍數」
+    // (絕不是「現在」)。結算中途被關頁/重整/系統殺掉 → 下次登入從錨點續算剩下的部分,整段收益不再無聲蒸發。
+    // stamp() 在 catchingUp 期間一律跳過(見上方),錨點只由這裡推進。
+    // debug forceCatchup 沒有 timing → 不做檢查點、不動錨點(維持既有 debug 行為:不寫紀錄,結束才 stamp)。
+    var CKPT_MS = 5000;
+    var _ckptLastMs = performance.now();
+    function buildHistRec() {   // 組一筆「目前結算到這裡」的離線紀錄;檢查點與結算完成(下方)共用同一個 closeTs → recordHistory 會互相覆寫,不會變兩筆
+      var a2 = snapshot();
+      var hKills = [];
+      for (var kn in killTally) hKills.push({ n: kn, cnt: killTally[kn] });
+      hKills.sort(function (x, y) { return x.cnt - y.cnt; });
+      var hKind, hMap;
+      if (climbSegs && (climbSegs.length || segFloor > 0)) {
+        hKind = 'climb';
+        var _f0 = climbSegs.length ? climbSegs[0].floor : segFloor;
+        var _f1 = segFloor > 0 ? segFloor : (climbSegs.length ? climbSegs[climbSegs.length - 1].floor : _f0);
+        hMap = '傲慢之塔（' + _f0 + ' → ' + _f1 + ' 樓）';
+      } else if (isObl) { hKind = 'oblivion'; hMap = mapName((mapState && mapState.current) || huntMap); }
+      else if (isKing)  { hKind = 'king';     hMap = mapName(huntMap); }
+      else              { hKind = 'normal';   hMap = mapName(huntMap); }
+      var hExp = expTotal(a2.lv, a2.exp) - expTotal(before.lv, before.exp); if (hExp < 0) hExp = 0;
+      var loginTs2 = (timing && timing.loginTs) || Date.now();
+      return {
+        v: 1,
+        closeTs: timing.closeTs,
+        loginTs: loginTs2,
+        realMs: Math.max(0, loginTs2 - timing.closeTs),
+        settledMs: done * TICK_MS,
+        capped: (loginTs2 - timing.closeTs) > CAP_MS,
+        kind: hKind,
+        map: hMap,
+        exp: hExp,
+        gold: (a2.gold || 0) - (before.gold || 0),
+        lv: (a2.lv || 0) - (before.lv || 0),
+        items: invDeltaList(before, a2),
+        kills: hKills,
+        died: !!(died || player.dead),
+        keysUsed: isKing ? Math.max(0, kingKeysBefore - countKingKeys(huntMap)) : 0,
+        keyName: '', roomName: ''   // 檢查點的「進行中」版本先留白;結算完成後,下方最終版本用同一個 closeTs 覆寫回完整內容
+      };
+    }
+    function doCheckpoint() {
+      try {
+        if (typeof saveGame === 'function') saveGame();          // ff 下 logSys 靜音,不會洗「進度已儲存」;saveGame 尾端呼叫的 stamp() 被 catchingUp 擋掉,不影響下面這行的錨點
+        stampCore(timing.closeTs + done * TICK_MS);               // 錨點=已結算到的時間點(絕不用 now,剩餘離線時間才不會被吃掉)
+        recordHistory(buildHistRec());                            // 已結算部分先寫進離線紀錄(同 closeTs 覆寫,不會多筆)
+      } catch (eCk) {}
+      _ckptLastMs = performance.now();
+    }
+    // ═══ 分段檢查點(宣告結束) ═══════════════════════════════════════════════
+
     try {
       while (done < totalTicks && !_abortCatchup) {
         if (player.dead || !state.running) { died = !!player.dead; break; }
@@ -784,6 +847,8 @@
           }
         }
         if (withOverlay) updateOverlay(done / totalTicks, done, totalTicks);
+        if (timing && timing.closeTs && done > 0 && !player.dead && state.running &&
+            (performance.now() - _ckptLastMs) >= CKPT_MS) doCheckpoint();   // 💾 分段檢查點(見上方宣告)
         await pace(sliceMs);   // 前景 rAF / 背景 Worker 溫和節拍(切走也續算)
         // 「長按放棄剩餘收益」按滿 HOLD_MS → 設旗標跳出(已算到的收益本就累積保留,等同撞死即停)
         if (_holdStart && (performance.now() - _holdStart) >= HOLD_MS) _abortCatchup = true;

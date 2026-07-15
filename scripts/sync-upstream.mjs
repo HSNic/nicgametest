@@ -67,6 +67,7 @@ const PLUGINS = [
   { file: 'afk-statpts.js', comment: '能力值面板補點數分解 始/升/藥/總(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-syncinfo.js', comment: '外掛工具面板(僅保留 hooks OK log,DOM 內容已於 2026-07-08 精簡移除;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-ui.js',       comment: '統一自製彈窗:全域接管 window.alert(可獨立維護;原作者更新後重新加回此行即可)' },
+  { file: 'afk-powersave.js', comment: '省電模式核心邏輯:monkey-patch 動畫ticker/畫面重繪頻率,真正降低耗電(需排在 afk-quickpanel.js 之前;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-quickpanel.js', comment: '首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-autobuy.js',  comment: '外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-pwa.js',      comment: 'PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可)' },

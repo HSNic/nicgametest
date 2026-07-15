@@ -13,12 +13,10 @@
  *   原本兩顆常駐按鈕與說明文字改用 CSS 隱藏(不刪 DOM,原作邏輯/localStorage 偏好
  *   完全不受影響,只是換一種方式呈現),首頁不再被常駐按鈕佔位。
  *
- *   ⚠️「省電模式」老實說明:遊戲主迴圈的 tick 間隔(100ms)寫死在本體
- *   js/01-drops-config.js/js/03-combat-core.js,並非可調的「FPS」概念,外掛層
- *   無法在不動本體的情況下提供真正的 30/60 FPS 切換。這裡的「省電模式」改做
- *   「特效節流」的替代方案:開啟時關閉戰鬥特效+傷害數字(等同上面兩項開關都關),
- *   並額外關閉本外掛能控制的裝飾性 CSS 動畫/轉場(不影響戰鬥判定與版面本身),
- *   降低低效能裝置的耗電/發熱,但不是真的把遊戲畫面更新率降到 30 或 60。
+ *   「省電模式」的實際邏輯(monkey-patch 動畫 ticker + 節流畫面重繪頻率)已搬到
+ *   獨立的 afk-powersave.js(2026-07-15),本檔的「powersave」開關只負責呼叫它
+ *   暴露的 window.AFK_POWERSAVE.isOn()/setOn(),比照下面「mobname」開關委派給
+ *   afk-mobname.js 的寫法。afk-powersave.js 必須排在本檔之前載入。
  *
  *   只呼叫既有全域函式+讀寫獨立的 localStorage 偏好鍵,呼叫前皆用 typeof 防呆,
  *   找不到對應函式就整列開關隱藏(不強制顯示一個按下去沒反應的假開關)。
@@ -28,21 +26,6 @@
  * ========================================================================== */
 (function () {
   'use strict';
-
-  var POWERSAVE_KEY = 'afk_powersave_on';
-
-  function isPowerSaveOn() {
-    try { return localStorage.getItem(POWERSAVE_KEY) === '1'; } catch (e) { return false; }
-  }
-  function setPowerSave(on) {
-    try { localStorage.setItem(POWERSAVE_KEY, on ? '1' : '0'); } catch (e) {}
-    document.body.classList.toggle('afk-powersave', !!on);
-    if (on) {
-      // 一併關閉戰鬥特效與傷害數字,達到最大節流效果
-      if (!window.__vfxOff && typeof window.toggleVfxPref === 'function') toggleVfxPref();
-      if (!window.__vfxNumOff && typeof window.toggleVfxNumPref === 'function') toggleVfxNumPref();
-    }
-  }
 
   function injectCss() {
     if (document.getElementById('afk-qp-css')) return;
@@ -69,11 +52,8 @@
       '.afk-qp-switch input:checked ~ .afk-qp-track{background:#0e7490;}',
       '.afk-qp-switch input:checked ~ .afk-qp-knob{transform:translateX(20px);background:#a5f3fc;}',
       '#afk-qp-close{display:block;width:100%;margin-top:16px;padding:11px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;font-family:inherit;border:1px solid #64748b;background:#334155;color:#e2e8f0;}',
-      '#afk-qp-close:active{background:#1e293b;}',
-      // 省電模式:暫停(不是關掉/歸零)無限循環的裝飾性 CSS keyframe 動畫(呼吸光暈/跑馬燈等),
-      // 不動一次性的顯示/隱藏 transition(避免打斷依賴 transitionend 的邏輯);範圍給 body 全域,
-      // 命中不到就無害(目前多數裝飾動畫已在別處被隱藏/移除,這裡是保底)。
-      'body.afk-powersave *{animation-play-state:paused !important;}'
+      '#afk-qp-close:active{background:#1e293b;}'
+      // 省電模式的 CSS(暫停裝飾動畫)已搬進 afk-powersave.js 自己注入,這裡不重複。
     ].join('');
     (document.head || document.documentElement).appendChild(s);
   }
@@ -109,10 +89,10 @@
       },
       {
         key: 'powersave', label: '🔋 省電模式',
-        sub: '關閉戰鬥特效/傷害數字並降低裝飾動畫,降低耗電發熱(並非真正調整遊戲更新率)',
-        avail: function () { return true; },
-        get: function () { return isPowerSaveOn(); },
-        set: function (on) { setPowerSave(on); }
+        sub: '關閉戰鬥動畫(角色/怪物/寵物/召喚物改靜態顯示)、降低畫面重繪頻率,並關閉戰鬥特效/傷害數字與裝飾動畫',
+        avail: function () { return !!(window.AFK_POWERSAVE && typeof window.AFK_POWERSAVE.setOn === 'function'); },
+        get: function () { return window.AFK_POWERSAVE.isOn(); },
+        set: function (on) { AFK_POWERSAVE.setOn(on); }
       },
       {
         key: 'mobname', label: '🏷️ 顯示怪物名稱',

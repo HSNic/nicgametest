@@ -564,7 +564,7 @@
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-offline.js?v=20260714c"></script>
+<script src="afk-offline.js?v=20260715a"></script>
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
@@ -597,8 +597,10 @@
 <script src="afk-syncinfo.js?v=20260708a"></script>
 <!-- 統一自製彈窗:全域接管 window.alert(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-ui.js?v=20260709a"></script>
+<!-- 省電模式核心邏輯:monkey-patch 動畫ticker/畫面重繪頻率,真正降低耗電(需排在 afk-quickpanel.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-powersave.js?v=20260715a"></script>
 <!-- 首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-quickpanel.js?v=20260713c"></script>
+<script src="afk-quickpanel.js?v=20260715a"></script>
 <!-- 外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-autobuy.js?v=20260714a"></script>
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
