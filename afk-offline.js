@@ -518,7 +518,11 @@
     //   打輸=外層撞死即停;打不動=照實耗完時間。純 BOSS 圖因此自然接近全真模擬。
     var fastBossUid = null, fastBossName = '', fastBossStart = 0, fastBossMinHp = 1, fastBossKills0 = 0;
     var bossStats = {};   // {怪名: {ticks:實測耗時, safe:對打全程血量未低於安全線, minor:對戰期間同場被清掉的小怪數}}
-    var ticksPerKill = 0, consumePerTick = null, consumeAcc = null, buffSecAcc = 0;
+    var svcPerEvent = 0, batchPerEvent = 1, consumePerTick = null, consumeAcc = null, buffSecAcc = 0;
+    // 🆕 2026-07-15 做法B(離線結算階段②):不追殺本體出怪排程公式,改用取樣量出的「平均每次事件幾拍、同時死幾隻」
+    //   svcPerEvent=平均每次事件間隔拍數(含出怪等待時間,算法與舊 ticksPerKill 相同、只是分母從「殺數」改成「事件數」)
+    //   batchPerEvent=平均每次事件同時死幾隻(小數,如 2.3 隻);deathEventsTotal=全程累計事件數(同拍死多隻算1次事件)
+    var deathEventsTotal = 0, _evtKillSum = 0, sampleEvents0 = 0;
     var sampleFrom = 0, sampleKills0 = 0, sampleCnt0 = null, sampleGain0 = null, sampleMinHp = 1;
     var sampleEnd = fastEligible ? FAST_SAMPLE_TICKS : Infinity, sampleGrew = false;
     var lastLv = player.lv;
@@ -537,6 +541,7 @@
       sampleFrom = from; sampleKills0 = tallySum(killTally); sampleCnt0 = invCntMap();
       sampleGain0 = {}; for (var k in gainTally) sampleGain0[k] = gainTally[k];
       sampleMinHp = 1;
+      sampleEvents0 = deathEventsTotal;   // 🆕 做法B:記錄本輪取樣起點的累計死亡事件數
     }
     function evalSample() {   // 取樣窗結束:夠安全 → 進快速段;殺數不足 → 延長一次;血量沒過(隨時間下降的)門檻 → 繼續真模擬觀察
       var kills = tallySum(killTally) - sampleKills0;
@@ -549,7 +554,9 @@
         fastOff = true; console.info('[AFK] 快速結算不啟用:取樣擊殺數太少(' + kills + '),樣本不可信,全程真模擬。'); return;
       }
       var winTicks = Math.max(1, done - sampleFrom);
-      ticksPerKill = winTicks / kills;
+      var events = Math.max(1, deathEventsTotal - sampleEvents0);   // 🆕 做法B:取樣窗內死亡事件數(同拍死多隻算1次事件,kills>0時至少有1次)
+      svcPerEvent = winTicks / events;
+      batchPerEvent = kills / events;
       var cnt1 = invCntMap(), ids = {}, k;
       for (k in sampleCnt0) ids[k] = 1;
       for (k in cnt1) ids[k] = 1;
@@ -562,7 +569,7 @@
         if (used > 0) consumePerTick[k] = used / winTicks;   // 每「拍」速率:消耗跟時間走(BOSS 一場耗時長、耗得多,按殺算會低估)
       }
       fastMode = true; everFastMode = true;
-      console.info('[AFK] ⚡ 快速結算啟動:平均 ' + ticksPerKill.toFixed(1) + ' 拍/殺,每拍消耗 ' + JSON.stringify(consumePerTick));
+      console.info('[AFK] ⚡ 快速結算啟動:平均 ' + svcPerEvent.toFixed(1) + ' 拍/批次、每批次約 ' + batchPerEvent.toFixed(1) + ' 隻,每拍消耗 ' + JSON.stringify(consumePerTick));
     }
     // 🍶 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:分析發現快速結算幾乎都被消耗品
     //   斷貨拖回全模擬,原因是①每次只補到 100 瓶(治癒)/1 瓶(增益藥水、卷軸),撐不了多久又要
@@ -697,29 +704,55 @@
         } catch (e2) { break; }
       }
     }
-    function fastKillOnce() {   // 快速段的一步:出一隻 → 即殺 → 清算;回 false = 退回全模擬
+    // 🆕 2026-07-15 做法B:這張圖一次最多同時出幾隻,對齊 tick() 出怪迴圈的格數規則(js/03-combat-core.js)——
+    //   純BOSS房(龍窟/長老會議廳等)只出中央一隻;一般地圖看有沒有開後排(backSlotsActive)決定3格或5格。
+    //   不追殺本體那段吃一堆加成疊加的重生延遲公式,靠格數上限 + 下面的批次規模取樣互相配合逼近真實。
+    function fastSlotCount() {
+      if (typeof PURE_BOSS_MAPS !== 'undefined' && PURE_BOSS_MAPS.includes(mapState.current)) return 1;
+      return backSlotsActive() ? 5 : 3;
+    }
+    function sampledBatchSize() {   // 依取樣到的 batchPerEvent(平均值,如 2.3 隻)機率取整數:70%殺2隻、30%殺3隻
+      var n = Math.floor(batchPerEvent);
+      if (Math.random() < (batchPerEvent - n)) n++;
+      return Math.max(1, n);
+    }
+    function fastEventStep() {   // 快速段的一步(做法B):依取樣到的批次規模一次出怪+批次擊殺 → 清算;回 false = 退回全模擬
       try {
-        spawnMob(0);
-        var _m0 = mapState.mobs[0];
-        if (!_m0) return false;
-        if (_m0.boss) {   // 🐲 BOSS:第一次(或未驗證安全)→ 真模擬對打;已驗證安全 → 即殺但時間按「該 BOSS 實測耗時」推進
-          if (fastTeleportAwayBoss(_m0)) return fastAdvance(1);   // 🌀 勾了自動瞬移且該圖可瞬移 → 甩掉不打(約當一拍;下輪 spawnMob 重抽)
-          var _bs = bossStats[_m0.n];
+        var slotCount = fastSlotCount();
+        var n = Math.min(sampledBatchSize(), slotCount);
+        var bossIdx = -1, i;
+        for (i = 0; i < n; i++) {
+          spawnMob(i);
+          if (mapState.mobs[i] && mapState.mobs[i].boss && bossIdx < 0) bossIdx = i;
+        }
+        var anyMob = false;
+        for (i = 0; i < n; i++) { if (mapState.mobs[i]) { anyMob = true; break; } }
+        if (!anyMob) return false;
+
+        if (bossIdx >= 0) {   // 🐲 BOSS:第一次(或未驗證安全)→ 真模擬對打;已驗證安全 → 即殺但時間按「該 BOSS 實測耗時」推進
+          var _boss = mapState.mobs[bossIdx];
+          // 同一批次裡的非BOSS小怪(AOE本來就會一起清,跟遇不遇BOSS無關)先批次殺掉、結算掉落
+          for (i = 0; i < n; i++) { if (i !== bossIdx && mapState.mobs[i]) killMob(i); }
+          settleDeadMobs();
+          if (fastTeleportAwayBoss(_boss)) return fastAdvance(1);   // 🌀 勾了自動瞬移且該圖可瞬移 → 甩掉不打(約當一拍;下輪重抽)
+          var _bs = bossStats[_boss.n];
           if (_bs && _bs.safe) {
-            killMob(0);
+            killMob(bossIdx);
             settleDeadMobs();
             fastKillMinors(_bs.minor || 0);   // 補回這隻 BOSS 對戰期間同場小怪的收益(時間/消耗由下方 fastAdvance 一次涵蓋)
             return fastAdvance(_bs.ticks);
           }
-          fastBossUid = _m0.uid; fastBossName = _m0.n || '?'; fastBossStart = done; fastBossMinHp = 1; fastBossKills0 = tallySum(killTally);   // 記真打起始殺數 → 倒下時算對戰期間清掉的小怪數
+          fastBossUid = _boss.uid; fastBossName = _boss.n || '?'; fastBossStart = done; fastBossMinHp = 1; fastBossKills0 = tallySum(killTally);   // 記真打起始殺數 → 倒下時算對戰期間清掉的小怪數
           console.info('[AFK] ⚔ 快速結算遇到 BOSS「' + fastBossName + '」(首次)→ 切回真模擬對打,倒下後同名 BOSS 才可快轉。');
           return true;   // 不推進時間、不扣消耗品——接下來的真模擬拍會照實計
         }
-        killMob(0);
+
+        for (i = 0; i < n; i++) { if (mapState.mobs[i]) killMob(i); }
         settleDeadMobs();
       } catch (e) { console.warn('[AFK] 快速結算步驟出錯,退回全模擬:', e); return false; }
-      return fastAdvance(ticksPerKill);
+      return fastAdvance(svcPerEvent);
     }
+    _evtKillSum = tallySum(killTally);   // 🆕 做法B:死亡事件偵測起點(取樣開始前的累計擊殺數)
     if (fastEligible) beginSample(0);
     // ═══ 混合快速結算(宣告結束;主迴圈內 fastMode 分支使用) ═════════════════════
 
@@ -811,7 +844,7 @@
             }
             // ⚡ 快速段:一次一殺(真實獎勵管線);失敗(斷貨/出怪異常)→ 退回全模擬跑完剩餘
             if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('fastMode');
-            var _profFastOk = fastKillOnce();
+            var _profFastOk = fastEventStep();
             if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('fastMode');
             if (!_profFastOk) { fastMode = false; fastOff = true; console.info('[AFK] ⚡ 快速結算退回全模擬(消耗品斷貨或步驟異常),剩餘時間照真模擬。'); continue; }
             if (player.lv !== lastLv) {   // 升級 → 戰力變了 → 重新取樣殺速
@@ -830,6 +863,8 @@
           if (fastEligible && !fastOff) {   // 取樣段:記錄最低血量,窗滿就評估要不要切快速
             var _hpP = (player.mhp > 0) ? (player.hp / player.mhp) : 1;
             if (_hpP < sampleMinHp) sampleMinHp = _hpP;
+            var _curKillSum = tallySum(killTally);   // 🆕 做法B:本拍擊殺總數若比上一拍多 → 發生一次死亡事件(同拍死多隻仍算1次)
+            if (_curKillSum > _evtKillSum) { deathEventsTotal++; _evtKillSum = _curKillSum; }
             if (player.lv !== lastLv) lastLv = player.lv;   // 取樣中升級:樣本自然涵蓋新戰力,不需特別處理
             if (done >= sampleEnd) {
               if (totalTicks - done >= FAST_MIN_REMAIN) evalSample();
