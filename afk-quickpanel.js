@@ -62,6 +62,18 @@
   function switchDefs() {
     return [
       {
+        key: 'bgm', label: '🎵 音樂',
+        avail: function () { return typeof window.setBgmOn === 'function' && typeof window._bgmCfg === 'object'; },
+        get: function () { return !!(window._bgmCfg && _bgmCfg.on); },
+        set: function (on) { setBgmOn(on); }
+      },
+      {
+        key: 'sfx', label: '🔊 音效',
+        avail: function () { return typeof window.setSfxOn === 'function' && typeof window._sfxCfg === 'object'; },
+        get: function () { return !!(window._sfxCfg && _sfxCfg.on); },
+        set: function (on) { setSfxOn(on); }
+      },
+      {
         key: 'vfx', label: '✨ 戰鬥特效',
         sub: '戰鬥時的粒子/震動等視覺特效;效果較弱或卡頓的裝置可關閉',
         avail: function () { return typeof window.toggleVfxPref === 'function'; },
@@ -74,18 +86,6 @@
         avail: function () { return typeof window.toggleVfxNumPref === 'function'; },
         get: function () { return !window.__vfxNumOff; },
         set: function () { toggleVfxNumPref(); }
-      },
-      {
-        key: 'bgm', label: '🎵 音樂',
-        avail: function () { return typeof window.setBgmOn === 'function' && typeof window._bgmCfg === 'object'; },
-        get: function () { return !!(window._bgmCfg && _bgmCfg.on); },
-        set: function (on) { setBgmOn(on); }
-      },
-      {
-        key: 'sfx', label: '🔊 音效',
-        avail: function () { return typeof window.setSfxOn === 'function' && typeof window._sfxCfg === 'object'; },
-        get: function () { return !!(window._sfxCfg && _sfxCfg.on); },
-        set: function (on) { setSfxOn(on); }
       },
       {
         key: 'powersave', label: '🔋 省電模式',
@@ -103,14 +103,14 @@
       },
       {
         key: 'pet', label: '🐾 顯示寵物',
-        sub: '關閉後隊伍面板不顯示出戰寵物卡片,冒險地圖也不顯示魔法娃娃飄浮寵物',
+        sub: '關閉後只隱藏冒險地圖上走動的寵物圖像與魔法娃娃飄浮寵物,隊伍面板卡片一律保留顯示',
         avail: function () { return typeof window.showPet === 'function' && typeof window.hidePet === 'function'; },
         get: function () { return window.isPetVisible(); },
         set: function (on) { on ? showPet() : hidePet(); }
       },
       {
         key: 'summon', label: '🧚 顯示招喚獸',
-        sub: '關閉後隊伍面板不顯示召喚物卡片',
+        sub: '關閉後只隱藏冒險地圖上走動的召喚獸圖像,隊伍面板卡片一律保留顯示',
         avail: function () { return typeof window.showSummon === 'function' && typeof window.hideSummon === 'function'; },
         get: function () { return window.isSummonVisible(); },
         set: function (on) { on ? showSummon() : hideSummon(); }

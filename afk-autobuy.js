@@ -1,8 +1,7 @@
 /*
  * afk-autobuy.js — 外掛自動購買:在「自動買銀箭」下方加一個「外掛」框,提供
- *   ① 肉耗盡時自動購買        (寵物項圈每 2 秒消耗 = 總項圈數 的肉,沒肉夥伴就停手)
- *   ② 自動購買魔法卷軸(魔法屏障) (原版只有自動「施放」、沒有自動「補貨」,卷軸用完屏障就斷)
- *   ③ 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:提前補貨門檻(1~20,下拉選擇)——
+ *   ① 自動購買魔法卷軸(魔法屏障) (原版只有自動「施放」、沒有自動「補貨」,卷軸用完屏障就斷)
+ *   ② 2026-07-14 待辦「離線結算變慢與404圖片請求優化」:提前補貨門檻(1~20,下拉選擇)——
  *     離線快速結算(afk-offline.js fastConsumeOne/fastRefill)原本只在「完全斷貨」才補,
  *     常常補貨的那一拍剛好跟不上、整段退回慢速全模擬。這裡新增的門檻讓afk-offline.js
  *     提前判斷「庫存低於這個數字就先補」,適用範圍:治癒藥水(目前選定那瓶)、藍色藥水、
@@ -25,12 +24,6 @@
  */
 (function () {
   'use strict';
-
-  var MEAT_ID   = 'new_item_143';        // 肉:商店一份 1000 個,單價 shopPrice(100)
-  var MEAT_MIN  = 2000;                   // 低於這個量就補(緩衝要高於寵物單輪總消耗)
-  var MEAT_BUNDLES = 3;                   // 每次補 3 份 = 3000 個
-  var MEAT_BUNDLE_UNIT = 100;            // 一份 1000 個的金幣單價(對齊原版 buyItem)
-  var MEAT_BUNDLE_AMT  = 1000;
 
   var SCROLL_ID = 'scroll_magicbarrier';  // 魔法卷軸(魔法屏障):商店單買,單價 = DB.items 的 p(1500)
   var SCROLL_MIN = 3;                      // 低於這個量就補
@@ -99,15 +92,6 @@
   function autoBuyCheck() {
     if (typeof player === 'undefined' || !player) return;
 
-    if (prefOn('meat') && invCount(MEAT_ID) < MEAT_MIN) {
-      var mCost = shopPrice(MEAT_BUNDLE_UNIT) * MEAT_BUNDLES;
-      if (player.gold >= mCost) {
-        player.gold -= mCost;
-        gainItem(MEAT_ID, MEAT_BUNDLE_AMT * MEAT_BUNDLES, true, true);
-        buyLog('自動花費 ' + mCost + ' 金幣補充了 ' + (MEAT_BUNDLE_AMT * MEAT_BUNDLES) + ' 個肉。');
-      }
-    }
-
     if (prefOn('magicbarrier') && invCount(SCROLL_ID) < SCROLL_MIN) {
       var def = (typeof DB !== 'undefined' && DB.items) ? DB.items[SCROLL_ID] : null;
       if (def) {
@@ -152,7 +136,6 @@
     box.innerHTML =
       '<div class="text-sm text-amber-400 mb-2 border-b border-slate-700 pb-1 font-bold">🔌 外掛</div>' +
       '<div class="flex flex-col gap-2 text-sm">' +
-        '<label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-auto-buy-meat" class="w-4 h-4"><span class="text-rose-300">自動購買肉（' + (MEAT_BUNDLE_AMT * MEAT_BUNDLES) + '）</span></label>' +
         '<label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-auto-buy-magicbarrier" class="w-4 h-4"><span class="text-cyan-300">自動購買魔法卷軸(魔法屏障)（' + SCROLL_REFILL + '）</span></label>' +
         '<label class="flex items-center gap-2"><span class="text-emerald-300">離線快速結算·藥水提前補貨門檻</span>' +
           '<select id="afk-autobuy-potion-threshold" class="bg-slate-900 border border-slate-600 text-white rounded py-0.5 px-1 text-sm">' + thresholdOptions + '</select>' +
@@ -161,7 +144,6 @@
       '</div>';
     card.parentNode.insertBefore(box, card.nextSibling);
 
-    bindChange('set-auto-buy-meat', 'meat');
     bindChange('set-auto-buy-magicbarrier', 'magicbarrier');
     var thSel = document.getElementById('afk-autobuy-potion-threshold');
     if (thSel) thSel.addEventListener('change', function () { potionThresholdSet(thSel.value); });
@@ -178,10 +160,8 @@
 
   // 進到某角色時,把勾選框 UI 同步成該存檔位存的設定
   function restoreForSlot() {
-    var m = document.getElementById('set-auto-buy-meat');
     var s = document.getElementById('set-auto-buy-magicbarrier');
     var t = document.getElementById('afk-autobuy-potion-threshold');
-    if (m) m.checked = prefOn('meat');
     if (s) s.checked = prefOn('magicbarrier');
     if (t) t.value = String(potionThreshold());
   }

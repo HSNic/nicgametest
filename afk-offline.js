@@ -1066,9 +1066,15 @@
         if (window.__afkm.openLog) window.__afkm.openLog();
       }
     } catch (e) {}
-    stamp();
+    // ⚠️ 順序很重要:stamp() 內建防呆「catchingUp 還是 true 就整段不做事」,一定要先把 catchingUp
+    //   清成 false,這裡的 stamp() 才會真的把時間戳釘在「現在」。原本順序相反,這行 stamp() 一路以來
+    //   都是空跑——單獨遊玩時補跑結束後角色會留在畫面上,5 秒內既有的「存活心跳」會自然補上不易發現;
+    //   但批次結算(afk-batch-settle.js)一結算完馬上換下一個存檔位,沒有這 5 秒空檔,若這格補跑又短到
+    //   沒觸發過程中的分段檢查點(doCheckpoint,每 5 秒真實時間才存一次),時間戳就一直停在補跑前的舊值,
+    //   導致下次單獨登入該角色時同一段離線時間被重複結算(踩過:2026-07-15 批次結算「無收益」問題排查)。
     catchingUp = false;
     if (window.__afk) window.__afk.busy = false;   // 🏦 補跑結束,對外旗標同步清掉
+    stamp();
   }
 
   // 載入後決定要不要結算離線。preMap/preTs 由 loadGame wrapper 在「原 loadGame 執行前」擷取——

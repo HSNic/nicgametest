@@ -265,6 +265,34 @@
       if (el) el.innerHTML = rowHTML(n, sum, state);
     }
 
+    // 批次結算期間暫時套用「省電設定」(關音樂/音效、開省電模式連動關特效/傷害數字),
+    // 結束後(不論成功/中途出例外)還原成使用者原本的值。全部呼叫既有全域函式,不直接寫 localStorage。
+    function readCurrentPrefs() {
+      return {
+        bgm: (typeof window._bgmCfg === 'object' && window._bgmCfg) ? !!window._bgmCfg.on : null,
+        sfx: (typeof window._sfxCfg === 'object' && window._sfxCfg) ? !!window._sfxCfg.on : null,
+        vfx: !window.__vfxOff,
+        vfxNum: !window.__vfxNumOff,
+        powersave: (window.AFK_POWERSAVE && typeof window.AFK_POWERSAVE.isOn === 'function') ? window.AFK_POWERSAVE.isOn() : null
+      };
+    }
+    function applyBatchPerfPrefs() {
+      try { if (typeof setBgmOn === 'function') setBgmOn(false); } catch (e) {}
+      try { if (typeof setSfxOn === 'function') setSfxOn(false); } catch (e) {}
+      try { if (window.AFK_POWERSAVE && typeof window.AFK_POWERSAVE.setOn === 'function') window.AFK_POWERSAVE.setOn(true); } catch (e) {}
+      // 保險:省電模式若不存在或沒連動關閉,各自再確認一次(讀「目前狀態 vs 目標」才切換,避免切成相反)
+      try { if (!window.__vfxOff && typeof toggleVfxPref === 'function') toggleVfxPref(); } catch (e) {}
+      try { if (!window.__vfxNumOff && typeof toggleVfxNumPref === 'function') toggleVfxNumPref(); } catch (e) {}
+    }
+    function restorePrefs(orig) {
+      try { if (orig.bgm !== null && typeof setBgmOn === 'function') setBgmOn(orig.bgm); } catch (e) {}
+      try { if (orig.sfx !== null && typeof setSfxOn === 'function') setSfxOn(orig.sfx); } catch (e) {}
+      try { if (orig.powersave !== null && window.AFK_POWERSAVE && typeof window.AFK_POWERSAVE.setOn === 'function') window.AFK_POWERSAVE.setOn(orig.powersave); } catch (e) {}
+      // 省電模式關閉不會自動恢復戰鬥特效/傷害數字,要各自比對「目前狀態 vs 原始值」還原
+      try { if (orig.vfx !== !window.__vfxOff && typeof toggleVfxPref === 'function') toggleVfxPref(); } catch (e) {}
+      try { if (orig.vfxNum !== !window.__vfxNumOff && typeof toggleVfxNumPref === 'function') toggleVfxNumPref(); } catch (e) {}
+    }
+
     var _layer = null, _running = false;
     function openOverlay() {
       var m = document.getElementById('m-bs-modal'); if (!m) return;
@@ -288,29 +316,36 @@
       buildRows();
       openOverlay();
 
+      var origPrefs = readCurrentPrefs();
+      applyBatchPerfPrefs();
+
       var totals = { gold: 0, exp: 0, lv: 0, slots: 0 };
-      for (var n = 1; n <= SLOT_COUNT; n++) {
-        var sum = slotSummary(n);
-        if (!sum) { setRow(n, sum, { kind: 'skip-empty' }); continue; }
-        var t0 = Date.now();
-        setRow(n, sum, { kind: 'running', elapsed: 0 });
-        currentSlot = n;
-        try { loadGame(); } catch (e) { setRow(n, sum, { kind: 'error', msg: String(e && e.message || e) }); continue; }
-        if (!window.__afk.busy) { setRow(n, sum, { kind: 'skip-none' }); continue; }
-        var timedOut = false;
-        while (window.__afk.busy) {
-          await sleep(POLL_MS);
-          if (Date.now() - t0 > MAX_WAIT_MS) { timedOut = true; break; }
-          setRow(n, sum, { kind: 'running', elapsed: Date.now() - t0 });
+      try {
+        for (var n = 1; n <= SLOT_COUNT; n++) {
+          var sum = slotSummary(n);
+          if (!sum) { setRow(n, sum, { kind: 'skip-empty' }); continue; }
+          var t0 = Date.now();
+          setRow(n, sum, { kind: 'running', elapsed: 0 });
+          currentSlot = n;
+          try { loadGame(); } catch (e) { setRow(n, sum, { kind: 'error', msg: String(e && e.message || e) }); continue; }
+          if (!window.__afk.busy) { setRow(n, sum, { kind: 'skip-none' }); continue; }
+          var timedOut = false;
+          while (window.__afk.busy) {
+            await sleep(POLL_MS);
+            if (Date.now() - t0 > MAX_WAIT_MS) { timedOut = true; break; }
+            setRow(n, sum, { kind: 'running', elapsed: Date.now() - t0 });
+          }
+          if (timedOut) { setRow(n, sum, { kind: 'timeout' }); continue; }
+          var last = window.__afk.last || {};
+          totals.gold += last.gold || 0;
+          totals.exp += last.exp || 0;
+          totals.lv += last.lv || 0;
+          totals.slots++;
+          setPending(n);   // 標記「待補記」:這個角色下次真正登入時,把這筆結算結果重新顯示在系統日誌裡(現在只有批次視窗看得到)
+          setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
         }
-        if (timedOut) { setRow(n, sum, { kind: 'timeout' }); continue; }
-        var last = window.__afk.last || {};
-        totals.gold += last.gold || 0;
-        totals.exp += last.exp || 0;
-        totals.lv += last.lv || 0;
-        totals.slots++;
-        setPending(n);   // 標記「待補記」:這個角色下次真正登入時,把這筆結算結果重新顯示在系統日誌裡(現在只有批次視窗看得到)
-        setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
+      } finally {
+        restorePrefs(origPrefs);   // 不論成功/中途出例外,都要把音樂/音效/特效/傷害數字/省電模式還原成使用者原本的值
       }
 
       document.getElementById('m-bs-foot').innerHTML =
@@ -320,12 +355,14 @@
         '<div class="m-bs-toast">⚠️ 別忘了到「雲端同步」面板按一次「立即上傳」，否則其他裝置可能還會看到舊的結果。</div>';
 
       _running = false;
-      allowClose();
-      // 收尾:有活著的原角色→換回去;否則(從首頁觸發)重新整理回乾淨首頁,不留在批次跑完的最後一個角色畫面
-      if (originLive) { currentSlot = originSlot; try { loadGame(); } catch (e) {} }
-      else {
-        var closeBtn = document.getElementById('m-bs-close');
-        closeBtn.addEventListener('click', function onceReload() { location.reload(); }, { once: true });
+      // 收尾:有活著的原角色→換回去,並開放手動關閉
+      if (originLive) {
+        allowClose();
+        currentSlot = originSlot; try { loadGame(); } catch (e) {}
+      } else {
+        // 從首頁/選存檔位觸發(批次前沒有登入任何角色):不開放手動關閉、不等使用者點 ✕,
+        // 顯示完成摘要片刻後直接自動整頁重新整理回乾淨首頁,全程不曝光任何角色的即時畫面。
+        setTimeout(function () { location.reload(); }, 1500);
       }
     }
 

@@ -271,6 +271,17 @@
       }
       if (!conflicts.length) return finalize();
       return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+        // 使用者對「全部略過」的直覺理解是「這次同步先不要動」——不是只有這幾格內容不被覆蓋、
+        // 整包還是照樣寫回雲端。所以每一格都選了略過(或直接關掉視窗、decisions 是空物件)時，
+        // 直接中止本次同步，不呼叫 finalize()、不寫入雲端。
+        var anyApplied = conflicts.some(function (c) {
+          var choice = decisions[c.slot];
+          return choice === 'cloud' || choice === 'local';
+        });
+        if (!anyApplied) {
+          if (typeof onProgress === 'function') onProgress(100, '已略過本次同步（未上傳）');
+          return { ok: false, reason: 'skipped-by-user' };
+        }
         conflicts.forEach(function (c) {
           var choice = decisions[c.slot];
           if (choice === 'cloud') {
@@ -319,6 +330,13 @@
       if (!conflicts.length) { if (typeof onProgress === 'function') onProgress(96, '下載套用完成…'); return { ok: true, applied: applied }; }
       if (typeof onProgress === 'function') onProgress(62, '偵測到版本不同，等待選擇…');
       return AFK_CLOUD2.ui.showBatchConflictModal(conflicts).then(function (decisions) {
+        // 同 uploadAll：全部略過(或直接關視窗)時直接中止，不套用任何本機沒有的雲端存檔位以外的東西、
+        // 也不動已存在的本機存檔位。
+        var anyApplied = conflicts.some(function (c) { return decisions[c.slot] === 'cloud'; });
+        if (!anyApplied) {
+          if (typeof onProgress === 'function') onProgress(100, '已略過本次同步（未套用）');
+          return { ok: false, reason: 'skipped-by-user', applied: applied };
+        }
         if (typeof onProgress === 'function') onProgress(82, '套用選擇結果…');
         conflicts.forEach(function (c) {
           if (decisions[c.slot] === 'cloud') { payload.applySlotFromDoc(+c.slot, remoteDoc); applied++; }
@@ -599,6 +617,7 @@
         if (r && r.ok) ui.toast('✅ 已上傳全部存檔位到雲端', 'success');
         else if (r && r.reason === 'no-data') setStatus('本機目前沒有任何存檔位有資料，尚無需同步', true);
         else if (r && r.reason === 'race') setStatus(r.err.message, true);
+        else if (r && r.reason === 'skipped-by-user') setStatus('已略過本次同步，雲端內容未變動', true);
         else setStatus('同步失敗', true);
         endBlockingSync(r && r.ok ? '上傳完成' : '同步結束', function () { if (r && r.ok) ui.refreshPanel(); });
       });
@@ -612,6 +631,7 @@
       flow.downloadAll(progress).then(function (r) {
         if (r && r.ok) ui.toast('✅ 已從雲端同步 ' + (r.applied || 0) + ' 個存檔位', 'success');
         else if (r && r.reason === 'no-remote') setStatus('雲端尚無資料', true);
+        else if (r && r.reason === 'skipped-by-user') setStatus('已略過本次同步，本機內容未變動', true);
         else setStatus('下載失敗', true);
         endBlockingSync(r && r.ok ? '下載完成' : '同步結束', function () { if (r && r.ok) ui.refreshPanel(); });
       });

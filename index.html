@@ -564,7 +564,7 @@
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-offline.js?v=20260715b"></script>
+<script src="afk-offline.js?v=20260715c"></script>
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
@@ -600,15 +600,15 @@
 <!-- 省電模式核心邏輯:monkey-patch 動畫ticker/畫面重繪頻率,真正降低耗電(需排在 afk-quickpanel.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-powersave.js?v=20260715a"></script>
 <!-- 首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-quickpanel.js?v=20260715a"></script>
+<script src="afk-quickpanel.js?v=20260715b"></script>
 <!-- 外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-autobuy.js?v=20260714a"></script>
+<script src="afk-autobuy.js?v=20260715a"></script>
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260706a"></script>
 <!-- 首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-storage.js?v=20260713b"></script>
 <!-- 跨裝置雲端存檔同步(配對碼+後端代管,取代舊版Google登入方案afk-cloud-sync.js.disabled;API_BASE未設定前對遊戲零介入;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-cloud-sync-v2.js?v=20260713a"></script>
+<script src="afk-cloud-sync-v2.js?v=20260715a"></script>
 <!-- 離線掛機歷史紀錄:首頁設定選單列出各角色最近 5 筆離線收益(純唯讀讀 afk_hist_<slot>;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-history.js?v=20260712a"></script>
 <!-- 顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -644,7 +644,7 @@
 <!-- 首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-asset-manager.js?v=20260710b"></script>
 <!-- 首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可 -->
-<script src="afk-batch-settle.js?v=20260712a"></script>
+<script src="afk-batch-settle.js?v=20260715a"></script>
 <!-- 版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-uilayout.js?v=20260714a"></script>
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->
