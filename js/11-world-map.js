@@ -1559,10 +1559,53 @@ function renderDantesGate(div) {
             <p class="text-xs text-slate-500 pt-1">挑戰吉爾塔斯時若身上持有 完整的召喚球：戰敗回村將消耗 1 顆，吉爾塔斯的 HP 會保持不變（暫停回血）直到你再次進入；沒有完整的召喚球則重新進入將是全新的吉爾塔斯。</p>
         </div>`;
 }
+// 🕊️ v3.4.73 聖使阿卡塔（亞丁·經典限定）：死亡經驗買回。
+//   ・killPlayer（js/04）只在「實際損失 > 0」時記 player.deathLog:{lv,loss,t}（上限 10 筆·滿了淘汰最舊·逐角色隨存檔）——當級 0% 死亡不建檔，無法買回沒失去的經驗。
+//   ・買回：花費 死亡時等級×等級×1000 金幣 → 取回該筆「實際損失經驗」的 50%（floor），紀錄即銷毀；回灌走 player.exp += n + checkLvUp()（可正常升級）。
+function renderArkataBuyback(el) {
+    let log = Array.isArray(player.deathLog) ? player.deathLog : [];
+    let rows = log.map((r, i) => {
+        let cost = (r.lv || 1) * (r.lv || 1) * 1000;
+        let back = Math.floor((r.loss || 0) * 0.5);
+        let when = r.t ? new Date(r.t).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        let ok = (player.gold || 0) >= cost;
+        return `
+            <div class="flex items-center justify-between gap-2 bg-slate-800/60 border border-slate-600 rounded p-3">
+                <div class="text-sm text-slate-200 leading-relaxed">Lv <span class="text-amber-300 font-bold">${r.lv}</span> 陣亡${when ? `<span class="text-xs text-slate-500">（${when}）</span>` : ''}　損失 <span class="text-red-300 font-bold">${(r.loss || 0).toLocaleString()}</span> 經驗<br>
+                    <span class="text-xs text-slate-400">買回 <span class="text-emerald-300 font-bold">${back.toLocaleString()}</span> 經驗（50%）・費用 <span class="text-yellow-300">${cost.toLocaleString()}</span> 金幣</span></div>
+                <button class="btn ${ok ? 'bg-yellow-700 hover:bg-yellow-600 border-yellow-500' : 'bg-slate-600 border-slate-500 opacity-60 cursor-not-allowed'} py-2 px-4 font-bold shrink-0" ${ok ? '' : 'disabled'} onclick="arkataBuyback(${i})">買回</button>
+            </div>`;
+    }).join('');
+    el.innerHTML = `
+        <div class="flex flex-col gap-3 p-1">
+            <div class="text-slate-300 text-sm leading-relaxed">聖使阿卡塔：逝者的經驗不會真正消散——我能以聖光為你凝聚回來。每筆死亡紀錄可花費「死亡時等級×等級×1000」金幣，取回實際損失經驗的一半。</div>
+            <div class="text-xs text-slate-400">死亡紀錄：${log.length} / 10（滿 10 筆後新的死亡會擠掉最舊的一筆）・持有金幣：<span class="text-yellow-300">${(player.gold || 0).toLocaleString()}</span></div>
+            ${rows || '<div class="text-slate-500 text-sm bg-slate-800/40 border border-slate-700 rounded p-4 text-center">目前沒有死亡紀錄。願聖光持續眷顧你。</div>'}
+        </div>`;
+}
+function arkataBuyback(i) {
+    if (!player || !player.classicMode) return;   // 🕊️ 經典限定（縱深防護）
+    let log = Array.isArray(player.deathLog) ? player.deathLog : [];
+    let r = log[i];
+    if (!r) return;
+    let cost = (r.lv || 1) * (r.lv || 1) * 1000;
+    let back = Math.floor((r.loss || 0) * 0.5);
+    if (back <= 0) { log.splice(i, 1); renderArkataBuyback(document.getElementById('interaction-content')); return; }   // 防呆：無效紀錄直接銷毀
+    if ((player.gold || 0) < cost) { logSys('金幣不足，無法買回經驗。'); return; }
+    player.gold -= cost;
+    log.splice(i, 1);   // 先銷毀紀錄再回灌，杜絕重複領取
+    player.exp += back;
+    checkLvUp();
+    logSys(`<span class="text-emerald-300">聖使阿卡塔為你凝聚回 ${back.toLocaleString()} 點經驗（花費 ${cost.toLocaleString()} 金幣）。</span>`);
+    if (typeof calcStats === 'function') calcStats();
+    updateUI(); saveGame();
+    renderArkataBuyback(document.getElementById('interaction-content'));
+}
 function interactNPC(npcId, townId) {
     let npc = DB.towns[townId].npcs.find(n => n.id === npcId);
     if(!npc) return;
     if (npc.classicHide && player.classicMode) return;   // 🔥 經典模式：漢 不可互動（縱深防護，正常情況卡片已不渲染；v3.0.77 碧恩經典可用）
+    if (npc.classicOnly && !player.classicMode) return;   // 🕊️ 經典限定 NPC（聖使阿卡塔）：一般模式不可互動（縱深防護，渲染層已過濾）
     _activePanel = null;   // 開啟新面板：先清除自動刷新標記，由對應 render 視需要重新設定
 
     // 🔧 v2.6.77 倉庫 NPC：浮動倉庫直接覆蓋在村莊 NPC 清單上，不切入舊式 NPC 互動畫面
@@ -1584,7 +1627,9 @@ function interactNPC(npcId, townId) {
 
     // 根據 NPC 的類型，載入不同的 UI
     if (npc.type === 'shop' || npc.id === 'npc_gilen') {
-        renderTownShop(contentDiv, npc.id);  
+        renderTownShop(contentDiv, npc.id);
+    } else if (npc.id === 'npc_arkata') {   // 🕊️ 聖使阿卡塔：死亡經驗買回（亞丁·經典限定）
+        renderArkataBuyback(contentDiv);
     } else if (npc.id === 'npc_obel' || npc.id === 'npc_hert' || npc.id === 'npc_diren') {   // 🔧 赫特＝風木城、帝倫＝海音城的魔物追蹤（同奧貝勒）
         renderObelNPC(contentDiv);
     } else if (npc.id === 'npc_pandora') { 
@@ -1712,7 +1757,8 @@ const NPC_SPR = {
     '1839': { g: '1839', f: 9 }, '2813': { g: '2813', f: 9 }, '2794': { g: '2794', f: 9 }, '2829': { g: '2829', f: 11 },
     '2801': { g: '2801', f: 8 }, '2820': { g: '2820', f: 15 }, '6899': { g: '6899', f: 12 }, '6757': { g: '6757', f: 12 },
     '6690': { g: '6690', f: 12 }, '6804': { g: '6804', f: 12 },
-    '5454': { g: '5454', f: 1 }   // 🌑 v3.3.33 真‧冥皇丹特斯＝骸骨王座坐像（NPC/真‧冥皇丹特斯 5454-0＋影子 5455-0·單幀 138×228）
+    '5454': { g: '5454', f: 1 },   // 🌑 v3.3.33 真‧冥皇丹特斯＝骸骨王座坐像（NPC/真‧冥皇丹特斯 5454-0＋影子 5455-0·單幀 138×228）
+    '2141': { g: '2141', f: 6 }   // 🕊️ v3.4.73 聖使阿卡塔（body 2141＋影 2142·6幀·29×59）
 };
 // 有名字的 NPC → 專屬 sprite（＋依功能固定共用者：魔物追蹤/城堡護衛已於下方 role 邏輯處理）
 const NPC_SPR_FIXED = {
@@ -1726,6 +1772,7 @@ const NPC_SPR_FIXED = {
     npc_kupu: '1839', npc_rabiani: '1307', npc_runde: '2813', npc_kang: '2794', npc_brudica: '2829',
     npc_skvati: '2801', npc_saedia: '2820', npc_shenien: '6899', npc_bartel: '6757', npc_sphere: '6690',
     npc_dantes_lord: '5454', npc_atelier: '1768',   // 🌑 v3.3.33 長老會議廳：真‧冥皇丹特斯＝骸骨王座／亞提利歐＝矮人鐵匠（用戶指定·同炎魔鐵匠外型 1768）
+    npc_arkata: '2141',   // 🕊️ v3.4.73 聖使阿卡塔（亞丁·經典限定·死亡經驗買回）
     // 魔物追蹤三兄弟共用 cray；港口/寵物保管等亦可指定
     npc_obel: '1049', npc_hert: '1049', npc_diren: '1049'
 };
@@ -1809,8 +1856,8 @@ const TOWN_NPC_SPOTS = {
     town_giran: [[69, 81], [81, 56], [88, 79], [57, 88], [38, 66], [54, 66], [66, 42], [14, 36], [58, 33], [22, 81]],
     // 海音城鎮(運河水都·v3.3.31 依用戶截圖箭頭校正)：比特=左下屋前空地｜哈金=上排庫房前街面｜傭兵公會=右上建築左側路面｜琉米埃爾=花壇右下路面(勿站上花壇)｜多文=中央廣場｜依詩蒂=橋頭左側廣場(勿站上橋)｜依斯巴=木棧碼頭板上(港口)
     town_heine: [[19, 85], [41, 26], [56, 29], [22, 41], [50, 50], [62, 45], [28, 88]],
-    // 亞丁城鎮(白石王都)：拉溫=左宅邸前｜恬金=右上宮殿階梯｜烏普尼=噴泉台階旁｜諾斯=中央羅盤地磚｜包武=右下拱廊前
-    town_aden: [[19, 62], [76, 30], [64, 48], [42, 68], [69, 77]],
+    // 亞丁城鎮(白石王都)：拉溫=左宅邸前｜恬金=右上宮殿階梯｜烏普尼=噴泉台階旁｜諾斯=中央羅盤地磚｜包武=右下拱廊前｜聖使阿卡塔=左上迴廊前(經典限定)
+    town_aden: [[19, 62], [76, 30], [64, 48], [42, 68], [69, 77], [31, 40]],
     // 歐瑞村莊(雪山村·v3.3.32 依用戶截圖箭頭校正四點全下到路面)：畢伍德=右屋前雪路｜希林=上方倉庫門前地面｜傭兵公會=村中央｜伊貝爾賓=左屋前空地(勿站台階)｜大衛=右屋角前雪路｜特羅斯=左下柴堆路口
     town_oren: [[72, 54], [53, 29], [45, 55], [33, 49], [77, 59], [22, 72]],
     // 燃柳村莊：歐斯=鍛造屋前院(火爐鐵砧旁)
@@ -1914,6 +1961,7 @@ function renderTownNPCMap(townId) {
         }
         if (npc.darkOnly && player.cls !== 'dark') return false;
         if (npc.classicHide && player.classicMode) return false;
+        if (npc.classicOnly && !player.classicMode) return false;   // 🕊️ 經典限定 NPC（聖使阿卡塔）：一般模式不渲染
         return true;
     });
     // 🗼🌀 v3.2.89 傲慢之塔／時空裂痕：入口告示改成地圖上的可點 NPC（_spr 專屬圖·_float 專屬點擊→浮動視窗）

@@ -1194,7 +1194,14 @@ function killPlayer() {
         let _lossCap = Math.floor((getExpReq(player.lv) || 0) * 0.05);
         let _before = player.exp;
         player.exp = Math.max(0, player.exp - _lossCap);
-        msg = `你的角色已經死亡。<span class="text-red-300">（經典模式：損失了 ${_before - player.exp} 點經驗）</span>`;
+        let _actualLoss = _before - player.exp;
+        msg = `你的角色已經死亡。<span class="text-red-300">（經典模式：損失了 ${_actualLoss} 點經驗）</span>`;
+        // 🕊️ v3.4.73 聖使阿卡塔死亡經驗買回：只記「實際損失 > 0」的一筆(上限10筆·滿了淘汰最舊)
+        if (_actualLoss > 0) {
+            if (!Array.isArray(player.deathLog)) player.deathLog = [];
+            player.deathLog.push({ lv: player.lv, loss: _actualLoss, t: Date.now() });
+            while (player.deathLog.length > 10) player.deathLog.shift();
+        }
     }
 
     // 顯示系統與戰鬥日誌

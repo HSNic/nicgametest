@@ -705,6 +705,26 @@
         ['熊貓', 'item_panda_feed', 10], ['高麗幼犬', 'item_koreadog_feed', 10], ['暴走兔', 'item_carrot', 10],
         ['袋鼠', 'item_kangaroo_feed', 10], ['猴子', 'item_monkey_feed', 10],
     ].forEach(function (r) { (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], r[2]]); });
+    // 🆕 2026-07-16 同步原作者 v3.4.84 新增掉落規則
+    // 🗡️ v3.4.33 倫得雙刀（黑暗妖精雙刀·雙擊33/貫穿/5% 復仇尖石）：死亡騎士 0.1%／真‧死亡騎士 冥皇丹特斯 1%
+    [
+        ['死亡騎士', 'wpn_rond_dual', 0.1],
+        ['真‧死亡騎士 冥皇丹特斯', 'wpn_rond_dual', 1],
+    ].forEach(function (r) { (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], r[2]]); });
+    // 🌑 v3.4.67 解除詛咒的真死亡騎士．冥皇執行劍：真‧死亡騎士 冥皇丹特斯 0.0001%
+    (MOB_DROPS['真‧死亡騎士 冥皇丹特斯'] = MOB_DROPS['真‧死亡騎士 冥皇丹特斯'] || []).push(['wpn_uncursed_emperor_blade', 0.0001]);
+    // 🌀 魔法書(治癒能量風暴)：長老．巴塔斯 0.1%／吉爾塔斯 1%／翼龍 0.01%
+    [
+        ['長老．巴塔斯', 'bk_heal_energy_storm', 0.1],
+        ['吉爾塔斯', 'bk_heal_energy_storm', 1],
+        ['翼龍', 'bk_heal_energy_storm', 0.01],
+    ].forEach(function (r) { (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], r[2]]); });
+    // 🌊 精靈水晶(污濁之水)：法利昂 1%／水精靈王 0.01%／黑長者 0.1%
+    [
+        ['法利昂', 'bk_elf_muddywater', 1],
+        ['水精靈王', 'bk_elf_muddywater', 0.01],
+        ['黑長者', 'bk_elf_muddywater', 0.1],
+    ].forEach(function (r) { (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], r[2]]); });
     // 🏺 v3.1.15：潛行者的祕密箱子 改由「密密」掉落（原艾爾摩法師取消，該怪僅保留凋零法師的護身符）；巨大鱷魚的狩獵牙 改由「巨大鱷魚」掉落（原格利芬取消，該怪僅保留獅鷲的鋒利鷹爪）。
 
     // 區域額外掉落（眠龍洞穴1~3樓=zone_15/16/17、妖精森林周邊=zone_01 所有怪物）
@@ -808,7 +828,7 @@ const SHERINE_SET_TEXT = {
     '學徒': ['2件：MP自然恢復+5、額外魔法點數+6', '3件：魔法爆擊率+3%', '5件：MP 低於最大值30%時，所有技能 MP 消耗減半（MP回升超過30%即恢復）'],
     '魔女': ['2件：魔法傷害+3', '3件：水屬性抗性+10、額外魔法點數+5', '5件：每觸發 5 次共鳴，免費發動一次冰雪暴（無需學會）'],
     '暗影': ['2件：額外傷害+7', '3件：觸發迴避時恢復 2% HP', '5件：雙擊觸發的額外一般攻擊傷害加倍'],
-    '幻覺': ['2件：魔法傷害命中時，恢復「等級/10」的MP', '3件：輔助技能消耗MP減少50%', '5件：敵人受到非自動攻擊技能的魔法傷害時，再次受到額外相同傷害（此額外傷害不再觸發套裝效果）'],
+    '幻覺': ['2件：立方、冰雪颶風／火牢持續傷害、魔爆及武器內建／免費觸發魔法每次發動並造成傷害時，恢復一次「等級/10」的MP（不因命中多名敵人重複恢復）', '3件：輔助技能消耗MP減少50%', '5件：上述魔法造成傷害時，再次造成額外相同傷害（不包含一般傷害法術、共鳴與反射；額外傷害不再觸發套裝效果）'],
     '龍血': ['2件：造成物理傷害時恢復1%該傷害的HP（自身HP低於50%時改為5%）', '3件：施放消耗HP的技能可獲得「龍裔」10秒，受到傷害減少15%', '5件：消耗HP技能造成傷害提高20%'],
     '狂怒': ['2件：負重上限+500', '3件：最大HP+20%', '5件：HP每少10%，造成傷害+4%、受到傷害-4%（最多±20%，即HP低於50%時達上限）']
 };
@@ -1178,9 +1198,16 @@ function startGameTimers() {
 // 等真正回到即時（n===1）且累積時間達門檻時，才統一輸出一次，避免每次小補跑都洗版。
 const AWAY_SUMMARY_MIN_MS = 3000;    // 累積補跑時間達 3 秒才輸出「掛機期間獲得」訊息
 let _awayAcc = { ticks: 0, gold: 0, items: {} };
+// 🕶️ v3.4.44 「掛機期間獲得」訊息只在分頁確實切到背景時才輸出。gameLoop 的補跑(state.ff)判定純看「距上次 loop 過了多久」，
+//   前景一次長卡頓(saveGame 的 LZ 壓縮／開大量物品面板／GC)也會累積成補跑→原本會誤印掛機訊息。改用 visibilitychange
+//   記「本次累積窗口是否確實隱藏過」(sticky 旗標)：收益照計入 player.gold/inv、只 gate 這行訊息。
+let _awaySawHidden = false;
+if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('visibilitychange', function () { if (document.hidden) _awaySawHidden = true; });
+}
 function flushAwaySummary() {
-    if (_awayAcc.ticks <= 0) return;
-    if (_awayAcc.ticks * TICK_MS >= AWAY_SUMMARY_MIN_MS) {
+    if (_awayAcc.ticks <= 0) { _awaySawHidden = false; return; }   // 無累積：順手清掉「短暫隱藏但沒補跑」留下的旗標，避免下次前景卡頓被誤判為掛機
+    if (_awayAcc.ticks * TICK_MS >= AWAY_SUMMARY_MIN_MS && _awaySawHidden) {   // 🕶️ v3.4.44 加「確實隱藏過」條件：前景卡頓造成的補跑不印訊息（收益仍已入袋）
         let gains = [];
         for (let id in _awayAcc.items) {
             if (_awayAcc.items[id] > 0 && DB.items[id]) gains.push({ id, n: _awayAcc.items[id] });
@@ -1196,6 +1223,7 @@ function flushAwaySummary() {
     }
     // 無論是否達門檻都清空（未達門檻者視為一般即時遊玩的計時抖動，不輸出）
     _awayAcc = { ticks: 0, gold: 0, items: {} };
+    _awaySawHidden = false;
 }
 
 let player = {
@@ -1697,6 +1725,15 @@ Object.assign(ITEM_WEIGHTS, {"魔法娃娃：雪人":1,"魔法娃娃：野狼寶
 Object.assign(ITEM_WEIGHTS, {"與歐林的定情之戒":3,"馴獸師的飼料袋":3,"地元素屏障":50,"水元素屏障":50,"火元素屏障":50,"風元素屏障":50,"兇殘惡鬼的毒牙":40,"殘暴骸骨的破片":40,"屍毒之針":50,"不定形的變幻劍":110,"巨大鱷魚的皮革盔甲":180,"妖鬼王的畸形背瘤":50,"傳說海賊的迷幻雙刀":30,"熔岩灼燒的雙拳":50});
 Object.assign(ITEM_WEIGHTS, {"魔力阻抗襯衫":15,"火精靈王的爆焰":150,"水精靈王的撫摸":40,"風精靈王的狂嘯":30,"地精靈王的抗拒":40,"純潔少女的憐愛":5,"破岩法師的秘術":30,"將軍愛用的握劍護腕":30});   // 🏺 遺物 第十五批重量（依規格）
 [['西瑪','relic_orin_ring'],['拉斯塔巴德馴獸師','relic_tamer_feedbag'],['地元素守護者','relic_earth_barrier'],['水元素守護者','relic_water_barrier'],['火元素守護者','relic_fire_barrier'],['風元素守護者','relic_wind_barrier'],['殘暴的食屍鬼','relic_ghoul_fang'],['殘暴的史巴托','relic_sparto_shard'],['受詛咒的妖魔殭屍','relic_corpse_needle'],['遺忘之島變形怪','relic_morph_blade'],['遺忘之島巨大鱷魚','relic_croc_leather'],['遺忘之島卡司特王','relic_kasta_hump'],['德雷克','relic_pirate_dual'],['熔岩高崙','relic_lava_fists']].forEach(r => (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], 0.0001]));
+// 🆕 2026-07-16 同步原作者 v3.4.84：以下第十六批／第十七批遺物重量與掉落
+// 🏺 遺物 第十六批重量（依規格·寵物防具/武器不計負重故不列）
+Object.assign(ITEM_WEIGHTS, {"奴隸粗布衫":30,"地獄犬三頭釵":30,"巨魔的再生戒指":5,"烈焰巫師的正式長袍":30,"負重的堅忍巨臂":50,"笨重的鋼鐵石盾":250,"魔力泉源長靴":15,"暗黑的金屬棍棒":30,"召喚儀式的魔術布":10,"斷裂的昆蟲巨鉗":120,"魔力塑造的海洋水晶球":30,"燃燒殆盡的灰燼之拳":10,"死神的鐮刀破片":40,"巨靈的承諾":3,"被差遣的迷你闇精靈":10,"復仇者的十字弩弓":40});
+// 🏺 遺物 第十六批掉落（單一怪物 0.0001%；地獄奴隸＝聖地版 sanct_hellslave·同名鍵）
+[['受詛咒的馴獸師','relic_tamer_petarm'],['地獄奴隸','relic_slave_shirt'],['恐怖的地獄犬','relic_cerberus_pin'],['遺忘之島多羅','relic_troll_regen_ring'],['卡士柏','relic_flamemage_robe'],['底比斯 尖碑石奴(黑)','relic_burden_gauntlet'],['小惡魔','relic_imp_fang'],['恐怖的鋼鐵高崙','relic_iron_stone_shield'],['火焰之魔法師','relic_mana_spring_boots'],['暗黑萊肯','relic_dark_metal_club'],['炎魔的小惡魔','relic_summon_cloth'],['巨大守護螞蟻','relic_ant_pincer'],['馬庫爾','relic_ocean_orb'],['阿西塔基奧','relic_ash_fist'],['死神','relic_reaper_scythe'],['伊弗利特','relic_djinn_promise'],['黑暗精靈使','relic_mini_darkelf'],['黑暗復仇者','relic_avenger_crossbow']].forEach(r => (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], 0.0001]));
+// 🏺 遺物 第十七批重量（依規格）
+Object.assign(ITEM_WEIGHTS, {"重戰士的鏈鎖腰帶":150,"殘暴的骸骨意志之弓":40,"鬥士的決戰服裝":50,"幼龍的爪印":50,"滲透紅光的背後靈":5,"法師的護身短刀":30});
+// 🏺 遺物 第十七批掉落（單一怪物 0.0001%）
+[['歐姆戰士','relic_heavy_belt'],['殘暴的骷髏神射手','relic_bone_bow'],['殘暴的骷髏鬥士','relic_fighter_armor'],['幼龍','relic_drake_pawprint'],['火焰之靈魂(紅)','relic_red_wraith'],['受詛咒的艾爾摩法師','relic_mage_dagger']].forEach(r => (MOB_DROPS[r[0]] = MOB_DROPS[r[0]] || []).push([r[1], 0.0001]));
 // ⚖️ 負重顯示色：0～49% 暖白、50～81% 介面金黃、82%以上介面紅（loadTier 0/1/2～3）。
 function getLoadColor(tier){ return Number(tier) >= 2 ? 'load-tone-danger' : (Number(tier) >= 1 ? 'load-tone-warning' : 'load-tone-normal'); }
 // 🪆 取目前裝備之魔法娃娃的某 % 欄位值（expBonus/goldBonus/potionBonus…；未裝娃娃→0）

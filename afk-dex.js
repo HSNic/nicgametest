@@ -173,7 +173,7 @@
     }
     return _castleEntry[mapName] || '';
   }
-  function itemNameOf(id) { return (DB.items[id] && DB.items[id].n) ? DB.items[id].n : id; }
+  function itemNameOf(id) { var d = DB.items[id]; var n = (d && d.n) ? d.n : id; return (d && d.relic) ? ('[遺物] ' + n) : n; }   // 🏺 遺物名稱一律加「[遺物]」前綴(掉落表/搜尋結果共用同一份名稱)
   // 職業限定掉落附註:試煉/兌換道具(TRIAL_ITEM_CLASS)僅該職業擊殺才掉,標「🔒僅X」讓所有職業都看得到是誰限定;非限定道具(書板/鎖鏈劍/印記等全職可掉)不在表內→回 null 不附註。
   var _CLS_CN = { knight: '騎士', mage: '法師', elf: '妖精', dark: '黑暗妖精', illusion: '幻術士', dragon: '龍騎士', warrior: '戰士', royal: '王族' };
   function trialClassOf(id) {
@@ -247,7 +247,7 @@
       //    詳情卡已有 🔨 製作 區塊(craftInfoHTML)會列出在哪個 NPC、用什麼材料。沒這條這類材料整個查無(使用者常被問怎麼拿)。
       var isCraftable = !!(_craftIndex && _craftIndex[id]);
       if (!isEquip && !shopSet[id] && !hasAcq && !inGacha && !isDropped && !isCraftable) continue;
-      ITEM_INDEX.push({ id: id, n: d.n, hay: String(d.n).toLowerCase() });
+      ITEM_INDEX.push({ id: id, n: itemNameOf(id), hay: String(d.n).toLowerCase() });   // 🏺 顯示名稱走 itemNameOf(遺物加「[遺物]」前綴),搜尋 hay 仍用原名(不必打「遺物」才搜得到)
     }
     ITEM_INDEX.sort(function (a, b) { return a.n.length - b.n.length || a.n.localeCompare(b.n); });   // 名稱短的(較接近完整匹配)排前面
   }
@@ -257,7 +257,7 @@
     for (var i = 0; i < ITEM_INDEX.length && ms.length <= ITEM_MATCH_MAX; i++) if (ITEM_INDEX[i].hay.indexOf(q) >= 0) ms.push(ITEM_INDEX[i]);
     if (!ms.length) return '';
     var more = ms.length > ITEM_MATCH_MAX; if (more) ms = ms.slice(0, ITEM_MATCH_MAX);
-    var names = ms.map(function (it) { return '<span class="m-dex-iname" data-id="' + esc(it.id) + '" title="看數值">' + hl(it.n, q) + '</span>'; }).join('、');
+    var names = ms.map(function (it) { var _d = DB.items[it.id]; return '<span class="m-dex-iname' + (_d && _d.relic ? ' c-relic' : '') + '" data-id="' + esc(it.id) + '" title="看數值">' + hl(it.n, q) + '</span>'; }).join('、');
     return '<div class="m-dex-card"><div class="m-dex-imatch-h">🔎 符合的物品（點名稱看詳情）</div><div class="m-dex-imatch">' + names + (more ? '　…還有更多，請輸入更精確的名稱' : '') + '</div></div>';
   }
 
@@ -377,7 +377,13 @@
     });
   }
   function fmt(n) { try { return (n == null ? '-' : Number(n).toLocaleString()); } catch (e) { return '' + n; } }
-  function fmtPct(p) { return p < 0.01 ? (p < 0.001 ? p.toFixed(4) : p.toFixed(3)) : (p < 1 ? p.toFixed(2) : (Number.isInteger(p) ? '' + p : p.toFixed(1))); }
+  function fmtPct(p) {
+    if (p > 0 && p < 0.001) {   // 🏺 經典模式(×1/10)把 0.0001% 級遺物掉率再乘 0.1→ 固定 4 位小數會四捨五入成 0.0000%；動態加位數直到看得到非零數字為止
+      var dec = 4; while (dec < 10 && p * Math.pow(10, dec) < 1) dec++;
+      return p.toFixed(dec);
+    }
+    return p < 0.01 ? (p < 0.001 ? p.toFixed(4) : p.toFixed(3)) : (p < 1 ? p.toFixed(2) : (Number.isInteger(p) ? '' + p : p.toFixed(1)));
+  }
   function st(k, v) { return '<span class="m-dex-stat"><b>' + k + '</b> ' + esc(v) + '</span>'; }
   function sgn(v) { return (v > 0 ? '+' : '') + v; }   // 帶正負號:正數加「+」、負數本身就有「-」(避免「+-10」)
 
@@ -590,8 +596,8 @@
     var icon = '';
     try { icon = (typeof getIconUrl === 'function') ? getIconUrl(d) : ''; } catch (e) {}
     var img = icon ? '<img class="m-dex-iimg" src="' + esc(icon) + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'">' : '';
-    var nameCls = d.legend ? ' c-legend' : '';
-    var head = opts.noHead ? '' : ('<div class="m-dex-ihead">' + img + '<div class="m-dex-iname-big' + nameCls + '">' + esc(d.n) + '</div></div>');
+    var nameCls = d.relic ? ' c-relic' : (d.legend ? ' c-legend' : '');
+    var head = opts.noHead ? '' : ('<div class="m-dex-ihead">' + img + '<div class="m-dex-iname-big' + nameCls + '">' + (d.relic ? '[遺物] ' : '') + esc(d.n) + '</div></div>');
     var handTxt = (d.type === 'wpn' && typeof isTwoHandedWpn === 'function') ? ('・' + (isTwoHandedWpn(d) ? '雙手' : '單手')) : '';   // 🗡️ 武器標單手/雙手(用遊戲 isTwoHandedWpn:弓或w2h且非oneHand=雙手)
     var typeLine = '<div style="color:#94a3b8;font-size:12px;margin:2px 0 4px;">' + esc(IT_TYPE[d.type] || d.type || '道具') + (d.slot ? '・' + esc(IT_SLOT[d.slot] || d.slot) : '') + handTxt + '</div>';
     // 數值/說明:用遊戲自己的 buildItemDescHTML(全物品共用、與遊戲內顯示一致、作者新增裝備/特效自動跟上),
@@ -686,7 +692,7 @@
           var pct = d[2] * effMult; if (pct > 100) pct = 100;
           var tag = d[3] ? ' <span class="m-dex-droptag">' + esc(d[3]) + '</span>' : '';
           return '<tr>' +
-            '<td><span class="m-dex-iname" data-id="' + esc(d[0]) + '" title="看詳情">' + hl(d[1], q) + '</span>' + tag + '</td>' +
+            '<td><span class="m-dex-iname' + (DB.items[d[0]] && DB.items[d[0]].relic ? ' c-relic' : '') + '" data-id="' + esc(d[0]) + '" title="看詳情">' + hl(d[1], q) + '</span>' + tag + '</td>' +
             '<td class="m-dex-pct">' + fmtPct(pct) + '%</td>' +
             '</tr>';
         }).join('') + '</tbody></table>'

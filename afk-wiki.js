@@ -263,35 +263,6 @@
     ['弓 / 遠距', '走遠距離的命中與傷害、可觸發連射，但需要箭矢。']
   ];
 
-  // 🏛️ 傳統模式「裝備自帶強化值」分布：即時讀 index.html 的 TRAD_EN_TABLES 計算(作者改權重自動跟上)
-  function tradEnhTableHTML() {
-    if (typeof TRAD_EN_TABLES === 'undefined') return '';
-    var th = 'style="text-align:left;padding:4px 6px;border-bottom:1px solid #475569;"';
-    var thc = 'style="text-align:center;padding:4px 6px;border-bottom:1px solid #475569;"';
-    var td = 'style="padding:4px 6px;"', tdc = 'style="text-align:center;padding:4px 6px;"';
-    function stat(tbl) {
-      var tot = 0, ev = 0, p0 = 0, p11 = 0, mx = 0;
-      tbl.forEach(function (e) { tot += e[1]; ev += e[0] * e[1]; if (e[0] === 0) p0 += e[1]; if (e[0] >= 11) p11 += e[1]; if (e[0] > mx) mx = e[0]; });
-      return { ev: ev / tot, p0: p0 / tot * 100, p11: p11 / tot * 100, mx: mx };
-    }
-    function rng(a, b, dec) {
-      var x = dec ? a.toFixed(1) : String(Math.round(a)), y = dec ? b.toFixed(1) : String(Math.round(b));
-      return (x === y) ? x : (x + '~' + y);
-    }
-    var rows = [['武器', 'wpn'], ['防具', 'arm'], ['飾品', 'acc']].map(function (g) {
-      var ks = Object.keys(TRAD_EN_TABLES).filter(function (k) { return k.indexOf(g[1]) === 0; });
-      if (!ks.length) return '';
-      var ss = ks.map(function (k) { return stat(TRAD_EN_TABLES[k]); });
-      var ev = ss.map(function (s) { return s.ev; }), p0 = ss.map(function (s) { return s.p0; }), p11 = ss.map(function (s) { return s.p11; });
-      var mx = Math.max.apply(null, ss.map(function (s) { return s.mx; }));
-      return '<tr><td ' + td + '>' + g[0] + '</td><td ' + tdc + '>+' + mx + '</td><td ' + tdc + '>約 ' + rng(Math.min.apply(null, ev), Math.max.apply(null, ev), true) +
-        '</td><td ' + tdc + '>' + rng(Math.min.apply(null, p0), Math.max.apply(null, p0)) + '%</td><td ' + tdc + '>' + Math.round(Math.max.apply(null, p11)) + '%</td></tr>';
-    }).join('');
-    return '<table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:13px;color:#cbd5e1;"><thead><tr>' +
-      '<th ' + th + '>部位</th><th ' + thc + '>自帶上限</th><th ' + thc + '>平均</th><th ' + thc + '>+0（無強化）</th><th ' + thc + '>+11 以上</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table>';
-  }
-
   // ===== 戰鬥機制(本檔維護;白話講清楚傷害怎麼算) ============================
   var COMBAT_SECTIONS = [
     // ── 一、你的核心數值怎麼來 ──
@@ -461,14 +432,6 @@
       '<b>死亡會損失「該等級最大經驗」的 5%</b>（一般模式死亡不損失經驗）；最多扣到該等級 0%、<b>不會降等</b>。',
       '功能限制：<b>無法賦予裝備祝福</b>（象牙塔·碧恩）、<b>無法進行職業精通</b>（威頓村·漢）、<b>無法進入「席琳的世界」</b>。',
       '戰鬥簡化：經典模式<b>停用大量武器特效與被動</b>——共鳴、魔擊、連射、反擊、居合、穿透、切割、出血、鈍擊、盾牌格檔、雙刀「雙刃」、鋼爪「額外重擊」，以及騎士的看破／殺戮。一切回歸最樸素的天堂式戰鬥。'
-    ]},
-    { t: '🏛️ 傳統模式（硬核：拿掉「自己強化」）', lines: [
-      '<b>創角時和經典各自獨立勾選</b>（不必先勾經典也能單勾傳統），<b>選了就永久、建立後無法關閉</b>。於是模式共有四種組合：<b>一般／經典／傳統／經典＋傳統</b>，存檔位顏色與角色面板標記各不同（傳統＝淡紫🏛️、經典＋傳統＝青綠⚔🏛️）。傳統只改下面這幾條，是否同時吃經典懲罰看你有沒有一起勾經典。',
-      '<b>① 沒有「自己強化」</b>：強化鈕與快速強化全部隱藏，所有武器／防具／飾品都不能自己 +1。',
-      '<b>② 改成「裝備自帶強化值」</b>：既然不能自己強化，<b>怪物掉落／潘朵拉黑市／製作</b>出的武器／防具／飾品會<b>隨機自帶一個已強化值</b>；<b>商店購買、試煉／任務兌換的裝備一律 +0</b>，寵物裝備、箭矢、材料、古老系列也都 +0。自帶值<b>偏低、隨機</b>，越高越罕見；<b>安定值越高（高階）的裝備分布越好</b>：' + tradEnhTableHTML(),
-      '此外「失去魔力的巴列斯／巴風特魔杖」用靈魂之球喚回時，傳統模式會<b>附一個隨機強化值</b>（一般／經典則維持 +0）；<b>歐西里斯寶箱開出的底比斯裝備</b>也比照掉落，傳統模式自帶隨機強化值。',
-      '<b>③ 施法卷軸只有「經典＋傳統」才全面消失</b>：單純「一般＋傳統」<b>照常</b>能拿到對武器／盔甲／飾品施法的卷軸（怪掉、黑市、寶箱、兌換都在），供<b>碧恩賦予祝福、飾品卷軸升級</b>用——只是沒有「自己強化」那個面板。<b>經典＋傳統</b>才會像舊版那樣任何來源都拿不到卷軸（連帶隱藏肯特城兌換 NPC 伊賽馬利、入盟不發卷軸見面禮）。',
-      '<b>④ 倉庫與圖鑑依模式組合各自獨立</b>：一般／經典／傳統／經典＋傳統<b>四種組合各一份</b>倉庫、卡片收集冊、裝備收集冊，互不共通；<b>傭兵也只能招募「同一種組合」的存檔</b>。'
     ]}
   ];
 
@@ -915,6 +878,7 @@
     { k: 'magic', n: '職業魔法' },
     { k: 'mastery', n: '職業專精' },
     { k: 'equip', n: '裝備' },
+    { k: 'relic', n: '遺物' },
     { k: 'enhance', n: '強化' },
     { k: 'set', n: '套裝' },
     { k: 'craft', n: '製作' },
@@ -938,7 +902,7 @@
     { k: 'mode', n: '遊戲模式' },
     { k: 'npc', n: 'NPC總覽' }
   ];
-  var state = { tab: 'equipbook', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn' };   // 預設分頁=分頁列第一個(收藏-裝備)
+  var state = { tab: 'equipbook', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
   // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
   // 故 standalone 下拉長防抖,減少同步渲染的頻率。
   var _isStandalone = (function () {
@@ -1047,6 +1011,12 @@
       // 裝備分頁的「職業篩選」
       var eqcls = e.target.closest ? e.target.closest('[data-equipcls]') : null;
       if (eqcls) { state.equipCls = eqcls.getAttribute('data-equipcls'); render(); return; }
+      // 遺物分頁的「部位篩選」
+      var rlslot = e.target.closest ? e.target.closest('[data-relicslot]') : null;
+      if (rlslot) { state.relicSlot = rlslot.getAttribute('data-relicslot'); render(); return; }
+      // 遺物分頁的「職業篩選」
+      var rlcls = e.target.closest ? e.target.closest('[data-reliccls]') : null;
+      if (rlcls) { state.relicCls = rlcls.getAttribute('data-reliccls'); render(); return; }
       // 收藏三分頁的「模式」切換(再點同一顆=收合)
       var cm = e.target.closest ? e.target.closest('[data-collmode]') : null;
       if (cm) { var cmv = cm.getAttribute('data-collmode'); state.collMode = (state.collMode === cmv) ? null : cmv; render(); return; }
@@ -1117,6 +1087,7 @@
     if (key === 'equipbook') return renderEquipBook();
     if (key === 'miscbook') return renderMiscBook();
     if (key === 'equip') return renderEquip();
+    if (key === 'relic') return renderRelic();
     if (key === 'enhance') return renderEnhance();
     if (key === 'craft') return renderCraft();
     if (key === 'sherine') return renderSherine();
@@ -1263,7 +1234,6 @@
     var t = [];
     if (npc.darkOnly) t.push('<span class="m-npc-tag" style="color:#c084fc;">🌑 黑暗妖精限定</span>');
     if (npc.classicHide) t.push('<span class="m-npc-tag" style="color:#fca5a5;">經典模式不出現</span>');
-    if (npc.traditionalHide) t.push('<span class="m-npc-tag" style="color:#fca5a5;">經典+傳統模式隱藏</span>');
     return t.length ? '　' + t.join('　') : '';
   }
   function renderNpc() {
@@ -1374,7 +1344,7 @@
     clsRow.style.display = showCls ? 'flex' : 'none';
     var _allBtn = clsRow.querySelector('.m-wiki-clsbtn-all'); if (_allBtn) _allBtn.style.display = (state.tab === 'quest') ? '' : 'none';   // 全職業鈕只在任務分頁
     document.querySelectorAll('#m-wiki-cls .m-wiki-clsbtn').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cls') === state.cls); });
-    body.innerHTML = linkifyTabs((state.tab === 'magic') ? renderMagic(state.magicCls) : (state.tab === 'equip') ? renderEquip(state.equipCls, state.equipSlot) : tabHTML(state.tab, state.cls), state.tab);
+    body.innerHTML = linkifyTabs((state.tab === 'magic') ? renderMagic(state.magicCls) : (state.tab === 'equip') ? renderEquip(state.equipCls, state.equipSlot) : (state.tab === 'relic') ? renderRelic(state.relicCls, state.relicSlot) : tabHTML(state.tab, state.cls), state.tab);
   }
 
   // 📐 各專精「實際數據」——逐條從 js/ 原始碼查證(2026-07-05,含未精通基準值對照與描述沒講的細節);
@@ -1772,11 +1742,16 @@
     { k: 'amulet', n: '📿 項鍊' }, { k: 'ear', n: '👂 耳環' }, { k: 'tshirt', n: '👕 內衣' }, { k: 'pet', n: '🐾 寵物裝備' }
   ]);
   var EQUIP_REQ_CN = { knight: '騎士', mage: '法師', elf: '妖精', dark: '黑暗妖精', illusion: '幻術士', dragon: '龍騎士', warrior: '戰士', royal: '王族' };
-  function equipGroupKey(id, d) { return (d.type === 'wpn') ? ((typeof EQUIP_ITEM_CAT !== 'undefined' && EQUIP_ITEM_CAT[id]) || 'wpn_other') : (d.slot || 'other'); }
+  function equipGroupKey(id, d) {
+    if (d.type === 'wpn') return (typeof EQUIP_ITEM_CAT !== 'undefined' && EQUIP_ITEM_CAT[id]) || 'wpn_other';
+    if (d.slot === 'petarm' || d.slot === 'petwpn') return 'pet';   // 🐾 寵物防具/武器兩種 slot 都併進「寵物裝備」篩選鈕(EQUIP_GROUPS 只有單一 k:'pet')；踩過:兩者 d.slot 原樣回傳與篩選鈕的 k 對不上，寵物裝備在裝備/遺物分頁永遠列不出來
+    return d.slot || 'other';
+  }
   // 某職業能否裝備:用遊戲真實規則(與遊戲顯示一致),非單看 req
   function classCanEquip(d, id, cls) {
     if (cls === 'all') return true;
     try {
+      if (d && d.relic) return (typeof reqAllowsClass === 'function') ? reqAllowsClass(d, cls) : true;   // 🏺 遺物：職業限制純看 req 白名單(同遊戲 checkCanEquip 的 isRelic 短路)，不吃各職業專屬武器/防具開放清單
       if (cls === 'dark' && typeof darkEquipOk === 'function') return darkEquipOk(d, id);
       if (cls === 'illusion' && typeof illusionEquipOk === 'function') return illusionEquipOk(d, id);
       if (cls === 'dragon' && typeof dragonEquipOk === 'function') return dragonEquipOk(d, id);
@@ -1813,6 +1788,20 @@
     if (d.req && d.req !== 'all') bits.push(String(d.req).split(',').map(function (x) { return EQUIP_REQ_CN[x] || x; }).join('／') + '專用');   // 多職業 req(如 knight,elf,dark)逐一轉中文
     return bits.join('　');
   }
+  // 裝備卡片(裝備分頁／遺物分頁共用):圖示＋名稱(遺物海藍色＋[遺物]前綴／傳說金色＋✦)＋精簡數值，點名稱展開完整詳情
+  function equipCardHTML(e) {
+    var d = e.d, id = e.id;
+    var nameCls = d.relic ? 'c-relic' : (d.legend ? 'c-legend' : 'text-slate-100');
+    var ic = ''; try { ic = (typeof getIconUrl === 'function') ? getIconUrl(d) : ''; } catch (eIc) {}
+    var icImg = ic ? '<img src="' + esc(ic) + '" alt="" loading="lazy" decoding="async" style="width:26px;height:26px;object-fit:contain;flex:none;border-radius:4px;" onerror="this.style.display=\'none\'">' : '';
+    return '<div class="m-wiki-card m-eq-card">' +
+      '<div class="m-eq-head" data-eq="' + esc(id) + '" style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
+        '<span style="display:flex;align-items:center;gap:7px;flex-shrink:0;">' + icImg + '<span class="' + nameCls + ' font-bold" style="white-space:nowrap;">' + (d.relic ? '[遺物] ' : '') + esc(d.n) + (d.legend ? ' ✦' : '') + '</span></span>' +
+        '<span class="m-eq-compact" style="color:#94a3b8;font-size:12px;text-align:right;flex-shrink:1;min-width:0;">' + esc(equipCompact(d)) + '</span>' +
+      '</div>' +
+      '<div class="m-eq-detail" style="display:none;border-top:1px solid #1e293b;margin-top:6px;padding-top:6px;">' + equipDetailHTML(id) + '</div>' +
+    '</div>';
+  }
   var _equipHtml = {};
   function renderEquip(cls, slot) {
     cls = cls || 'all'; slot = slot || 'all';
@@ -1836,29 +1825,49 @@
       if (slot !== 'all' && gk !== slot) return;   // 只看選定部位
       (buckets[gk] = buckets[gk] || []).push({ id: id, d: d });
     });
-    function card(e) {
-      var d = e.d, id = e.id;
-      var nameCls = d.legend ? 'c-legend' : 'text-slate-100';
-      var ic = ''; try { ic = (typeof getIconUrl === 'function') ? getIconUrl(d) : ''; } catch (eIc) {}
-      var icImg = ic ? '<img src="' + esc(ic) + '" alt="" loading="lazy" decoding="async" style="width:26px;height:26px;object-fit:contain;flex:none;border-radius:4px;" onerror="this.style.display=\'none\'">' : '';
-      return '<div class="m-wiki-card m-eq-card">' +
-        '<div class="m-eq-head" data-eq="' + esc(id) + '" style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">' +
-          '<span style="display:flex;align-items:center;gap:7px;flex-shrink:0;">' + icImg + '<span class="' + nameCls + ' font-bold" style="white-space:nowrap;">' + esc(d.n) + (d.legend ? ' ✦' : '') + '</span></span>' +
-          '<span class="m-eq-compact" style="color:#94a3b8;font-size:12px;text-align:right;flex-shrink:1;min-width:0;">' + esc(equipCompact(d)) + '</span>' +
-        '</div>' +
-        '<div class="m-eq-detail" style="display:none;border-top:1px solid #1e293b;margin-top:6px;padding-top:6px;">' + equipDetailHTML(id) + '</div>' +
-      '</div>';
-    }
     var html = slotRow + clsRow + note;
     var total = 0;
     EQUIP_GROUPS.forEach(function (g) {
       var list = buckets[g.k]; if (!list || !list.length) return;
       list.sort(function (a, b) { return (b.d.p || 0) - (a.d.p || 0) || String(a.d.n).localeCompare(String(b.d.n)); });
       total += list.length;
-      html += '<div class="m-wiki-sub">' + g.n + '（' + list.length + '）</div>' + list.map(card).join('');
+      html += '<div class="m-wiki-sub">' + g.n + '（' + list.length + '）</div>' + list.map(equipCardHTML).join('');
     });
     if (!total) html += '<div class="m-wiki-hint">沒有符合的裝備。</div>';
     _equipHtml[ckey] = html;
+    return html;
+  }
+  // 遺物分頁:與裝備分頁同一套部位/職業篩選＋卡片渲染，只篩 d.relic===true(裝備分頁本身仍會列出遺物，這裡是純遺物的獨立瀏覽視角)
+  var _relicHtml = {};
+  function renderRelic(cls, slot) {
+    cls = cls || 'all'; slot = slot || 'all';
+    var ckey = cls + '|' + slot;
+    if (_relicHtml[ckey] !== undefined) return _relicHtml[ckey];
+    var slotRow = '<div class="m-wiki-mfilter"><button type="button" class="m-wiki-mfbtn' + (slot === 'all' ? ' on' : '') + '" data-relicslot="all">全部</button>' +
+      EQUIP_GROUPS.map(function (g) { return '<button type="button" class="m-wiki-mfbtn' + (g.k === slot ? ' on' : '') + '" data-relicslot="' + g.k + '">' + g.n + '</button>'; }).join('') + '</div>';
+    var clsRow = '<div class="m-wiki-mfilter">' + EQUIP_FILTERS.map(function (f) {
+      return '<button type="button" class="m-wiki-mfbtn' + (f[0] === cls ? ' on' : '') + '" data-reliccls="' + f[0] + '">' + f[1] + '</button>';
+    }).join('') + '</div>';
+    var note = '<div class="m-wiki-note">遺物永無詞綴／套裝、無法自己強化，職業限制純看 req 白名單。選<b>部位</b>與<b>職業</b>篩選;<b>點任一件展開完整數值與取得方式</b>。</div>';
+    var buckets = {};
+    Object.keys(DB.items).forEach(function (id) {
+      var d = DB.items[id];
+      if (!d || !d.n || !d.relic) return;
+      if (!classCanEquip(d, id, cls)) return;
+      var gk = equipGroupKey(id, d);
+      if (slot !== 'all' && gk !== slot) return;
+      (buckets[gk] = buckets[gk] || []).push({ id: id, d: d });
+    });
+    var html = slotRow + clsRow + note;
+    var total = 0;
+    EQUIP_GROUPS.forEach(function (g) {
+      var list = buckets[g.k]; if (!list || !list.length) return;
+      list.sort(function (a, b) { return (b.d.p || 0) - (a.d.p || 0) || String(a.d.n).localeCompare(String(b.d.n)); });
+      total += list.length;
+      html += '<div class="m-wiki-sub">' + g.n + '（' + list.length + '）</div>' + list.map(equipCardHTML).join('');
+    });
+    if (!total) html += '<div class="m-wiki-hint">沒有符合的遺物。</div>';
+    _relicHtml[ckey] = html;
     return html;
   }
 
@@ -2141,7 +2150,7 @@
       ['招得到誰', '你<b>其他存檔格</b>（共 8 格）有角色的格；目前所在格與空格不能招'],
       ['費用', '<b>角色等級 × 10000 金幣</b>；解除或「全員退出」<b>不退費</b>'],
       ['同時上場', '<b>最多 3 名</b>（王族也是 3）'],
-      ['遊戲模式', '一般／經典／傳統／經＋傳<b>四組各自獨立</b>，只能招<b>同組合</b>的存檔']
+      ['遊戲模式', '一般／經典<b>兩組各自獨立</b>，只能招<b>同組合</b>的存檔']
     ]) });
 
     // 2. 戰力怎麼算(3 條重點)
@@ -2210,8 +2219,9 @@
     return note + c1 + c2 + c3 + c4 + c5 + c6 + c7;
   }
 
-  // ===== 遊戲模式(本檔手動維護;一般/經典/傳統 差異比較;以遊戲程式實際邏輯為準) ============
-  //   何時要更新:原作者改了經典/傳統的數值或停用清單(grep js/ 的 classicMode / traditionalMode)時,回來改這裡。
+  // ===== 遊戲模式(本檔手動維護;一般/經典 差異比較;以遊戲程式實際邏輯為準) ============
+  //   何時要更新:原作者改了經典的數值或停用清單(grep js/ 的 classicMode)時,回來改這裡。
+  //   🏛️ 傳統模式：原作者 v3.0.83 已取消創角勾選(js/13-shop-save.js modeSuffix 只認 classicMode,traditionalMode 恆 false)，本表不再列。
   function renderMode() {
     var th = 'style="text-align:left;padding:5px 8px;border-bottom:1px solid #475569;color:#e2e8f0;font-weight:bold;"';
     var thc = 'style="text-align:center;padding:5px 8px;border-bottom:1px solid #475569;color:#e2e8f0;font-weight:bold;"';
@@ -2221,51 +2231,45 @@
     var NO = '<span style="color:#f87171;font-weight:bold;">✗</span>';
     function tbl(rows) {
       return '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;"><thead><tr>' +
-        '<th ' + th + '>項目</th><th ' + thc + '>一般</th><th ' + thc + '>經典</th><th ' + thc + '>傳統</th><th ' + thc + '>經＋傳</th></tr></thead><tbody>' + rows + '</tbody></table>';
+        '<th ' + th + '>項目</th><th ' + thc + '>一般</th><th ' + thc + '>經典</th></tr></thead><tbody>' + rows + '</tbody></table>';
     }
-    function r(item, a, b, c, d) { return '<tr><td ' + td + '>' + item + '</td><td ' + tdc + '>' + a + '</td><td ' + tdc + '>' + b + '</td><td ' + tdc + '>' + c + '</td><td ' + tdc + '>' + d + '</td></tr>'; }
+    function r(item, a, b) { return '<tr><td ' + td + '>' + item + '</td><td ' + tdc + '>' + a + '</td><td ' + tdc + '>' + b + '</td></tr>'; }
     function card(title, inner) { return '<div class="m-wiki-card"><div class="m-wiki-name">' + title + '</div>' + inner + '</div>'; }
     var BAD = function (s) { return '<b style="color:#fca5a5">' + s + '</b>'; };
     var GOOD = function (s) { return '<b style="color:#86efac">' + s + '</b>'; };
 
-    var note = '<div class="m-wiki-note">經典與傳統在<b>創角時各自獨立勾選</b>、<b>選了就永久不能改</b>，可單開也可一起開，於是有<b>一般／經典／傳統／經典＋傳統</b>四種組合。下面只列「和一般不一樣」的地方；資料以遊戲程式實際邏輯為準。</div>';
+    var note = '<div class="m-wiki-note">經典模式<b>創角時勾選</b>、<b>選了就永久不能改</b>。下面只列「和一般不一樣」的地方；資料以遊戲程式實際邏輯為準。</div>';
 
-    var c1 = card('📉 經驗 · 金幣 · 掉率 · 死亡（這些懲罰只看有沒有開「經典」）', tbl(
-      r('經驗值', '100%', BAD('50%'), '100%', BAD('50%')) +
-      r('撿到金幣', '100%', BAD('50%'), '100%', BAD('50%')) +
-      r('掉寶率', '100%', BAD('10%（1/10）'), '100%', BAD('10%')) +
-      r('死亡懲罰', '無', BAD('扣 5% 該級經驗'), '無', BAD('扣 5% 該級經驗'))
-    ) + '<div class="m-wiki-desc" style="margin-top:6px;">・<b>單開傳統（一般＋傳統）不吃這些懲罰</b>，經驗／金幣／掉率與一般相同；要打折得一起開經典。掉寶率 ×1/10 <b>不影響「職業試煉／任務道具」</b>，<b>卡瑞的屠龍劍</b>也維持 100% 必掉。</div>');
+    var c1 = card('📉 經驗 · 金幣 · 掉率 · 死亡', tbl(
+      r('經驗值', '100%', BAD('50%')) +
+      r('撿到金幣', '100%', BAD('50%')) +
+      r('掉寶率', '100%', BAD('10%（1/10）')) +
+      r('死亡懲罰', '無', BAD('扣 5% 該級經驗'))
+    ) + '<div class="m-wiki-desc" style="margin-top:6px;">・掉寶率 ×1/10 <b>不影響「職業試煉／任務道具」</b>，<b>卡瑞的屠龍劍</b>也維持 100% 必掉。</div>');
 
-    var c2 = card('🛠️ 強化 · 裝備（只看有沒有開「傳統」）', tbl(
-      r('自己手動強化（快速強化）', OK, OK, NO + '（隱藏）', NO + '（隱藏）') +
-      r('裝備的強化值怎麼來', '自己強化', '自己強化', GOOD('自帶隨機'), GOOD('自帶隨機')) +
-      r('施法卷軸（怪物·黑市·寶箱·兌換）', OK, OK, OK, NO + '（全消失）')
-    ) + '<div class="m-wiki-desc" style="margin-top:6px;">・傳統＝沒有「自己強化」面板，掉落／兌換／製作／<b>歐西里斯寶箱開出</b>的裝備<b>自帶一個隨機強化值</b>；商店買、試煉兌換的一律 +0。<b>單開傳統照常有施法卷軸</b>（供碧恩賦予祝福、飾品卷軸升級）；<b>只有「經典＋傳統」</b>才任何來源都拿不到卷軸（連帶隱藏肯特城兌換伊賽馬利）。</div>');
-
-    var c3 = card('⚔️ 停用的戰鬥特性／被動（只有「經典」會停用）', tbl(
-      r('武器特性：穿透·切割·出血·鈍擊·連射·反擊·居合·共鳴·魔擊·魔爆·雙刃·鋼爪額外重擊', OK, NO, OK, NO) +
-      r('騎士被動：看破·殺戮（普攻機率倍傷）', OK, NO, OK, NO) +
-      r('盾牌格檔（受傷減免）', OK, NO, OK, NO) +
-      r('敵人對你「看破」造成雙倍傷害', '會', GOOD('不會'), '會', GOOD('不會'))
+    var c3 = card('⚔️ 停用的戰鬥特性／被動', tbl(
+      r('武器特性：穿透·切割·出血·鈍擊·連射·反擊·居合·共鳴·魔擊·魔爆·雙刃·鋼爪額外重擊', OK, NO) +
+      r('騎士被動：看破·殺戮（普攻機率倍傷）', OK, NO) +
+      r('盾牌格檔（受傷減免）', OK, NO) +
+      r('敵人對你「看破」造成雙倍傷害', '會', GOOD('不會'))
     ));
 
     var c4 = card('🏛️ 系統 · NPC · 其他', tbl(
-      r('席琳神殿（進入·世界排名）', OK, NO, OK, NO) +
-      r('席琳結晶兌換套裝效果', OK, NO, OK, NO) +
-      r('碧恩（象牙塔）：賦予祝福卷軸（屬性／遠古）', OK, NO, OK, NO) +
-      r('漢：職業精通', OK, NO, OK, NO) +
-      r('肯特城兌換 NPC（伊賽馬利）', OK, OK, OK, NO) +
-      r('共用倉庫', '一般組', '經典組', '傳統組', '經＋傳組') +
-      r('傭兵（招募你其他存檔角色）', '招一般組', '招經典組', '招傳統組', '招經＋傳組')
+      r('席琳神殿（進入·世界排名）', OK, NO) +
+      r('席琳結晶兌換套裝效果', OK, NO) +
+      r('碧恩（象牙塔）：賦予祝福卷軸（屬性／遠古）', OK, NO) +
+      r('漢：職業精通', OK, NO) +
+      r('肯特城兌換 NPC（伊賽馬利）', OK, OK) +
+      r('共用倉庫', '一般組', '經典組') +
+      r('傭兵（招募你其他存檔角色）', '招一般組', '招經典組')
     ));
 
     var c5 = card('🎴 卡片 · 裝備收集冊', tbl(
-      r('卡片掉率', '100%', GOOD('同一般'), '100%', GOOD('同一般')) +
-      r('收集冊進度共用範圍', '一般組', '經典組', '傳統組', '經＋傳組')
-    ) + '<div class="m-wiki-desc" style="margin-top:6px;">・卡片掉率<b>不吃經典 ×1/10</b>。卡片／裝備兩本收集冊都<b>跟倉庫同規則</b>：四種組合<b>各自獨立一份</b>（切到別的組合＝另一份進度）。詳細玩法見「收藏-怪物」「收藏-裝備」分頁。</div>');
+      r('卡片掉率', '100%', GOOD('同一般')) +
+      r('收集冊進度共用範圍', '一般組', '經典組')
+    ) + '<div class="m-wiki-desc" style="margin-top:6px;">・卡片掉率<b>不吃經典 ×1/10</b>。卡片／裝備兩本收集冊都<b>跟倉庫同規則</b>：一般／經典<b>各自獨立一份</b>（切到另一組＝另一份進度）。詳細玩法見「收藏-怪物」「收藏-裝備」分頁。</div>');
 
-    return note + c1 + c2 + c3 + c4 + c5;
+    return note + c1 + c3 + c4 + c5;
   }
 
   function renderCombat() {
@@ -2615,8 +2619,8 @@
 
   // ---- 收藏三分頁(裝備/道具/怪物)的「模式」切換:收集進度依「模式組合」共用桶存放,
   //      同模式角色共用一份 → 直接切模式看各份進度(全部唯讀,絕不寫桶) ----
-  var COLL_MODE_CN = { '': '一般', '_classic': '經典', '_tradonly': '傳統', '_trad': '經典＋傳統' };
-  var COLL_MODES = [['', '一般'], ['_classic', '經典'], ['_tradonly', '傳統'], ['_trad', '經典＋傳統']];
+  var COLL_MODE_CN = { '': '一般', '_classic': '經典' };   // 🏛️ 傳統模式已取消(見 renderMode 註解)，只剩一般/經典兩組
+  var COLL_MODES = [['', '一般'], ['_classic', '經典']];
   // 預設不選(state.collMode===null):避免還沒探索到的內容被缺項清單爆雷,點了模式才顯示進度、再點一次收合
   function collModeRow() {
     var cur = state.collMode;
