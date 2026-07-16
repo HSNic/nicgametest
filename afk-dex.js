@@ -22,6 +22,8 @@
     } catch (e) { return false; }
   })();
   var MAX_RESULTS = _isStandalone ? 30 : 60;
+  var DEX_BATCH = MAX_RESULTS;   // 首批渲染筆數,之後捲動到底再逐批補上,不再對全部符合結果設硬上限
+  var _dexScrollObs = null;      // 目前搜尋結果用的捲動載入觀察器,下次搜尋前要 disconnect 掉舊的
   var INDEX = [];   // [{ id, mob, maps:[名稱], drops:[[id,名稱,pct]], hay:可搜尋字串(小寫) }]
   // 搜尋打字防抖:每次按鍵只重設計時器,停手這麼久才真的過濾+重渲染(降低逐字輸入的 INP)。
   var SEARCH_DEBOUNCE_MS = _isStandalone ? 350 : 150;
@@ -29,11 +31,19 @@
   var _composing = false;   // 注音/拼音組字中:期間不重渲染,compositionend 才真正觸發,避免組字被同步渲染卡住
   function debouncedSearch() {
     if (_composing) return;
+    showSearchingHint();   // 打字後立刻給回饋,不必等防抖時間過完才有反應
     if (_searchTimer) clearTimeout(_searchTimer);
     _searchTimer = setTimeout(function () {
       _searchTimer = null;
       if (window.requestAnimationFrame) requestAnimationFrame(doSearch); else doSearch();
     }, SEARCH_DEBOUNCE_MS);
+  }
+  // 防抖等待期間先顯示「搜尋中…」,不是真的進度、只是讓使用者知道輸入有被接收到
+  function showSearchingHint() {
+    var input = document.getElementById('m-dex-input');
+    var results = document.getElementById('m-dex-results');
+    if (!input || !results || !input.value.trim()) return;
+    results.innerHTML = '<div class="m-dex-hint">搜尋中…</div>';
   }
   var DROPPED_SET = {};   // itemId -> true:被任一隻怪掉落過(由 buildIndexes 統一收集;用於判斷物品「有沒有怪掉的固定來源」)
 
@@ -321,19 +331,53 @@
     var itemHTML = itemMatchesHTML(q);   // 先列出名稱符合的裝備(可點看數值;含沒被怪掉的)
     var wikiHTML = wikiHitsHTML(input.value.trim());   // 📚 小百科命中一併附在結果尾端(統一搜尋)
     var hits = [];
-    for (var i = 0; i < INDEX.length && hits.length <= MAX_RESULTS; i++) if (INDEX[i].hay.indexOf(q) >= 0) hits.push(INDEX[i]);
+    for (var i = 0; i < INDEX.length; i++) if (INDEX[i].hay.indexOf(q) >= 0) hits.push(INDEX[i]);   // 完整掃過,不提早截斷,才能顯示正確的「共找到N筆」
     if (!hits.length) {
+      if (_dexScrollObs) { _dexScrollObs.disconnect(); _dexScrollObs = null; }
       if (itemHTML) { results.innerHTML = itemHTML + (special ? '<div class="m-dex-hint">另見下方<b>「全域特殊掉落規則」</b>。</div>' : '<div class="m-dex-hint">（上面這些物品沒有固定掉落的怪，多為商店／製作／兌換／任務取得）</div>') + wikiHTML; return; }
       results.innerHTML = (special
         ? '<div class="m-dex-hint">「' + esc(input.value.trim()) + '」沒有固定掉落的怪物，請見下方<b>「全域特殊掉落規則」</b>。</div>'
         : '<div class="m-dex-hint">找不到符合的怪物或裝備</div>') + wikiHTML;
       return;
     }
-    var truncated = hits.length > MAX_RESULTS;
-    if (truncated) hits = hits.slice(0, MAX_RESULTS);
-    var html = itemHTML + hits.map(function (h) { return cardHTML(h, mult, q); }).join('');
-    if (truncated) html += '<div class="m-dex-hint">符合的太多,只顯示前 ' + MAX_RESULTS + ' 筆,請輸入更精確的關鍵字。</div>';
+    renderHitsProgressive(hits, mult, q, itemHTML, wikiHTML, results);
+  }
+
+  // 首批只渲染 DEX_BATCH 筆,其餘等使用者捲到底部再逐批補上——避免一次為所有符合的怪物建立完整卡片(含掉落清單)造成手機卡頓,
+  // 但仍然「全部都能查到」,只是分批渲染,不是真的砍掉結果。
+  function renderHitsProgressive(hits, mult, q, itemHTML, wikiHTML, results) {
+    if (_dexScrollObs) { _dexScrollObs.disconnect(); _dexScrollObs = null; }
+    var total = hits.length;
+    var shown = Math.min(DEX_BATCH, total);
+    var countHTML = '<div class="m-dex-count">共找到 ' + total + ' 筆結果' +
+      (total > DEX_BATCH ? '（目前顯示 <span id="m-dex-shown-n">' + shown + '</span> / ' + total + '）' : '') + '</div>';
+    var firstBatch = hits.slice(0, shown).map(function (h) { return cardHTML(h, mult, q); }).join('');
+    var html = itemHTML + countHTML + '<div id="m-dex-hitlist">' + firstBatch + '</div>';
+    if (total > shown) html += '<div id="m-dex-more-sentinel" class="m-dex-more-sentinel"></div>';
     results.innerHTML = html + wikiHTML;
+    if (total <= shown) return;
+    var loadMore = function () {
+      if (shown >= total) { if (_dexScrollObs) { _dexScrollObs.disconnect(); _dexScrollObs = null; } return; }
+      var next = hits.slice(shown, shown + DEX_BATCH);
+      var list = document.getElementById('m-dex-hitlist');
+      if (list) list.insertAdjacentHTML('beforeend', next.map(function (h) { return cardHTML(h, mult, q); }).join(''));
+      shown += next.length;
+      var shownEl = document.getElementById('m-dex-shown-n'); if (shownEl) shownEl.textContent = shown;
+      if (shown >= total) {
+        if (_dexScrollObs) { _dexScrollObs.disconnect(); _dexScrollObs = null; }
+        var sentinel = document.getElementById('m-dex-more-sentinel'); if (sentinel) sentinel.remove();
+      }
+    };
+    var sentinel = document.getElementById('m-dex-more-sentinel');
+    if (sentinel && window.IntersectionObserver) {
+      _dexScrollObs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) loadMore(); });
+      }, { rootMargin: '600px' });
+      _dexScrollObs.observe(sentinel);
+    } else {
+      // 沒有 IntersectionObserver 支援(極舊瀏覽器)→ 退回一次全部補完,不影響「查得到全部結果」這個底線
+      while (shown < total) loadMore();
+    }
   }
 
   var ELE = { fire: '🔥 火', water: '💧 水', earth: '🪨 地', wind: '🌪 風', none: '無' };
@@ -938,6 +982,8 @@
       '#m-dex-mode{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:4px 8px;font-size:14px;font-family:inherit;outline:none;cursor:pointer;}',
       '#m-dex-results{flex:1 1 auto;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;}',
       '.m-dex-hint{color:#94a3b8;text-align:center;padding:22px 8px;font-size:14px;line-height:1.6;}',
+      '.m-dex-count{color:#94a3b8;font-size:13px;padding:2px 2px 4px;}',
+      '.m-dex-more-sentinel{height:1px;}',
       '.m-dex-card{background:#111c30;border:1px solid #334155;border-radius:10px;padding:12px;}',
       '.m-dex-name{font-size:16px;font-weight:bold;color:#fff;margin-bottom:8px;}',
       '.m-dex-hl{background:#fde047;color:#1e293b;border-radius:3px;padding:0 2px;font-weight:bold;}',

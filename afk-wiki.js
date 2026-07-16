@@ -918,6 +918,11 @@
   var _composing = false;   // 注音/拼音組字中:期間不重渲染,compositionend 才真正觸發,避免組字被同步渲染卡住
   function debouncedRender() {
     if (_composing) return;
+    // 打字後立刻給回饋,不必等防抖時間過完才有反應(只在真的要跨分頁做「統一搜尋」時才顯示,一般切分頁瀏覽不受影響)
+    if (state.q && state.q.trim()) {
+      var body0 = document.getElementById('m-wiki-body');
+      if (body0) body0.innerHTML = '<div class="m-wiki-hint">搜尋中…</div>';
+    }
     if (_searchTimer) clearTimeout(_searchTimer);
     _searchTimer = setTimeout(function () {
       _searchTimer = null;
@@ -1288,6 +1293,7 @@
 
   function renderSearch(q) {
     var parts = [];
+    var totalCount = 0;
     var terms = q.split(/\s+/).filter(Boolean);   // 空白分詞=AND:每個詞都要出現(玩家常打「娃娃 兌換」這種多詞,整串當一個字面值會全空)
     if (!terms.length) terms = [q];
     SEARCH_SOURCES.forEach(function (s) {
@@ -1299,6 +1305,7 @@
         var blocks = [].slice.call(tmp.querySelectorAll('.m-wiki-card,.m-wiki-spell,.m-wiki-kv'))
           .filter(function (el) { var t = el.textContent.toLowerCase(); return terms.every(function (w) { return t.indexOf(w) >= 0; }); });
         if (blocks.length) {
+          totalCount += blocks.length;
           parts.push('<div class="m-wiki-sub">' + esc(s.label + (c ? '・' + c.n : '')) +
             ' <span class="m-wiki-cnt">' + blocks.length + '</span></div>' +
             blocks.map(function (el) { return el.outerHTML; }).join(''));
@@ -1313,12 +1320,14 @@
           var dxl = '';
           if (dxs.mobs.length) dxl += '<div class="m-wiki-kv"><b>🧟 怪物：</b>' + dxs.mobs.map(function (m) { return '<span class="m-dexlink" data-dexq="' + esc(m.n) + '">' + esc(m.n) + '</span>（Lv' + m.lv + '）'; }).join('、') + '</div>';
           if (dxs.items.length) dxl += '<div class="m-wiki-kv"><b>🎒 物品：</b>' + dxs.items.map(function (n) { return '<span class="m-dexlink" data-dexq="' + esc(n) + '">' + esc(n) + '</span>'; }).join('、') + '</div>';
+          totalCount += dxs.mobs.length + dxs.items.length;
           parts.push('<div class="m-wiki-sub">📖 掉落查詢 <span class="m-wiki-cnt">' + (dxs.mobs.length + dxs.items.length) + '</span></div>' +
             '<div class="m-wiki-card">' + dxl + '<div class="m-wiki-desc">點名稱前往「掉落查詢」看掉落率／取得方式。</div></div>');
         }
       }
     } catch (e) {}
-    return parts.length ? parts.join('') : '<div class="m-wiki-hint">找不到含「' + esc(state.q.trim()) + '」的內容。</div>';
+    if (!parts.length) return '<div class="m-wiki-hint">找不到含「' + esc(state.q.trim()) + '」的內容。</div>';
+    return '<div class="m-wiki-count">共找到 ' + totalCount + ' 筆結果</div>' + parts.join('');
   }
 
   function render() {
@@ -3041,6 +3050,7 @@
       '.m-wiki-clsbtn.on{background:#0e7490;border-color:#22d3ee;color:#fff;}',
       '#m-wiki-body{flex:1 1 auto;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;}',
       '.m-wiki-hint{color:#94a3b8;text-align:center;padding:22px 8px;font-size:14px;}',
+      '.m-wiki-count{color:#94a3b8;font-size:13px;padding:2px 4px 6px;}',
       '.m-wiki-note{color:#94a3b8;font-size:12.5px;line-height:1.6;background:#111c30;border:1px solid #1e293b;border-radius:8px;padding:9px 11px;}',
       '.m-wiki-note b{color:#fcd34d;}',
       '.m-npc-d{color:#cbd5e1;}',
