@@ -131,6 +131,19 @@
   }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  // 🎨 全域共用的內文分類上色(2026-07-17 使用者明訂;任何分頁的大段散文說明都能重複呼叫,不要各自為政各挑一套):
+  //   NPC=wN／道具材料=wI／BOSS怪物=wB／技能=wS／裝備套裝=wE／地點地圖=wL／異常狀態=wST。
+  //   ⚠️ 這 7 色刻意避開兩層既有慣例,新增分類前先確認新色沒有再撞上這兩層:
+  //   ①遊戲本體的裝備品質色(css/style.css)：傳說 c-legend #d98a04、遺物 c-relic #38bdf8、稀有 c-rare #fb923c、
+  //     遠古 c-ancient #c084fc、席琳套裝 c-sherine #4ade80、祝福 c-blessed #facc15、太初 c-primordial #0ea5e9、屬性 c-attr #22d3ee、詛咒 c-cursed #ff2d2d。
+  //   ②小百科自己既有的慣例色：連結跳頁 #7dd3fc、標題/實際數據框 #fcd34d／#fbbf24、有利/完成 #86efac／#22c55e、不利/失敗 #f87171／#fca5a5。
+  function wN(t) { return '<span style="color:#a5b4fc;font-weight:bold;">' + t + '</span>'; }   // NPC(淡靛藍)
+  function wI(t) { return '<span style="color:#5eead4;font-weight:bold;">' + t + '</span>'; }   // 道具/材料(青綠)
+  function wB(t) { return '<span style="color:#fb7185;font-weight:bold;">' + t + '</span>'; }   // BOSS/怪物(玫瑰紅)
+  function wS(t) { return '<span style="color:#818cf8;font-weight:bold;">' + t + '</span>'; }   // 技能(深靛藍,與NPC同色系但較濃,和遠古紫#c084fc區隔)
+  function wE(t) { return '<span style="color:#e879f9;font-weight:bold;">' + t + '</span>'; }   // 裝備/套裝(桃紫)
+  function wL(t) { return '<span style="color:#d6bc8f;font-weight:bold;">' + t + '</span>'; }   // 地點/地圖(淺褐,避開稀有橘#fb923c)
+  function wST(t) { return '<span style="color:#a3e635;font-weight:bold;">' + t + '</span>'; }   // 異常狀態(萊姆綠)
   // 🔗 名字 → 點擊跳掉落查詢搜尋(配 afk-dex 全域 [data-dexq] 委派,模態連模態/網址連網址);製作頁/地圖頁等共用
   function wDexLink(name) { return '<span class="m-dexlink" data-dexq="' + esc(name) + '">' + esc(name) + '</span>'; }
 
@@ -639,9 +652,9 @@
     { t: '攀登（一層一層往上）', lines: [
       '從入口開始攀登，自 <b>2 樓</b>起。每層要打掉「往上層的樓梯」（逢 10 的倍數樓打的是該樓頭目），打掉就<b>自動前進到下一層</b>。',
       '<b>沒辦法停在某一層慢慢練</b>：只要清掉那層的樓梯／頭目就會立刻被帶上樓。想固定刷某段請改用「樓層區間」。',
-      '塔共 <b>100 樓</b>：一路攀到頂、在 <b>100 樓</b>打贏最終頭目「邪惡的鐮刀死神」後會結算、送回入口。',
+      '塔共 <b>100 樓</b>：一路攀到頂、在 <b>100 樓</b>打贏最終頭目「' + wB('邪惡的鐮刀死神') + '」後會結算、送回入口。',
       '途中只要<b>主動換地圖或回村，攀登就結束</b>；在塔內死亡也會回村並結束攀登。',
-      '首次攀到 10 樓、打贏頭目「<b>扭曲的潔尼斯女王</b>」（Lv60、HP 1.5 萬）後，<b>永久開放「2~10 樓」直接挑戰</b>（見「樓層區間」）。'
+      '首次攀到 10 樓、打贏頭目「' + wB('扭曲的潔尼斯女王') + '」（Lv60、HP 1.5 萬）後，<b>永久開放「2~10 樓」直接挑戰</b>（見「樓層區間」）。'
     ]},
     { t: '排名挑戰（攀登的計分版）', lines: [
       '入口可選「排名挑戰」。規則同攀登，但<b>就算帶著支配符也不能用傳送術與瞬間移動卷軸</b>。',
@@ -655,10 +668,10 @@
     ]},
     { t: '進塔憑證：傳送符 / 支配符 / 移動卷軸', lines: [
       '每段 10 層（11F、21F…91F）各有自己專屬的一組憑證，<b>帶在身上即可、不必裝備</b>；而且<b>綁該樓層段</b>，段與段不通用（11F 的只能進 11~20 樓）。',
-      '<b>傳送符</b>：帶著就能<b>無限次進入</b>那一段，不消耗。但在塔內 11 樓以上<b>不能</b>用傳送術／瞬間移動卷軸（要支配符才行）。',
-      '<b>支配符</b>：帶著能進入那一段，<b>而且</b>能在塔內用傳送術與瞬間移動卷軸（換掉當前怪）。最高階；找亞丁的「烏普尼」用<b>該段傳送符 ×1 ＋ 移動卷軸 ×100</b>製作。',
-      '<b>移動卷軸</b>：沒有傳送符／支配符時，<b>每進入一次消耗 1 張</b>。塔內怪會掉它，邊刷邊補就能一直進。',
-      '<b>封印的傳送符</b>：撿到後在道具欄「使用」即可解封，換成該段的「傳送符」。'
+      wI('傳送符') + '：帶著就能<b>無限次進入</b>那一段，不消耗。但在塔內 11 樓以上<b>不能</b>用傳送術／瞬間移動卷軸（要支配符才行）。',
+      wI('支配符') + '：帶著能進入那一段，<b>而且</b>能在塔內用傳送術與瞬間移動卷軸（換掉當前怪）。最高階；找' + wL('亞丁') + '的 ' + wN('烏普尼') + ' 用<b>該段傳送符 ×1 ＋ 移動卷軸 ×100</b>製作。',
+      wI('移動卷軸') + '：沒有傳送符／支配符時，<b>每進入一次消耗 1 張</b>。塔內怪會掉它，邊刷邊補就能一直進。',
+      wI('封印的傳送符') + '：撿到後在道具欄「使用」即可解封，換成該段的「傳送符」。'
     ]},
     { t: '傳送術 / 瞬間移動卷軸（戰鬥中換怪的「傳送」）', lines: [
       '這是<b>另一種傳送</b>，不是進塔用——而是<b>戰鬥中把當前這批怪換掉、重抽一批</b>（「傳送術」是技能、「瞬間移動卷軸」是道具，效果一樣）。',
@@ -670,11 +683,11 @@
   // ===== 遺忘之島(本檔維護) ================================================
   var OBLIVION_SECTIONS = [
     { t: '怎麼去遺忘之島', lines: [
-      '到<b>海音</b>，找港口的 NPC <b>依斯巴</b>，搭他的船出發，船費 <b>10 萬金幣</b>。',
-      '出航後不會直接到島上，會先進入一段「<b>遺忘之島途中</b>」的海域（見下一段），打過去才登島。'
+      '到' + wL('海音') + '，找港口的 NPC ' + wN('依斯巴') + '，搭他的船出發，船費 <b>10 萬金幣</b>。',
+      '出航後不會直接到島上，會先進入一段「' + wL('遺忘之島途中') + '」的海域（見下一段），打過去才登島。'
     ]},
     { t: '途中：打掉「傳送門」才能登島', lines: [
-      '搭船後先到「遺忘之島途中」，這裡會出現一座名為「<b>遺忘之島</b>」的<b>傳送門</b>。它是建築、<b>不會攻擊你</b>、血量極低，把它打掉、迷霧散開後就正式登上<b>遺忘之島</b>本島。',
+      '搭船後先到「' + wL('遺忘之島途中') + '」，這裡會出現一座名為「' + wB('遺忘之島') + '」的<b>傳送門</b>。它是建築、<b>不會攻擊你</b>、血量極低，把它打掉、迷霧散開後就正式登上 ' + wL('遺忘之島') + ' 本島。',
       '途中也會遇到一般海怪（蛇女、人魚、哈維、格利芬等），可以邊清邊找那座傳送門。'
     ]},
     { t: '島上不能用「傳送」（瞬移）', lines: [
@@ -685,17 +698,17 @@
     { t: '離開就等於結束旅程', lines: [
       '只要<b>回村</b>，或<b>主動切換到別的地圖</b>，這趟遺忘之島旅程就<b>結束</b>了；在島上<b>死亡</b>也會被送回村並結束旅程。',
       '旅程狀態<b>不會存檔</b>：重新整理／關掉再開都會回村、這趟作廢。',
-      '想再去得<b>回海音找依斯巴重新搭船、再付一次 10 萬金幣</b>。'
+      '想再去得回' + wL('海音') + '找 ' + wN('依斯巴') + ' 重新搭船、再付一次 10 萬金幣。'
     ]},
     { t: '島上的怪與掉落', lines: [
-      '島上怪物等級約 <b>20～53</b>，最強的頭目是「<b>遺忘之島巨大牛人</b>」（Lv53、HP 1.5 萬，會放震裂術、約 <b>50%</b> 機率附帶暈眩）。',
-      '島上專屬掉落「<b>被遺忘的裝備</b>」共 7 種：被遺忘的鱗甲／皮盔甲／長袍／金屬盔甲，以及受封印 被遺忘的劍／巨劍／弩槍。',
-      '另會掉解封要用的「<b>古代的卷軸</b>」：以<b>遺忘之島巨大牛人 0.5%</b> 最高，飛龍 0.02%、其餘怪約 0.005～0.01%。'
+      '島上怪物等級約 <b>20～53</b>，最強的頭目是「' + wB('遺忘之島巨大牛人') + '」（Lv53、HP 1.5 萬，會放震裂術、約 <b>50%</b> 機率附帶' + wST('暈眩') + '）。',
+      '島上專屬掉落 ' + wI('被遺忘的裝備') + ' 共 7 種：被遺忘的鱗甲／皮盔甲／長袍／金屬盔甲，以及受封印 被遺忘的劍／巨劍／弩槍。',
+      '另會掉解封要用的 ' + wI('古代的卷軸') + '：以 ' + wB('遺忘之島巨大牛人') + ' 0.5% 最高，飛龍 0.02%、其餘怪約 0.005～0.01%。'
     ]},
     { t: '被遺忘的裝備拿來做什麼', lines: [
-      '<b>解封成「古老」系列武器／防具</b>：到<b>象牙塔</b>找 <b>迪泰特</b>，用「受封印的XX ×1 ＋ 古代的卷軸 ×1」解封，得到古老的劍／巨劍／弩槍、古老的鱗甲／皮盔甲／長袍／金屬盔甲。',
-      '<b>製作古代臂甲（副手）</b>：到龍騎士出生地<b>貝希摩斯</b>找 <b>皮爾</b>——古代神射臂甲＝被遺忘的皮盔甲 ×1＋材料；古代鬥士臂甲＝被遺忘的金屬盔甲 ×1＋黑米索莉板 ×5＋材料＋金幣 100 萬。',
-      '（威頓村 客盧亞只做古代神之槍／斧，不做古代臂甲與這些古老裝備；完整配方見「製作」分頁。）'
+      '解封成「古老」系列武器／防具：到' + wL('象牙塔') + '找 ' + wN('迪泰特') + '，用「受封印的XX ×1 ＋ ' + wI('古代的卷軸') + ' ×1」解封，得到 ' + wE('古老的劍') + '／' + wE('古老的巨劍') + '／' + wE('古老的弩槍') + '、古老的鱗甲／皮盔甲／長袍／金屬盔甲。',
+      '製作古代臂甲（副手）：到龍騎士出生地' + wL('貝希摩斯') + '找 ' + wN('皮爾') + '——' + wE('古代神射臂甲') + ' ＝被遺忘的皮盔甲 ×1＋材料；' + wE('古代鬥士臂甲') + ' ＝被遺忘的金屬盔甲 ×1＋黑米索莉板 ×5＋材料＋金幣 100 萬。',
+      '（' + wL('威頓村') + ' ' + wN('客盧亞') + ' 只做古代神之槍／斧，不做古代臂甲與這些古老裝備；完整配方見「製作」分頁。）'
     ]}
   ];
 
@@ -703,31 +716,78 @@
   var KINGROOM_SECTIONS = [
     { t: '軍王之室是什麼、有哪幾間', lines: [
       '四間獨立的「純 BOSS 房」，每間中央是一隻<b>軍王</b>、兩側各一隻固定小怪，進去就是專心打那隻軍王。',
-      '四間與對應軍王（等級／血量）：<b>暗殺軍王史雷佛</b>（Lv61、HP 約 1.6 萬）、<b>魔獸軍王巴蘭卡</b>（Lv63、HP 約 1.7 萬）、<b>法令軍王蕾雅</b>（Lv65、HP 約 1.5 萬，會放冰裂術冰凍你、還會幫小怪補血）、<b>冥法軍王海露拜</b>（Lv70、HP 約 2.3 萬，最硬，會放流星雨）。',
+      '四間與對應軍王（等級／血量）：' + wB('暗殺軍王史雷佛') + '（Lv61、HP 約 1.6 萬）、' + wB('魔獸軍王巴蘭卡') + '（Lv63、HP 約 1.7 萬）、' + wB('法令軍王蕾雅') + '（Lv65、HP 約 1.5 萬，會放冰裂術冰凍你、還會幫小怪補血）、' + wB('冥法軍王海露拜') + '（Lv70、HP 約 2.3 萬，最硬，會放流星雨）。',
       '軍王本身是<b>被動怪</b>（你不打牠、牠不會主動出手），但兩側小怪是主動的。'
     ]},
     { t: '怎麼進去（需要「軍王的鑰匙」）', lines: [
-      '在地圖選單選該軍王之室，<b>進場時消耗 1 把「軍王的鑰匙」</b>；身上沒鑰匙就進不去。',
-      '四間共用同一種「軍王的鑰匙」，不分房。'
+      '在地圖選單選該軍王之室，<b>進場時消耗 1 把</b>' + wI('軍王的鑰匙') + '；身上沒鑰匙就進不去。',
+      '四間共用同一種' + wI('軍王的鑰匙') + '，不分房。'
     ]},
     { t: '軍王的鑰匙哪裡來', lines: [
-      '打「<b>拉斯塔巴德守門人</b>」有 <b>1%</b> 機率掉 1 把，牠是 Lv40 的黑暗妖精，<b>只出沒在「拉斯塔巴德·魔獸訓練場」</b>這張地圖（全遊戲唯一會掉軍王鑰匙的怪）。',
+      '打「' + wB('拉斯塔巴德守門人') + '」有 <b>1%</b> 機率掉 1 把，牠是 Lv40 的黑暗妖精，<b>只出沒在「' + wL('拉斯塔巴德·魔獸訓練場') + '」</b>這張地圖（全遊戲唯一會掉軍王鑰匙的怪）。',
       '流程：先去刷守門人累積鑰匙 → 再進軍王之室刷軍王。'
     ]},
     { t: '打贏之後：每輪再燒 1 把鑰匙續打', lines: [
-      '擊敗軍王後室內怪物全部消散，<b>5 秒後自動消耗 1 把「軍王的鑰匙」讓軍王重生</b>，接著打下一輪。',
+      '擊敗軍王後室內怪物全部消散，<b>5 秒後自動消耗 1 把</b>' + wI('軍王的鑰匙') + '<b>讓軍王重生</b>，接著打下一輪。',
       '<b>身上沒鑰匙時，打贏就直接被傳送回村。</b>所以「掛在裡面連續打」＝<b>每一輪燒 1 把鑰匙</b>，帶幾把大約打幾輪。'
     ]},
     { t: '掉落：只有軍王會掉，傳說裝很稀有', lines: [
       '<b>只有中央的軍王會掉東西，兩側小怪完全不掉。</b>',
-      '每次擊敗軍王<b>必掉</b>對應的<b>軍團印記（100%）</b>；另有 <b>10%</b> 掉<b>軍王徽印</b>（兩者都是製作材料）。',
-      '常見裝備（<b>神官</b>系列法杖法袍、<b>武官</b>系列防具、黑暗腰帶等）掉率約 <b>1%～5%</b>，視部位而定。',
-      '<b>軍王武器</b>：魔獸軍王之爪 <b>1%</b>、暗殺軍王之痕 <b>0.1%</b>（這兩把非傳說、相對好掉）。',
-      '<b>傳說裝（四大軍王套裝件、軍王飾品、巴蘭卡鋼爪、蕾雅魔杖等）掉率 0.03%～0.1%</b>，要打很多輪才可能掉一件（套裝加成見「套裝」分頁）。'
+      '每次擊敗軍王<b>必掉</b>對應的 ' + wI('軍團印記') + '（100%）；另有 <b>10%</b> 掉 ' + wI('軍王徽印') + '（兩者都是製作材料）。',
+      '常見裝備（' + wE('神官') + ' 系列法杖法袍、' + wE('武官') + ' 系列防具、黑暗腰帶等）掉率約 <b>1%～5%</b>，視部位而定。',
+      '軍王武器：' + wE('魔獸軍王之爪') + ' <b>1%</b>、' + wE('暗殺軍王之痕') + ' <b>0.1%</b>（這兩把非傳說、相對好掉）。',
+      '傳說裝（四大軍王套裝件、軍王飾品、' + wE('巴蘭卡鋼爪') + '、' + wE('蕾雅魔杖') + ' 等）掉率 0.03%～0.1%，要打很多輪才可能掉一件（套裝加成見「套裝」分頁）。'
     ]},
     { t: '房內限制與離線掛機', lines: [
       '室內<b>不能用傳送術、瞬間移動卷軸</b>（會被封印之力壓制），<b>日光術也無效</b>。',
       '軍王之室<b>可以離線掛機</b>：離線時照樣「打贏→5 秒燒 1 鑰匙→重生」一輪輪跑，<b>鑰匙用完就自動傳回村莊</b>；回到遊戲的離線結算會告訴你這次打了幾輪、消耗幾把鑰匙。'
+    ]}
+  ];
+
+  // ===== 黑暗妖精聖地(本檔維護;v3.3.33~v3.4.67 陸續加入) ====================
+  // 🎨 這段的分類上色改用檔案最上方的全域共用函式 wN/wI/wB/wS/wE/wL/wST(見 esc() 附近定義處),
+  //   之後其他分頁想套用同一套風格,直接呼叫這幾個函式即可,不用各自重新定義一套顏色。
+  var DARKELF_SANCT_SECTIONS = [
+    { t: '怎麼進去：找長老會議廳的真．冥皇丹特斯', lines: [
+      '入口是城鎮「' + wL('長老會議廳') + '」的 NPC「' + wN('真．冥皇丹特斯') + '」，這三張地圖都<b>不能從地圖選單直接選</b>，只能透過他傳送進去。',
+      '交出 ' + wI('死亡騎士之書') + '（每次進入消耗 1 本），可以選擇進「' + wL('黑暗妖精聖地') + '」或「' + wL('受詛咒的黑暗妖精聖地') + '」（BOSS：' + wB('吉爾塔斯') + '）。',
+      '交出 ' + wI('吉爾塔斯的封印') + '（每次消耗 1 個），會被傳送到「' + wL('崩壞的長老會議廳') + '」（BOSS：' + wB('真‧死亡騎士 冥皇丹特斯') + '）。'
+    ]},
+    { t: '兩樣入場道具怎麼拿', lines: [
+      wI('死亡騎士之書') + '：拉斯塔巴德「' + wL('格蘭肯神殿．長老之室') + '」裡 8 隻長老 BOSS（' + wB('琪娜／安迪斯／巴塔斯／巴洛斯／巴陸德／拉曼斯／泰瑪斯／艾迪爾') + '）各 <b>1%</b> 機率掉 1 本，打誰都算、8 隻機率相通；同一趟通常會順便拿到 ' + wI('修行者經典') + '（1%，冥皇套裝材料）。',
+      wI('吉爾塔斯的封印') + '：<b>只有' + wB('吉爾塔斯') + '自己會掉，而且是 100% 必掉</b>——換句話說只要進得去受詛咒的黑暗妖精聖地打贏吉爾塔斯，封印一定拿得到，真正的門檻是 ' + wI('死亡騎士之書') + ' 夠不夠用（打吉爾塔斯進場 1 本、牠每次重生再燒 1 本）。'
+    ]},
+    { t: '吉爾塔斯：擊敗掉「吉爾塔斯的封印」，牠復活也要燒書/燒印', lines: [
+      '在受詛咒的黑暗妖精聖地擊敗' + wB('吉爾塔斯') + '後，牠<b>每次復活會再消耗 1 本</b>' + wI('死亡騎士之書') + '；身上沒書會被逐出。',
+      '擊敗吉爾塔斯<b>必掉</b>' + wI('吉爾塔斯的封印') + '——拿去交給' + wN('真．冥皇丹特斯') + '，才能傳送去打真正的頭目' + wB('冥皇丹特斯') + '；冥皇丹特斯每次復活同樣<b>要消耗 1 個封印</b>，沒有一樣會被逐出。'
+    ]},
+    { t: '完整的召喚球：中途離開不怕王回血重打', lines: [
+      '身上有 ' + wI('完整的召喚球') + ' 時，挑戰吉爾塔斯期間若中途離開（回村、瞬移、切地圖、戰敗），會<b>消耗 1 顆</b>讓吉爾塔斯的 HP <b>保持不變、暫停回血</b>，下次再進去接著打。',
+      '<b>身上沒有召喚球</b>就離開的話，下次重新進入是<b>全新滿血</b>的吉爾塔斯，等於這次白打。',
+      '召喚球材料：' + wI('召喚球之核') + ' + 4 個 ' + wI('召喚球碎片') + '，可找 ' + wN('亞提利歐') + '（長老會議廳的製作 NPC）合成 ' + wI('完整的召喚球') + '，或合成 ' + wI('真．冥皇製作防具秘笈') + '（見下方套裝）。'
+    ]},
+    { t: '兩隻頭目的機制怎麼打', blocks: [
+      { t: 'tbl', h: ['機制', '吉爾塔斯', '真‧死亡騎士 冥皇丹特斯'], rows: [
+        ['等級／HP', 'Lv99・HP 44 萬', 'Lv99・HP 15 萬'],
+        ['憤怒(HP&lt;30%)', '命中×1.2、傷害×1.2', '命中×1.2、傷害×1.2'],
+        ['技能①', wS('沙塵暴') + '：15% 機率' + wST('沉默'), wS('吸血鬼之吻') + '：必中、大量吸血'],
+        ['技能②', wS('岩漿流星雨') + '：必中火傷+持續' + wST('灼燒'), wS('地面震裂') + '：必中大傷害'],
+        ['技能③', wS('毒氣風暴') + '：' + wST('中毒'), wS('集體衝暈') + '：必中、附帶' + wST('暈眩')],
+        ['招牌機制', wS('血壁空間') + '：約半數機率觸發，接下來 10 秒內會隨機用近戰／遠程／魔法其中一種方式反彈攻擊，被打中基本上必死', '（無血壁空間，改走高頻高傷害連續技能硬吃）']
+      ]},
+      { t: 'p', p: '<b>頭目通用回血機制</b>（不只這兩隻，全遊戲頭目共通）：每 5 秒回一次血，<b>最近 5 秒內有被物理命中</b>只回 <b>0.5%</b>，<b>沒被物理命中過</b>則回 <b>2.5%</b>——所以打頭目要盡量不斷手，讓牠一直吃到物理傷害，回血才會少。' }
+    ]},
+    { t: '怎麼打最穩：血壁空間的應對建議', blocks: [
+      { t: 'p', p: wS('血壁空間') + ' 觸發時<b>戰鬥日誌會公告拿到哪種反射</b>（近距離／遠距離／魔法其中一種，持續 10 秒），且<b>只反彈「一般攻擊主擊」與「主動施放的技能直擊」這兩種來源</b>——武器特效觸發（proc）、雙擊、連射、反擊、居合、寵物、召喚物、' + wST('中毒') + '/' + wST('灼燒') + '這類持續傷害<b>完全不會被反彈</b>。' },
+      { t: 'p', p: '看到日誌公告「近距離反射」，代表你這 10 秒內只要打出一般近戰攻擊或主動近戰技，這下傷害就會<b>整筆原樣彈回你自己身上</b>（傷害多高就彈多少），遠程/魔法反射同理。<b>公告的當下就是危險訊號</b>，血量沒堆夠、遇到大招剛好對到反射類型很容易被自己一擊打到瀕死甚至陣亡。' },
+      { t: 'p', p: '<b>實務建議</b>：①這隻王不吃「傷害曲線」修正（noDmgCurve），普攻與技能都是照定義原值硬碰硬，衝高 HP／傷害減免（DR）比堆爆發輸出更重要，才扛得住反射回來的那一下；②帶 ' + wE('反叛者的盾牌') + '（吉爾塔斯自己會掉，0.1%）——它有機率讓單次傷害直接 −50，對緩解反射傷害也有幫助；③多帶幾名不同攻擊型態的傭兵分散輸出來源，即使某次反射打倒其中一人，不至於團滅，回村／返生術／復活卷軸都能救回來；④身上帶 ' + wI('完整的召喚球') + '，真的打不過想先撤退也不會前功盡棄，下次接著打。' },
+      { t: 'p', p: wB('冥皇丹特斯') + ' 沒有血壁空間，走的是 ' + wS('吸血鬼之吻') + '（大量吸血）＋' + wS('地面震裂') + '＋' + wS('集體衝暈') + ' 高頻連續技硬吃，重點在<b>抵抗' + wST('暈眩') + '、輸出要夠快</b>——牠會靠吸血鬼之吻回血，拖久戰對你不利。' }
+    ]},
+    { t: '掉落與真．冥皇套裝', blocks: [
+      { t: 'p', p: '吉爾塔斯必掉 ' + wI('吉爾塔斯的封印') + '，另有機率掉遠古弓/爪/雙刀、多款飾品與防具、大量技能書，以及極稀有的 ' + wE('吉爾塔斯之劍') + '／' + wE('吉爾塔斯魔杖') + '（約 0.1%）。' },
+      { t: 'p', p: '冥皇丹特斯掉落集中在 ' + wE('真．冥皇套裝') + ' 五件（披風／鎧甲／面甲／護手／鋼靴，各約 1% 機率）：集滿五件套裝加成＝<b>防禦−20、HP+100、MP+20、HP自然恢復+10、攻擊速度額外+30%（可與加速/勇敢藥水疊加）、額外傷害+5</b>。' },
+      { t: 'p', p: '冥皇丹特斯還有機率掉 ' + wE('真．冥皇執行劍') + '（1%，非遺物傳說武器）、' + wE('受詛咒的真．冥皇執行劍') + '（5%，裝備會變身死亡騎士）、' + wE('倫得雙刀') + '（1%），以及極稀有的遺物 ' + wE('解除詛咒的真死亡騎士．冥皇執行劍') + '（0.0001%，裝備變身真死亡騎士 冥皇丹特斯，攻擊 15% 觸發全體地屬傷害技「大地崩裂」）。' },
+      { t: 'p', p: '真．冥皇套裝也能<b>用製作取得</b>：' + wI('修行者經典') + '＋' + wI('黑暗妖精的靈魂水晶') + ' 等材料，配上 ' + wI('真．冥皇製作防具秘笈') + '（' + wN('亞提利歐') + ' 用召喚球之核+召喚球碎片合成），找亞提利歐鍛造，每件消耗 1 本秘笈。' }
     ]}
   ];
 
@@ -910,11 +970,31 @@
     { k: 'oblivion', n: '遺忘之島' },
     { k: 'rift', n: '時空裂痕' },
     { k: 'kingroom', n: '軍王之室' },
+    { k: 'darkelf_sanct', n: '黑暗妖精聖地' },
     { k: 'pledge', n: '血盟' },
     { k: 'mode', n: '遊戲模式' },
     { k: 'npc', n: 'NPC總覽' }
   ];
-  var state = { tab: 'equipbook', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
+  // 🗂️ 分頁分類(2026-07-17 使用者明訂):30 個分頁單排靠左右滑動越來越難找,改成「大類→子分頁」兩層——
+  //   先選 7 個大類其中一個,底下才顯示該類的子分頁(最多 7 個,桌機手機都一排放得下,不用捲動)。
+  var TAB_CATS = [
+    { k: 'collection', n: '收藏', tabs: ['equipbook', 'miscbook', 'card'] },
+    { k: 'growth', n: '角色養成', tabs: ['magic', 'mastery', 'stats', 'load', 'poly'] },
+    { k: 'gear', n: '裝備與製作', tabs: ['equip', 'relic', 'enhance', 'set', 'craft'] },
+    { k: 'ally', n: '夥伴系統', tabs: ['ally', 'mercskill', 'pets', 'doll'] },
+    { k: 'mechanic', n: '玩法與機制', tabs: ['combat', 'quest', 'weapon', 'mode'] },
+    { k: 'zone', n: '地圖與特殊地城', tabs: ['map', 'sherine', 'tower', 'oblivion', 'rift', 'kingroom', 'darkelf_sanct'] },
+    { k: 'other', n: '其他', tabs: ['pledge', 'npc'] }
+  ];
+  function catOfTab(tabKey) {
+    for (var i = 0; i < TAB_CATS.length; i++) { if (TAB_CATS[i].tabs.indexOf(tabKey) >= 0) return TAB_CATS[i].k; }
+    return TAB_CATS[0].k;
+  }
+  function tabsOfCat(catKey) {
+    for (var i = 0; i < TAB_CATS.length; i++) { if (TAB_CATS[i].k === catKey) return TAB_CATS[i].tabs; }
+    return TAB_CATS[0].tabs;
+  }
+  var state = { tab: 'equipbook', cat: 'collection', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
   // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
   // 故 standalone 下拉長防抖,減少同步渲染的頻率。
   var _isStandalone = (function () {
@@ -955,6 +1035,24 @@
     });
   }
 
+  // 子分頁列:依 state.cat 重建(只有 3~7 顆按鈕,重建成本可忽略,不影響效能);沿用同一顆 #m-wiki-tabs 容器。
+  var _subtabRowCat = null;
+  function buildSubtabRow() {
+    if (_subtabRowCat === state.cat) return;   // 分類沒變就不重建,省一點事
+    var tabsEl = document.getElementById('m-wiki-tabs');
+    if (!tabsEl) return;
+    tabsEl.innerHTML = '';
+    tabsOfCat(state.cat).forEach(function (k) {
+      var t = TABS.filter(function (x) { return x.k === k; })[0];
+      if (!t) return;
+      var b = document.createElement('button');
+      b.className = 'm-wiki-tab'; b.setAttribute('data-tab', t.k); b.textContent = t.n;
+      b.addEventListener('click', function () { state.tab = t.k; render(); });
+      tabsEl.appendChild(b);
+    });
+    _subtabRowCat = state.cat;
+  }
+
   function buildModal() {
     if (document.getElementById('m-wiki-modal')) return;
     var m = document.createElement('div');
@@ -965,18 +1063,22 @@
           '<span id="m-wiki-inwrap"><input id="m-wiki-input" type="text" placeholder="搜尋關鍵字（例:出血、套裝、屠龍劍）…" autocomplete="off"><button id="m-wiki-clear" type="button" title="清除">✕</button></span>' +
           '<button id="m-wiki-close" type="button" title="關閉">✕</button>' +
         '</div>' +
-        '<div id="m-wiki-tabs"></div>' +
+        '<div id="m-wiki-navrow"><div id="m-wiki-cats"></div><div id="m-wiki-tabs"></div></div>' +
         '<div id="m-wiki-cls"></div>' +
         '<div id="m-wiki-body"></div>' +
       '</div>';
     document.body.appendChild(m);
-    var tabs = document.getElementById('m-wiki-tabs');
-    TABS.forEach(function (t) {
-      var b = document.createElement('button');
-      b.className = 'm-wiki-tab'; b.setAttribute('data-tab', t.k); b.textContent = t.n;
-      b.addEventListener('click', function () { state.tab = t.k; render(); });
-      tabs.appendChild(b);
+    // 🗂️ 大類改用原生 <select>(2026-07-17 使用者明訂:手機版空間吃緊,兩排按鈕佔掉快 1/3 螢幕)——
+    //   大類很少切換,壓成一顆緊湊的下拉選單跟子分頁擠在同一行,比「兩排按鈕各自一整排」省下明顯垂直空間。
+    var cats = document.getElementById('m-wiki-cats');
+    var catSel = document.createElement('select');
+    catSel.id = 'm-wiki-catsel';
+    TAB_CATS.forEach(function (c) {
+      var o = document.createElement('option'); o.value = c.k; o.textContent = c.n; catSel.appendChild(o);
     });
+    catSel.addEventListener('change', function () { state.cat = catSel.value; state.tab = tabsOfCat(catSel.value)[0]; render(); });
+    cats.appendChild(catSel);
+    buildSubtabRow();   // 子分頁列的按鈕是依當前分類動態重建(見 render() 內呼叫),這裡先建一次初始狀態
     var clsRow = document.getElementById('m-wiki-cls');
     // 「全職業」鈕放最前(只在「任務」分頁顯示):看不分職業的共通任務
     var allBtn = document.createElement('button');
@@ -1112,6 +1214,7 @@
     if (key === 'oblivion') return renderOblivion();
     if (key === 'rift') return renderRift();
     if (key === 'kingroom') return renderKingroom();
+    if (key === 'darkelf_sanct') return renderDarkelfSanct();
     if (key === 'load') return renderLoad();
     if (key === 'pledge') return renderPledge();
     return '';
@@ -1166,6 +1269,7 @@
     { key: 'oblivion', cls: false, label: '遺忘之島' },
     { key: 'rift', cls: false, label: '時空裂痕' },
     { key: 'kingroom', cls: false, label: '軍王之室' },
+    { key: 'darkelf_sanct', cls: false, label: '黑暗妖精聖地' },
     { key: 'pledge', cls: false, label: '血盟' },
     { key: 'mode', cls: false, label: '遊戲模式' },
     { key: 'npc', cls: false, label: 'NPC總覽' }
@@ -1346,19 +1450,23 @@
     if (_searchTimer) { clearTimeout(_searchTimer); _searchTimer = null; }   // 直接 render 蓋過待觸發的防抖,避免重複渲染
     var body = document.getElementById('m-wiki-body');
     if (!body) return;
+    state.cat = catOfTab(state.tab);   // 保證分類永遠跟著目前分頁走(不管 state.tab 是從哪裡被設定的:分頁點擊/跳頁連結/網址還原)
+    buildSubtabRow();   // 分類變了才重建子分頁列按鈕(內部有比對,沒變就跳過,幾乎零成本)
     syncUrl();   // 狀態變動時同步到網址(獨立頁才會動)
+    var navRow = document.getElementById('m-wiki-navrow');
     var tabsEl = document.getElementById('m-wiki-tabs');
     var clsRow = document.getElementById('m-wiki-cls');
     var q = (state.q || '').trim().toLowerCase();
     body.scrollTop = 0;
-    if (q) {   // 搜尋模式:收起分頁/職業列,顯示跨全部分頁與職業的結果
-      tabsEl.style.display = 'none';
+    if (q) {   // 搜尋模式:收起分類/分頁/職業列,顯示跨全部分頁與職業的結果
+      navRow.style.display = 'none';
       clsRow.style.display = 'none';
       body.innerHTML = linkifyTabs(renderSearch(q));
       highlightEl(body, q);
       return;
     }
-    tabsEl.style.display = '';
+    navRow.style.display = '';
+    var catSel = document.getElementById('m-wiki-catsel'); if (catSel && catSel.value !== state.cat) catSel.value = state.cat;
     document.querySelectorAll('#m-wiki-tabs .m-wiki-tab').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === state.tab); });
     if (state.tab === 'mastery' && state.cls === 'all') state.cls = 'knight';   // 職業專精沒有「全職業」,退回真實職業
     var showCls = (state.tab === 'mastery' || state.tab === 'quest');
@@ -2431,8 +2539,8 @@
   // 時空裂痕(本檔維護;內容以 index.html rift 區塊為準:enterRift/spawnRiftMob/riftDamageMult/drawRiftReward/riftEndRun)
   var RIFT_SECTIONS = [
     { t: '怎麼進、要準備什麼', lines: [
-      '入口在<b>「時空裂痕入口」</b>安全區(地圖選單→時空裂痕),裡面沒有 NPC,只有「進入」「領取獎勵」按鈕和你的時間排名。',
-      '<b>進入要消耗 1 顆「龜裂之核」</b>。龜裂之核＝到<b>希培利亞村莊的巴特爾</b>用「時空裂痕碎片 ×100」製作;時空裂痕碎片由<b>底比斯系列怪</b>掉落。',
+      '入口在' + wL('時空裂痕入口') + ' 安全區(地圖選單→時空裂痕),裡面沒有 NPC,只有「進入」「領取獎勵」按鈕和你的時間排名。',
+      '<b>進入要消耗 1 顆</b>' + wI('龜裂之核') + '。' + wI('龜裂之核') + ' ＝到' + wL('希培利亞村莊') + '的 ' + wN('巴特爾') + ' 用「' + wI('時空裂痕碎片') + ' ×100」製作;時空裂痕碎片由<b>底比斯系列怪</b>掉落。',
       '石化／麻痺／冰凍／暈眩／睡眠狀態下無法進入;裡面<b>禁止任何傳送</b>(單一戰場)。',
       '<b>挑戰狀態不存檔</b>:重新整理／離線回來都會回村、該次作廢——是一次性計時挑戰,別中途關掉。'
     ]},
@@ -2470,6 +2578,23 @@
     var secs = KINGROOM_SECTIONS.map(function (s) {
       var lines = s.lines.map(function (l) { return '<div class="m-wiki-desc" style="margin-top:4px;">・' + l + '</div>'; }).join('');
       return '<div class="m-wiki-card"><div class="m-wiki-name">' + esc(s.t) + '</div>' + lines + '</div>';
+    }).join('');
+    return note + secs;
+  }
+
+  function renderDarkelfSanct() {
+    var note = '<div class="m-wiki-note">「黑暗妖精聖地」是三張獨立地圖(黑暗妖精聖地／受詛咒的黑暗妖精聖地／崩壞的長老會議廳)，<b>無法從地圖選單選擇</b>，只能靠長老會議廳的 NPC「真．冥皇丹特斯」傳送進去。下面說明進入方式、兩隻頭目機制與掉落。</div>';
+    var secs = DARKELF_SANCT_SECTIONS.map(function (s) {
+      var body = '';
+      if (s.blocks) {
+        body = s.blocks.map(function (b) {
+          if (b.t === 'tbl') return wTbl(b.h, b.rows);
+          return '<div class="m-wiki-desc" style="margin-top:4px;">・' + b.p + '</div>';
+        }).join('');
+      } else {
+        body = (s.lines || []).map(function (l) { return '<div class="m-wiki-desc" style="margin-top:4px;">・' + l + '</div>'; }).join('');
+      }
+      return '<div class="m-wiki-card"><div class="m-wiki-name">' + esc(s.t) + '</div>' + body + '</div>';
     }).join('');
     return note + secs;
   }
@@ -3062,11 +3187,19 @@
       '.m-wiki-jump{color:#7dd3fc;font-weight:bold;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;cursor:pointer;}',
       '.m-wiki-jump:active{color:#38bdf8;}',
       '.m-wiki-cnt{color:#7dd3fc;font-size:12px;font-weight:normal;}',
-      '#m-wiki-tabs{display:flex;flex-wrap:nowrap;gap:6px;padding:10px 12px 4px;flex:0 0 auto;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}',
-      '#m-wiki-tabs::-webkit-scrollbar{height:5px;}',
-      '#m-wiki-tabs::-webkit-scrollbar-thumb{background:#334155;border-radius:3px;}',
-      '.m-wiki-tab{flex:0 0 auto;padding:8px 14px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;font-family:inherit;white-space:nowrap;}',
-      '.m-wiki-tab.on{background:#4338ca;border-color:#6366f1;color:#fff;}',
+      // 🗂️ 兩層分頁導覽(2026-07-17 使用者明訂改版):大類(第一層)壓成一顆緊湊 <select>,跟子分頁(第二層)擠在同一行,
+      //   比「兩排各自整排按鈕」省下明顯垂直空間(手機尤其有感)。#m-wiki-navrow 是共同容器,兩者用 flex 並排、空間不夠才換行。
+      '#m-wiki-navrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 12px 4px;flex:0 0 auto;}',
+      '#m-wiki-cats{flex:0 0 auto;}',
+      '#m-wiki-catsel{padding:7px 26px 7px 11px;border:1px solid #3a3220;background:#211c12 url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%23d6c9a8"/></svg>\') no-repeat right 9px center;color:#d6c9a8;border-radius:9px;font-size:13.5px;font-weight:bold;cursor:pointer;font-family:inherit;appearance:none;-webkit-appearance:none;transition:border-color .15s ease,background-color .15s ease;}',
+      '#m-wiki-catsel:hover{border-color:#a1874f;background-color:#2b2417;}',
+      '#m-wiki-catsel:focus{outline:none;border-color:#fcd34d;}',
+      '#m-wiki-catsel option{background:#1a1710;color:#d6c9a8;}',
+      // 🗂️ 子分頁列(第二層,依所選大類重建,最多 7 顆):可換行,跟大類選單同一行起排,擠不下才換到下一行。
+      '#m-wiki-tabs{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 auto;min-width:0;}',
+      '.m-wiki-tab{flex:0 0 auto;padding:8px 14px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;font-family:inherit;white-space:nowrap;transition:border-color .15s ease,background-color .15s ease,box-shadow .15s ease;}',
+      '.m-wiki-tab:hover{border-color:#6366f1;background-color:#243047;}',
+      '.m-wiki-tab.on{background:linear-gradient(135deg,#4338ca,#5b45d6);border-color:#818cf8;color:#fff;box-shadow:0 0 0 1px rgba(129,140,248,.3),0 2px 9px rgba(67,56,202,.5);}',
       '#m-wiki-cls{display:flex;gap:6px;padding:8px 12px;flex:0 0 auto;border-bottom:1px solid #1e293b;flex-wrap:wrap;}',
       '.m-wiki-clsbtn{flex:1 1 auto;padding:7px 4px;border:1px solid #334155;background:#111c30;color:#cbd5e1;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit;}',
       '.m-wiki-clsbtn.on{background:#0e7490;border-color:#22d3ee;color:#fff;}',
