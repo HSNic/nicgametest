@@ -35,8 +35,16 @@
       '@keyframes afkCritFlash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}' +
       '.afk-critfx-burst{position:absolute;border-radius:50%;pointer-events:none;border:3px solid #ff3b30;box-shadow:0 0 14px #ff3b30,0 0 26px rgba(255,59,48,.6);transform:translate(-50%,-50%) scale(.2);animation:afkCritBurst .5s cubic-bezier(.15,.7,.3,1) forwards;}' +
       '@keyframes afkCritBurst{0%{opacity:.95;transform:translate(-50%,-50%) scale(.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}}' +
-      // 爆擊數字紅光暈:只加強文字陰影,不掛動畫(避免跟核心 vfxCrit 的 animationend 監聽搶著提早移除節點)
-      '.afk-critfx-glow{text-shadow:0 0 8px #ff3b30,0 0 16px rgba(255,59,48,.9),0 0 28px rgba(255,59,48,.65),0 1px 2px rgba(0,0,0,.95)!important;}';
+      // 爆擊數字絢麗光暈(2026-07-16 使用者要求「像天堂W」:金白閃爍脈動+紅光,取代原本的靜態紅光暈):
+      //   同一元素已有核心的 vfx-dmg.vfx-crit(animation:vfxCrit 負責飄動/縮放),CSS 的 animation 屬性不能疊加兩條規則,
+      //   所以這裡用「更高特異度的組合選擇器」把兩顆動畫合併成一條 animation 清單(逗號分隔可同時套用多個關鍵影格),
+      //   核心飄動的 vfxCrit 原封不動,只是額外加上 afkCritGlowPulse 讓文字持續閃爍金白→紅的光暈。
+      '.vfx-dmg.vfx-crit.afk-critfx-glow{animation:vfxCrit 1.05s cubic-bezier(.18,.85,.25,1) forwards, afkCritGlowPulse .45s ease-in-out infinite!important;}' +
+      '@keyframes afkCritGlowPulse{' +
+        '0%{text-shadow:0 0 6px #fff,0 0 14px #ffd93b,0 0 24px #ff3b30,0 1px 2px rgba(0,0,0,.95);}' +
+        '50%{text-shadow:0 0 16px #fff,0 0 34px #ffd93b,0 0 54px #ff3b30,0 0 70px rgba(255,59,48,.7),0 1px 2px rgba(0,0,0,.95);}' +
+        '100%{text-shadow:0 0 6px #fff,0 0 14px #ffd93b,0 0 24px #ff3b30,0 1px 2px rgba(0,0,0,.95);}' +
+      '}';
     document.head.appendChild(s);
   }
 

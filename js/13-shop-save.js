@@ -329,6 +329,73 @@ function _summaryFromRaw(s){
 }
 function slotSummary(n){ return _summaryFromRaw(_lzGet('lineage_idle_save_' + n)); }
 function slotBackupSummary(n){ return _summaryFromRaw(_lzGet('lineage_idle_save_' + n + '_bak')); }   // 匯入前自動備份的摘要
+
+// ===== 角色多開／刪除保護 =====
+// 每個正在遊戲中的分頁每 2 秒留下心跳。刪角時只要還有其他活躍分頁就拒絕，
+// 並以角色世代指紋阻止已刪除的舊分頁在稍後自動存檔時把角色寫回來。
+const ROLE_SESSION_REGISTRY_KEY = 'fb5_active_role_sessions_v1';
+const ROLE_DELETED_GUARD_KEY = 'fb5_deleted_role_guards_v1';
+const ROLE_SESSION_TTL_MS = 8000;
+const _roleSessionId = 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+function _roleEpoch(){ return 're_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2); }
+function _roleFingerprint(p){
+    if(!p || !p.cls) return '';
+    let owner = p.enSeed || ('legacy:' + (p.name || '') + '|' + p.cls);
+    return String(owner) + '|' + String(p._roleEpoch || 'legacy');
+}
+function _roleReadSavePlayer(slot){
+    try {
+        let u = _saveUnwrap(_lzGet('lineage_idle_save_' + slot));
+        if(!u || !u.ok || !u.payload) return null;
+        let d = JSON.parse(u.payload);
+        return d && d.p && d.p.cls ? d.p : null;
+    } catch(e){ return null; }
+}
+function _roleReadObject(key){
+    try { let v = JSON.parse(_lsGet(key) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+    catch(e){ return {}; }
+}
+function _roleWriteObject(key, value){ return _lsSet(key, JSON.stringify(value)); }
+function _rolePruneSessions(reg, now){
+    now = now || Date.now();
+    for(let id in reg) if(!reg[id] || now - (Number(reg[id].ts) || 0) > ROLE_SESSION_TTL_MS) delete reg[id];
+    return reg;
+}
+function _roleSessionForget(){
+    let reg = _rolePruneSessions(_roleReadObject(ROLE_SESSION_REGISTRY_KEY));
+    if(reg[_roleSessionId]) { delete reg[_roleSessionId]; _roleWriteObject(ROLE_SESSION_REGISTRY_KEY, reg); }
+}
+function _roleSessionHeartbeat(){
+    let gs = document.getElementById('game-screen');
+    let active = !!(typeof state !== 'undefined' && state.running && player && player.cls && gs && !gs.classList.contains('hidden'));
+    let reg = _rolePruneSessions(_roleReadObject(ROLE_SESSION_REGISTRY_KEY));
+    if(active) reg[_roleSessionId] = { ts:Date.now(), slot:currentSlot, fp:_roleFingerprint(player), name:player.name || '未命名' };
+    else delete reg[_roleSessionId];
+    _roleWriteObject(ROLE_SESSION_REGISTRY_KEY, reg);
+}
+function _roleOtherActiveSessions(){
+    let reg = _rolePruneSessions(_roleReadObject(ROLE_SESSION_REGISTRY_KEY));
+    _roleWriteObject(ROLE_SESSION_REGISTRY_KEY, reg);
+    return Object.keys(reg).filter(id => id !== _roleSessionId).map(id => reg[id]);
+}
+function _roleMarkDeleted(fp){
+    if(!fp) return false;
+    let guards = _roleReadObject(ROLE_DELETED_GUARD_KEY), now = Date.now();
+    for(let k in guards) if(now - (Number(guards[k]) || 0) > 30 * 86400000) delete guards[k];
+    guards[fp] = now;
+    return _roleWriteObject(ROLE_DELETED_GUARD_KEY, guards);
+}
+function _roleSaveAllowed(){
+    let fp = _roleFingerprint(player);
+    if(!fp) return false;
+    let guards = _roleReadObject(ROLE_DELETED_GUARD_KEY);
+    if(guards[fp]) return false;
+    let stored = _roleReadSavePlayer(currentSlot);
+    return !stored || _roleFingerprint(stored) === fp;
+}
+setInterval(_roleSessionHeartbeat, 2000);
+if(typeof window !== 'undefined') window.addEventListener('beforeunload', _roleSessionForget);
+
 let _slotMode = 'new';
 function openSlotSelect(mode){
     _slotMode = mode;
@@ -362,7 +429,7 @@ function openSlotSelect(mode){
 function chooseSlot(n){
     if(_slotMode === 'load'){ currentSlot = n; loadGame(); return; }
     let sum = slotSummary(n);
-    if(sum && !confirm(`存檔 ${n} 已有角色（${sum.cls} Lv.${sum.lv}${sum.name ? ' ' + sum.name : ''}），確定覆蓋並重新創角？`)) return;
+    if(sum){ alert(`存檔 ${n} 已有角色，請先刪除角色後再創建新角色。`); return; }
     currentSlot = n;
     _loadSelectedSlot = n;
     _loadPage = Math.floor((n - 1) / 4);
@@ -451,14 +518,13 @@ function importSave(n){
                 alert('匯入失敗：檔案內容不是有效的放置天堂存檔。'); return;
             }
             let existing = slotSummary(n);
-            if(existing && !confirm(`存檔 ${n} 已有角色（${existing.cls} Lv.${existing.lv} ${existing.name}）。\n確定要用匯入的存檔「取代」它嗎？\n（原存檔會自動備份，可於載入畫面點「復原備份」還原）`)) return;
+            if(existing){ alert(`存檔 ${n} 已有角色，請先刪除角色後再匯入。`); return; }
+            d.p._roleEpoch = _roleEpoch();   // 匯入視為新的角色世代，已刪角色的舊分頁不能覆蓋這份匯入檔
             // 🔧 抽出倉庫資料（若匯入檔含 wh）；🐾 v3.2.75 也抽出寵物名冊（pets）；寫入存檔位時不保留 wh/pets 欄位（它們是共用桶·不進角色存檔）
             let whData = d.wh;
             let petData = d.pets;
-            let saveText = text;
+            let saveText = JSON.stringify(d);
             if(whData !== undefined || petData !== undefined){ let _c = {}; for(let k in d){ if(k !== 'wh' && k !== 'pets') _c[k] = d[k]; } saveText = JSON.stringify(_c); }
-            let cur = _lsGet('lineage_idle_save_' + n);
-            if(cur) _lzSetStoredRaw('lineage_idle_save_' + n + '_bak', cur);   // 匯入前自動備份原存檔
             _lzSet('lineage_idle_save_' + n, _saveWrap(saveText));   // 💾 匯入 → 以本機簽章重新封裝後壓縮存入（之後讀檔即可驗章）
             // 🔧 詢問是否一併還原共用倉庫（會覆蓋現有倉庫，四個存檔位共用）
             let whMsg = '';
@@ -487,7 +553,7 @@ function importSave(n){
             if(_slotMode === 'load-grid') renderLoadSelect();
             else openSlotSelect(_slotMode);   // 重新整理存檔位清單（更新名稱/等級與可載入狀態）
             let ns = slotSummary(n);
-            alert(`已匯入到存檔 ${n}：${ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成'}。${cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : ''}${whMsg}${petMsg}`);
+            alert(`已匯入到存檔 ${n}：${ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成'}。${whMsg}${petMsg}`);
         };
         reader.readAsText(file);
     };
@@ -546,10 +612,6 @@ function loadFrameSrc(key, frame){
     if(key === 'none') return `assets/start/none/${frame}.png`;
     return `assets/start/${key}/${frame}.png`;
 }
-function creationFrameSrc(key, frame){
-    if(key === 'none') return 'assets/start/0.png';
-    return `assets/start-transparent/${key}/${frame}.png`;
-}
 function loadFirstFrame(key){
     if(key === 'none') return LOAD_NONE_ANIM_FRAMES[0];
     const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
@@ -564,10 +626,7 @@ function openLoadSelect(){
     if(main) main.classList.add('hidden');
     if(create) create.classList.add('hidden');
     if(oldSlots) oldSlots.classList.add('hidden');
-    if(load) {
-        load.classList.remove('hidden');
-        load.scrollTop = 0;
-    }
+    if(load) load.classList.remove('hidden');
     _loadLastClickSlot = 0; _loadLastClickAt = 0;
     _loadPage = 0;
     _loadSelectedSlot = [1,2,3,4].find(n => !!slotSummary(n)) || 1;
@@ -635,24 +694,19 @@ function updateLoadInfo(){
     set('load-info-wis', empty ? '' : (base.wis || ''));
     set('load-info-cha', empty ? '' : (base.cha || ''));
     set('load-info-int', empty ? '' : (base.int || ''));
+    const create = document.getElementById('load-btn-create');
+    const importBtn = document.getElementById('load-btn-import');
     const enter = document.getElementById('load-btn-enter');
-    const restore = document.getElementById('load-btn-restore');
-    if(enter) enter.disabled = empty;
-    if(restore) restore.classList.toggle('hidden', !slotBackupSummary(_loadSelectedSlot));
+    const del = document.getElementById('load-btn-delete');
+    if(create) create.classList.toggle('hidden', !empty);
+    if(importBtn) importBtn.classList.toggle('hidden', !empty);
+    if(enter) enter.classList.toggle('hidden', empty);
+    if(del) del.classList.toggle('hidden', empty);
 }
 function loadSelectSlot(n){
     const sum = slotSummary(n);
-    if(!sum){
-        currentSlot = n;
-        _loadSelectedSlot = n;
-        _loadPage = Math.floor((n - 1) / 4);
-        const load = document.getElementById('load-select-panel');
-        if(load) load.classList.add('hidden');
-        showCreation();
-        return;
-    }
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const doubleClick = _loadLastClickSlot === n && now - _loadLastClickAt <= 500;
+    const doubleClick = !!sum && _loadLastClickSlot === n && now - _loadLastClickAt <= 500;
     _loadLastClickSlot = doubleClick ? 0 : n;
     _loadLastClickAt = doubleClick ? 0 : now;
     _loadSelectedSlot = n;
@@ -665,7 +719,7 @@ function loadSelectSlot(n){
 }
 function loadCreateSelected(){
     const sum = slotSummary(_loadSelectedSlot);
-    if(sum && !confirm(`存檔 ${_loadSelectedSlot} 已有 ${sum.cls} Lv.${sum.lv}${sum.name ? ' ' + sum.name : ''}，要建立新角色並覆蓋嗎？`)) return;
+    if(sum){ alert(`存檔 ${_loadSelectedSlot} 已有角色，請先刪除角色後再創建新角色。`); return; }
     currentSlot = _loadSelectedSlot;
     const load = document.getElementById('load-select-panel');
     if(load) load.classList.add('hidden');
@@ -673,13 +727,38 @@ function loadCreateSelected(){
 }
 function loadEnterSelected(){
     const sum = slotSummary(_loadSelectedSlot);
-    if(!sum){ loadSelectSlot(_loadSelectedSlot); return; }
+    if(!sum) return;
     _loadLastClickSlot = 0; _loadLastClickAt = 0;
     currentSlot = _loadSelectedSlot;
     loadGame();
 }
 function loadImportSelected(){ importSave(_loadSelectedSlot); }
 function loadRestoreSelected(){ restoreBackup(_loadSelectedSlot); }
+function loadDeleteSelected(){
+    const slot = _loadSelectedSlot, sum = slotSummary(slot);
+    if(!sum){ renderLoadSelect(); return; }
+    const active = _roleOtherActiveSessions();
+    if(active.length){
+        const names = Array.from(new Set(active.map(s => s.name || ('存檔 ' + s.slot)))).join('、');
+        alert(`偵測到其他角色仍在遊戲中${names ? `（${names}）` : ''}。\n\n為避免角色、寵物與傭兵資料錯亂，請先關閉其他遊戲分頁，等待約 8 秒後再刪除。`);
+        return;
+    }
+    const expected = sum.name || '未命名';
+    const typed = prompt(`即將刪除存檔 ${slot}：${sum.cls} Lv.${sum.lv} ${expected}\n\n刪除後才能在此欄位創建新角色或匯入進度。\n請輸入角色名稱「${expected}」確認刪除：`, '');
+    if(typed === null) return;
+    if(typed.trim() !== expected){ alert('角色名稱不正確，已取消刪除。'); return; }
+    if(_roleOtherActiveSessions().length){ alert('刪除期間偵測到其他遊戲分頁，已取消刪除。請先關閉其他角色後再試。'); return; }
+    if(!confirm(`確定永久刪除「${expected}」嗎？\n角色存檔與角色專屬傭兵資料將刪除；共享倉庫、圖鑑與寵物名冊會保留。`)) return;
+    const oldPlayer = _roleReadSavePlayer(slot), fp = _roleFingerprint(oldPlayer);
+    if(!_roleMarkDeleted(fp)){ alert('無法建立刪除保護，為避免舊分頁寫回角色，本次刪除已取消。'); return; }
+    try { if(typeof petReleaseSlotAssignments === 'function') petReleaseSlotAssignments(slot); } catch(e){ console.warn('pet delete cleanup', e); }
+    try { if(typeof mercLedgerPurgeSlot === 'function') mercLedgerPurgeSlot(slot); } catch(e){ console.warn('merc delete cleanup', e); }
+    _lsRemove('lineage_idle_save_' + slot);
+    _lsRemove('lineage_idle_save_' + slot + '_bak');
+    if(_lsGet('lineage_idle_save_' + slot)){ alert('角色存檔刪除失敗，請重新整理後再試。'); return; }
+    renderLoadSelect();
+    alert(`角色「${expected}」已刪除。現在可以在此欄位創建新角色或匯入進度。`);
+}
 (function animateLoadSelectPreview(){
     function tick(now){
         const panel = document.getElementById('load-select-panel');
@@ -781,12 +860,12 @@ function setCreationClassAnimation(c){
     creationClassAnim = { key, frame: range[0], first: range[0], last: range[1], lastAt: 0, stepMs: 82, static: false };
     const img = document.getElementById('class-preview-img');
     if(img){
-        img.src = creationFrameSrc(key, range[0]);
+        img.src = `assets/start/${key}/${range[0]}.png`;
         img.style.display = 'block';
     }
     if(typeof playCreationFrameSfx === 'function') playCreationFrameSfx(key, range[0]);
     for(let n = range[0]; n <= Math.min(range[1], range[0] + 10); n++){
-        const pre = new Image(); pre.src = creationFrameSrc(key, n);
+        const pre = new Image(); pre.src = `assets/start/${key}/${n}.png`;
     }
 }
 (function animateCreationClassPreview(){
@@ -796,7 +875,7 @@ function setCreationClassAnimation(c){
         const gs = document.getElementById('game-screen');   // 🔊 v3.4.17 已進遊戲→停創角動畫（防 creation-panel classList 殘留→動畫續跑並每 loop 重觸發創角音效）
         if(panel && img && !panel.classList.contains('hidden') && (!gs || gs.classList.contains('hidden')) && !creationClassAnim.static && now - creationClassAnim.lastAt >= creationClassAnim.stepMs){
             creationClassAnim.frame = creationClassAnim.frame >= creationClassAnim.last ? creationClassAnim.first : creationClassAnim.frame + 1;
-            img.src = creationFrameSrc(creationClassAnim.key, creationClassAnim.frame);
+            img.src = `assets/start/${creationClassAnim.key}/${creationClassAnim.frame}.png`;
             if(creationClassAnim.frame === creationClassAnim.first && typeof playCreationFrameSfx === 'function') playCreationFrameSfx(creationClassAnim.key, creationClassAnim.frame);
             creationClassAnim.lastAt = now;
         }
@@ -922,6 +1001,11 @@ function onToggleClassic(el) {
 }
 function startGame() {
     if(!curCreate.cls || !curCreate.rawCls) return;
+    if(slotSummary(currentSlot)){
+        alert(`存檔 ${currentSlot} 已有角色，無法直接覆蓋。請返回角色選擇畫面並先刪除原角色。`);
+        backToMenu();
+        return;
+    }
     if(typeof stopCreationFrameSfx === 'function') stopCreationFrameSfx();
     // 🔊 v3.4.17 進遊戲：隱藏 creation-panel（原本只隱藏 creation-screen 父層·子面板 classList 無 .hidden 殘留）＋停創角動畫。
     //    否則 _bgmIsCreateScreen()(js/17) 與創角逐幀動畫 tick(下方 animateCreationClassPreview) 都看 creation-panel→誤判「還在創角」→登入/創角 BGM 一直播、創角音效每 loop 重觸發。
@@ -931,6 +1015,7 @@ function startGame() {
     document.getElementById('game-screen').classList.remove('hidden');
     document.body.classList.add('game-bg-dim');   // 正式遊戲後：背景淡化
     if (typeof mercLedgerPurgeSlot === 'function') { try { mercLedgerPurgeSlot(currentSlot); } catch (e) {} }   // 🩹 v3.0.108 新角色覆蓋此存檔位→清除前一個角色的待領傭兵經驗（新角色不繼承）
+    if (typeof petReleaseSlotAssignments === 'function') { try { petReleaseSlotAssignments(currentSlot); } catch (e) { console.warn('pet slot ownership cleanup', e); } }   // 🐾 覆蓋角色時，舊角色出戰寵物回保管，避免卡在不存在的角色名下
     
     const avatarMap = {
         'm_royal': '王子', 'f_royal': '公主',
@@ -949,7 +1034,8 @@ function startGame() {
     player.classicMode = !!(document.getElementById('create-classic-toggle') && document.getElementById('create-classic-toggle').checked);   // 🎮 經典模式：依創角開關決定（此角色永久生效）；🏛️v3.0.83 傳統模式已取消（traditionalMode 由 SAVE_DEFAULTS 恆 false）
     player.name = null;   // 預設未取名，狀態欄顯示「點擊取名」，玩家可點擊命名
     player.enSeed = 'es' + uid() + uid();   // 🎲 強化決定論種子（創角產生一次、存進存檔永久固定）：讓強化成敗由種子決定、不可用 save/load 刷
-    player.expMigV = 2;   // ⚠️ 新角色天生在最新經驗刻度（v3.0.82 天堂經典表）→ 標記免遷移
+    player._roleEpoch = _roleEpoch();        // 🛡️ 角色世代：刪除後舊分頁不得把同欄位的舊角色寫回
+    player.expMigV = 3;   // ⚠️ 新角色天生使用最新經驗刻度（Lv70+ 同級怪等比例曲線）→ 標記免遷移
 
     let b = createBase[curCreate.cls];
     player.base = { str: b.str+curCreate.str, dex: b.dex+curCreate.dex, con: b.con+curCreate.con, int: b.int+curCreate.int, wis: b.wis+curCreate.wis, cha: b.cha+curCreate.cha };
@@ -1049,6 +1135,7 @@ function startGame() {
     changeMap(true);
 
     state.running = true;
+    _roleSessionHeartbeat();   // 立即登記，不等待第一個 2 秒心跳，避免剛進遊戲就被另一分頁刪除
     state.ticks = 0;   // 🔧 新角色從 0 tick 開始（避免承接前一場的計時）
     applySherineTheme();   // 🔮 新角色預設關閉席琳的世界，重置視覺主題
     startGameTimers();
@@ -1111,6 +1198,13 @@ function saveGame() {
     //    這些背景觸發會把空殼 player 寫進 currentSlot（預設 1）→ 毀掉該格真正的角色（顯示為 null／Lv.1／預設王族／資料不完整）。
     //    無 cls＝不是進行中的遊戲角色 → 一律拒寫，確保空殼永遠不覆蓋既有存檔。（真正的角色必有職業；創角於選職業後才 saveGame，不受影響。）
     if (!player || !player.cls) return false;
+    if (!_roleSaveAllowed()) {
+        if(!_saveFailureNotified && typeof logSys === 'function') {
+            _saveFailureNotified = true;
+            logSys('<span class="text-red-400 font-bold">⚠ 此角色已被刪除或存檔位已更換角色，本分頁已停止寫入。請關閉此分頁。</span>');
+        }
+        return false;
+    }
     try {
     if (typeof sanitizeState === 'function') sanitizeState();   // 🛡️ 寫檔前合理性夾擠：把 runtime(Console)改出的不可能數值夾回合法範圍，連同簽章一起固化、不讓作弊值被存檔/匯出
     // 收集目前的自動化設定 UI 狀態（🛡️ 僅在 UI 已同步時重建；否則沿用記憶體中既有 config）
@@ -1345,8 +1439,9 @@ function loadGame() {
             const EXP_MIG_OLD_BASE = 36065092;   // v2.6.40 前 Lv49+ 的固定升級需求（＝EXP_T[49]，新制 getExpReq 的未放大基準）
             let _mlv = player.lv || 1;
             if (_mlv >= 50 && _mlv < 100 && (player.exp || 0) > 0 && player.exp < EXP_MIG_OLD_BASE) {
-                let _factor = Math.round(getExpReq(_mlv) / EXP_MIG_OLD_BASE);   // 2,4,8,…,1024（整數·精確）
-                if (_factor > 1) player.exp = Math.min(Math.floor(player.exp * _factor), getExpReq(_mlv) - 1);   // 夾在「不足以升級」→ 不白升等
+                let _v1Req = _expReqOldV1(_mlv);
+                let _factor = Math.round(_v1Req / EXP_MIG_OLD_BASE);   // 舊固定需求 → v1 分段需求
+                if (_factor > 1) player.exp = Math.min(Math.floor(player.exp * _factor), _v1Req - 1);   // 夾在「不足以升級」→ 不白升等
             }
             player.expMigV = 1;   // 標記本檔已遷移（存檔時固化·跨載入不重跑）
         }
@@ -1356,13 +1451,27 @@ function loadGame() {
             let _mig2 = (lv, exp) => {
                 lv = Math.max(1, Math.min(100, Math.floor(lv || 1)));
                 if (lv >= 100) return 0;
-                let o = _expReqOldV1(lv), n = getExpReq(lv);
+                let o = _expReqOldV1(lv), n = _expReqClassicV2(lv);
                 if (!isFinite(o) || !isFinite(n) || o <= 0) return 0;
                 return Math.min(Math.floor(Math.max(0, exp || 0) / o * n), n - 1);
             };
             player.exp = _mig2(player.lv, player.exp);
             (player.allies || []).forEach(a => { if (a) a.exp = _mig2(a.lv, a.exp); });
             player.expMigV = 2;
+        }
+        // ⚖️ v3.4.58 經驗刻度遷移（expMigV=3）：Lv70-99 改為與同級怪經驗等比例。
+        //   玩家與目前在隊傭兵保留該級原有進度百分比，避免需求降低後下一次擊殺連升多級；Lv1-69 數值不變。
+        if ((player.expMigV || 0) < 3) {
+            let _mig3 = (lv, exp) => {
+                lv = Math.max(1, Math.min(100, Math.floor(lv || 1)));
+                if (lv >= 100) return 0;
+                let o = _expReqClassicV2(lv), n = getExpReq(lv);
+                if (!isFinite(o) || !isFinite(n) || o <= 0) return 0;
+                return Math.min(Math.floor(Math.max(0, exp || 0) / o * n), n - 1);
+            };
+            player.exp = _mig3(player.lv, player.exp);
+            (player.allies || []).forEach(a => { if (a) a.exp = _mig3(a.lv, a.exp); });
+            player.expMigV = 3;
         }
         // 🏛️ v3.0.83 傳統模式已取消：舊傳統角色一次性併入對應基礎模式（一般+傳統→一般、經典+傳統→經典）。
         //   共用倉庫/圖鑑桶另由 js/12 _mergeTradBuckets 於頁面載入時合併（'_tradonly'→''、'_trad'→'_classic'）。
@@ -1485,6 +1594,7 @@ function loadGame() {
         _uiConfigReady = true;   // 🛡️ 審計#1：config→DOM 還原完成，此後 saveGame 才可用 DOM 重建 config
 
         state.running = true;
+        _roleSessionHeartbeat();   // 立即登記，不等待第一個 2 秒心跳
         // 自然恢復（每 16 秒）已由主迴圈 tick() 內的 state.ticks % 160 統一驅動，不再額外 setInterval。
         // 計時器統一由 startGameTimers() 註冊（內含去重），含每 5 分鐘自動存檔。
         startGameTimers();

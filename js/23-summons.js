@@ -241,6 +241,14 @@ function summonV2ActiveSk() { return (player && player._summonV2Sk) || 'sk_summo
 // 執行期實體：player.summonsV2 = [{ uid, form, lv, hp, mhp, _atkCd, _animAct, _px.. }]（不入存檔；讀檔後 buff 仍在→自動重施）
 // 玩家選擇：player.summonChoice（入存檔·僅有戒指且資格符合時生效）
 function summonV2List() { return (player && player.summonsV2) || []; }
+// 🧱 v3.4.50 傭兵召喚物清單（可被攻擊的抽象實體·無 sprite）：ally.summon 帶 hp/mhp(由 js/06 _mercSummonAttachEntity 附加)→進 js/04 受害者池。
+//   只收「有血量欄位且存活」者（舊存檔未遷移的召喚物自然排除·到期重召後補齊）；玩家迷魅(player.summon)不在此（維持無敵抽象）。
+function mercSummonList() {
+    if (typeof player === 'undefined' || !player || !player.allies || !player.allies.length) return [];
+    let out = [];
+    for (let a of player.allies) { let s = a && !a._downed && a.summon; if (s && (s.mhp || 0) > 0 && !s._downed && (s.hp || 0) > 0) out.push(s); }
+    return out;
+}
 function summonV2Knows(skId) { skId = skId || 'sk_summon'; return ((player.skills || []).includes(skId) || (player.grantedSkills || []).includes(skId)); }   // 已習得（比照 castSkillInner 的 grantedSkills 旁路）
 function summonRenderList() {   // 供 js/22 寵物圖層渲染（含死亡殘影 2 秒）
     if (typeof player === 'undefined' || !player || !player.cls) return [];
@@ -362,8 +370,8 @@ function summonV2AttackOnce(s, d, t, owner) {
     owner = owner || player;   // 🩸 v3.3.23 owner 參數化：傭兵召喚術抽象輸出共用（讀 owner 裝備/精通；killMob 仍歸真隊長·不換身）
     const _ownerDmgMult = (owner !== player && typeof royalAllyMult === 'function') ? royalAllyMult() : 1;   // 👑 傭兵召喚物比照傭兵本體吃隊長魅力；玩家召喚固定1
     const _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(owner) : { dmg: 0, hit: 0 };   // 🏺 喚獸師的訓練鞭等
-    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s) : null;   // 🩹 v3.2.67 幻覺攻擊光環（化身+10傷／歐吉+4傷+4命）全隊生效→注入召喚物普攻（s 非提供者·排除無效果=取全隊）
-    const _ownerIa = (owner !== player && typeof teamIlluAura === 'function') ? teamIlluAura(owner) : null;   // 傭兵 d 已含自身光環；補入其他隊員提供的巫妖魔傷，玩家 d 則已由 recompute 注入
+    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s, true) : null;   // 🩹 v3.2.67 幻覺攻擊光環（化身+10傷／歐吉+4傷+4命）全隊生效→注入召喚物普攻（s 非提供者·排除無效果=取全隊）
+    const _ownerIa = (owner !== player && !((owner.buffs || {}).sk_illu_lich > 0) && typeof teamIlluAura === 'function') ? teamIlluAura(owner, true) : null;   // 傭兵 d 已含自身光環；補入其他隊員提供的巫妖魔傷。🩹 v3.4.47：owner 自身已持有巫妖(共享會鋪給全隊)→own(+2 在 d)＋others(+2)＝雙算→自身持有時不再補差額
     const _baseMd = Math.min(12, Math.max(0, (owner.d && owner.d.magicDmg) || 0));
     const _teamMd = Math.min(12, Math.max(0, _baseMd + ((_ownerIa && _ownerIa.md) || 0)));
     const _magicAuraRatio = (1 + _teamMd / 80) / (1 + _baseMd / 80);   // _sumDerive/_zmbDerive 已含自身 magicDmg，只補差額避免雙算
@@ -371,7 +379,7 @@ function summonV2AttackOnce(s, d, t, owner) {
     const hv = stretchHitValue(d.hit + _sgb.hit + (_ia ? _ia.eh : 0) - t.lv + mobEffAC(t));
     const r = roll(1, 20);
     _petAnimAct(s, 'attack', t.uid);   // 🎬 v3.2.73 補跑中不設→回前景不同步爆播
-    if (!((r === 20) || (r !== 1 && hv >= r))) { logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
+    if (!((r === 20) || (r !== 1 && hv >= r))) { if (typeof vfxMiss === 'function') vfxMiss(t); logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
     let dmg = ((r === 20 ? d.dice : roll(1, d.dice)) + d.flat + _sgb.dmg) * _attackMult + (_ia ? _ia.ed : 0);
     dmg = Math.max(1, Math.floor(dmg) - (t.dr || 0));
     dmg = Math.max(1, Math.floor(dmg * _ownerDmgMult));
@@ -387,11 +395,11 @@ function summonV2AttackOnce(s, d, t, owner) {
             _petAnimAct(s, 'skill');
             if (pr.kind === 'poison') {   // 單體中毒（比照技能類中毒：單層固定 DoT）
                 t.st = t.st || newMobStatus();
-                t.st.poison = 150; t.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); t.st.poisonStacks = 1; t.st.poisonUnit = t.st.poisonDmg; t.st.poisonTick = 30;
+                t.st.poison = 150; t.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); t.st.poisonStacks = 1; t.st.poisonUnit = t.st.poisonDmg; t.st.poisonTick = 30; t.st.poisonSrc = 'summon';   // 🎯 DPS：召喚中毒歸召喚
                 logCombat(`<span class="text-purple-300">${s.form}</span> 發動 <span class="text-green-300 font-bold">${pr.name}</span>，<span class="${getMobColor(t.lv)}">${t.n}</span> 中毒了！`, 'magic');
             } else if (pr.kind === 'poisonAll') {   // 全體中毒
                 const all = mapState.mobs.filter(m => m && m.curHp > 0);
-                all.forEach(m => { m.st = m.st || newMobStatus(); m.st.poison = 150; m.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg; m.st.poisonTick = 30; });
+                all.forEach(m => { m.st = m.st || newMobStatus(); m.st.poison = 150; m.st.poisonDmg = Math.max(1, Math.floor(skillPower / 2 * _ownerDmgMult)); m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg; m.st.poisonTick = 30; m.st.poisonSrc = 'summon'; });   // 🎯 DPS：召喚全體中毒歸召喚
                 if (all.length) logCombat(`<span class="text-purple-300">${s.form}</span> 發動 <span class="text-green-300 font-bold">${pr.name}</span>，敵方全體中毒！`, 'magic');
             } else {   // magic / magicAll：屬性魔法傷害（吃魔抗/DR/屬性剋制·summonElementDamage）
                 const targets = (pr.kind === 'magicAll') ? mapState.mobs.filter(m => m && m.curHp > 0) : [t];
@@ -419,17 +427,17 @@ function spiritAttackOnce(s, t, owner) {
     const spec = _spiritSpec(s.skId, s.ele, !!s._king);   // 🧝 v3.2.26 四屬性獨立參數（dice/scale/攻速依屬性·王含 AOE）
     const cha = (owner.d && owner.d.cha) || 0;
     const _sgb = (typeof summonGearBonus === 'function') ? summonGearBonus(owner) : { dmg: 0, hit: 0 };
-    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s) : null;   // 🩹 幻覺光環：精靈命中吃 eh；md 由 owner.d＋下方其他隊員差額進 summonDamageMult，避免重複計算
-    const _ownerIa = (owner !== player && typeof teamIlluAura === 'function') ? teamIlluAura(owner) : null;   // 傭兵補其他隊員的巫妖魔傷；自身光環已在 owner.d，玩家亦已由 recompute 注入
+    const _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(s, true) : null;   // 🩹 幻覺光環：精靈命中吃 eh；md 由 owner.d＋下方其他隊員差額進 summonDamageMult，避免重複計算
+    const _ownerIa = (owner !== player && !((owner.buffs || {}).sk_illu_lich > 0) && typeof teamIlluAura === 'function') ? teamIlluAura(owner, true) : null;   // 傭兵補其他隊員的巫妖魔傷；自身光環已在 owner.d。🩹 v3.4.47：owner 自身已持有巫妖→不再補差額（共享使全隊持有＝原寫法必雙算）
     const smLike = { skId: s.skId, hitLvOff: spec.hitLvOff || 0, dmgMult: spec.dmgMult || 1 };
     _petAnimAct(s, 'attack', t.uid);   // 🎬 v3.2.73 補跑中不設→回前景不同步爆播
     const hv = summonHitValue(smLike, owner, t, _sgb.hit + (_ia ? _ia.eh : 0));
     const r = roll(1, 20);
-    if (!((r === 20) || (r !== 1 && hv >= r))) { logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
+    if (!((r === 20) || (r !== 1 && hv >= r))) { if (typeof vfxMiss === 'function') vfxMiss(t); logCombat(`<span class="text-purple-300">${s.form}</span> 的攻擊未命中。`, 'miss'); return; }
     const flat = Math.floor(cha * (owner.lv || 1) / (spec.scale || 20));
     const mrPen = (spec.mrPenBase || 0) + Math.floor(cha / 10);
     const mult = summonDamageMult(smLike, owner, true, (_ownerIa && _ownerIa.md) || 0);
-    const dmg = summonElementDamage(spec.dice || [1, 40], s.ele, t, flat + _sgb.dmg, mult, mrPen);
+    const dmg = summonElementDamage(spec.dice || [1, 40], s.ele, t, flat + _sgb.dmg + ((_ia && _ia.royalEd) || 0), mult, mrPen);   // 👑 灼熱武器：魔法型屬性精靈的一般攻擊亦取得全隊額外傷害
     t.justHit = (s.ele && s.ele !== 'none') ? s.ele : 'magic';
     t.curHp -= dmg; mobWake(t);
     logCombat(`<span class="text-purple-300">${s.form}</span> 攻擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg} 點傷害。`, 'player');
@@ -458,7 +466,7 @@ function enemyAttackSummon(mob, s) {
     const st = mob.st || newMobStatus();
     if (st.terror > 0 && Math.random() < 0.90) return;
     const mobHitBonus = (mob.hit || 0) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + tamerAuraHit(mob);
-    const hv = stretchHitValue(mob.lv + mobHitBonus - s.lv + (d.ac - (typeof teamAcBonus === 'function' ? teamAcBonus(s) : 0)));   // 🩹 v3.2.67 大地祝福/高崙 全隊 AC 減免也惠及召喚物（比照寵物）
+    const hv = stretchHitValue(mob.lv + mobHitBonus - s.lv + (d.ac - (typeof teamAcBonus === 'function' ? teamAcBonus(s, true) : 0)));   // 🩹 v3.2.67 大地祝福/高崙 全隊 AC 減免也惠及召喚物（比照寵物）
     const r = roll(1, 20);
     let hit = false, heavy = false;
     if (r === 20) { hit = true; heavy = true; } else if (r !== 1 && hv >= r) hit = true;
@@ -468,7 +476,7 @@ function enemyAttackSummon(mob, s) {
     if (mob._sherine) dmg = Math.floor(dmg * (mob._sherineMad ? 3 : 2));
     if (mob._grace) dmg = Math.floor(dmg * 1.5);
     dmg = Math.max(1, Math.floor(dmg * riftDamageMult()) - d.dr);
-    dmg = Math.max(1, Math.floor(dmg * (typeof teamDmgReduceMult === 'function' ? teamDmgReduceMult() : 1)));   // 🩹 v3.2.67 鋼鐵防護/化身 全隊受傷減免也惠及召喚物（比照寵物）
+    dmg = Math.max(1, Math.floor(dmg * (typeof teamDmgReduceMult === 'function' ? teamDmgReduceMult(true) : 1)));   // 🔮 化身對寵物／召喚物保留受傷減免；鋼鐵防護只作用於施法者自身 AC
     s.hp -= dmg;
     _petAnimAct(s, 'hurt');
     logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 攻擊 <span class="text-purple-300">${s.form}</span>，造成 ${dmg} 點傷害。`, 'enemy-attack', 'enemy');
@@ -488,7 +496,7 @@ function applyMobMagicToSummon(mob, sk, s) {
     let baseM = roll(sk.dmg[0], sk.dmg[1]);
     let extra = (sk.db || 0) + (sk.dbLv ? (mob.lv || 0) * (sk.dbLvMult || 1) : 0);
     let dmg = sk.fixedDmg ? (baseM + extra) : (Math.floor((baseM + extra) * mrMult(mr)) - dr);
-    dmg = Math.max(1, Math.floor(Math.max(1, dmg * shMul) * (typeof teamDmgReduceMult === 'function' ? teamDmgReduceMult() : 1)));
+    dmg = Math.max(1, Math.floor(Math.max(1, dmg * shMul) * (typeof teamDmgReduceMult === 'function' ? teamDmgReduceMult(true) : 1)));
     dmg = Math.max(1, Math.floor(dmg * riftDamageMult()));
     s.hp -= dmg;
     _petAnimAct(s, 'hurt');
@@ -506,7 +514,8 @@ function summonTeamSignature() {
         const skId = summonV2ActiveSk();
         const remain = Math.max(0, Math.ceil((player && player.buffs && player.buffs[skId]) || 0));
         return list.map(s => [s.uid, s.form, s.lv || 1, Math.round((s.hp || 0) / Math.max(1, s.mhp || 1) * 20)].join(':')).join('|')
-            + '#' + skId + '#' + (player && player._summonV2On ? 1 : 0) + '#' + remain;   // v3.2.42 稽核修：倒數逐秒刷新（原 /10 分桶＝顯示最多滯後 10 秒）
+            + '#' + skId + '#' + (player && player._summonV2On ? 1 : 0) + '#' + remain   // v3.2.42 稽核修：倒數逐秒刷新（原 /10 分桶＝顯示最多滯後 10 秒）
+            + '#M:' + ((typeof mercSummonList === 'function') ? mercSummonList().map(s => [s.uid, s.form, Math.round((s.hp || 0) / Math.max(1, s.mhp || 1) * 20)].join(':')).join('|') : '');   // 🧱 v3.4.51 傭兵召喚物血量(5%階)入簽章→掉血/死亡/重施 500ms 內刷新 team 分頁
     } catch (e) { return ''; }
 }
 
@@ -534,6 +543,30 @@ function renderSummonTeamHTML() {
             </div>
             ${rows || '<div class="bg-slate-800/80 border border-purple-900 rounded px-2 py-1 text-xs text-slate-400">等待重新召喚</div>'}
             <button onclick="summonV2Recast()" class="btn w-full text-xs font-bold" style="padding:3px 0;background:linear-gradient(135deg,#4c1d95,#6d28d9);border:1px solid #7c3aed;color:#ddd6fe;border-radius:4px;">重新施放</button>`;
+    } catch (e) { return ''; }
+}
+// 🧱 v3.4.51 傭兵召喚物 HP 卡（比照玩家召喚物呈現·接在其後）：v3.4.50 起傭兵召喚物無 sprite 但有血量·此為唯一血量可視化。
+//   標示「協力名·召喚物名」＋同款血條；無「重新施放」鈕（被打死由 allyMaintainBuffs 自動重施·扣該傭兵 MP）、無倒數（到期同樣自動重施）。
+function renderMercSummonTeamHTML() {
+    try {
+        if (typeof player === 'undefined' || !player || !player.allies || !player.allies.length) return '';
+        const rows = [];
+        for (const a of player.allies) {
+            const s = a && !a._downed && a.summon;
+            if (!s || !(s.mhp > 0) || s._downed || !(s.hp > 0)) continue;
+            const hpPct = Math.max(0, Math.min(100, Math.floor((s.hp || 0) / Math.max(1, s.mhp || 1) * 100)));
+            rows.push(`<div class="bg-slate-800/80 border border-purple-800 rounded px-2 py-1 text-xs flex items-center gap-2">
+                <span class="shrink-0 overflow-hidden text-ellipsis whitespace-nowrap" style="width:8rem;" title="${(a._allyName || '協力')} 的召喚物"><span class="text-emerald-300">${a._allyName || '協力'}</span><span class="text-slate-500">·</span><span class="text-purple-300 font-bold">${s.form || s.n || '召喚物'}</span></span>
+                <div class="bar-bg flex-1 !h-3">
+                    <div class="bar-fill bg-red-600" style="width:${hpPct}%;"></div>
+                    <div class="bar-text text-white" style="font-size:10px;line-height:12px;">${s.hp || 0}/${s.mhp || 0}</div>
+                </div>
+            </div>`);
+        }
+        if (!rows.length) return '';
+        return `<div class="flex items-center justify-between gap-2 pt-1 border-t border-purple-900/70">
+                <span class="text-purple-300 font-bold text-xs">傭兵召喚物（${rows.length}）</span>
+            </div>` + rows.join('');
     } catch (e) { return ''; }
 }
 

@@ -48,6 +48,9 @@ const SPELL_FX = {
     '呼喚盟友': { dir:'呼喚盟友', prefix:'2281-0', n:7, fps:14, blend:'screen', h:1, ax:0.50, ay:0.55 },
     '地獄之牙': { dir:'地獄之牙', prefix:'1801-0', n:9, fps:14, blend:'screen', h:0.7, ax:0.50, ay:0.55 },
     '地裂術': { dir:'地裂術', prefix:'129-1', n:10, fps:14, w:0.85, ax:0.50, ay:0.82, targetVc:0.92 },
+    '污濁之水': { dir:'污濁之水', prefix:'mw', n:10, fps:12, h:1.1, ax:0.50, ay:0.55 },
+    '復仇尖石': { dir:'地裂術', prefix:'129-1', n:10, fps:14, w:0.85, ax:0.50, ay:0.82, targetVc:0.92 },   // 🗡️ v3.4.34 倫得雙刀 5% proc（sk_revenge_spike）：沿用地裂術素材（同 dir·不需新增圖檔）
+    '大地崩裂': { dir:'大地崩裂', prefix:'dk', n:9, fps:14, w:0.95, ax:0.50, ay:0.68, targetVc:0.85, blend:'screen' },   // 🌑 v3.4.68 冥皇執行劍(解咒) 15% proc（sk_earth_collapse·8D12地全體）：套死亡騎士技能特效（skill_effect_start8+end1·複製至 assets/fx/大地崩裂/dk_0..8·screen 加亮）
     '地面障礙': { dir:'地面障礙', prefix:'2250-0', n:13, fps:14, blend:'screen', w:0.9, ax:0.50, ay:0.82, targetVc:0.9 },
     '壞物術': { dir:'壞物術', prefix:'172-0', n:15, fps:14, blend:'screen', h:1, ax:0.50, ay:0.55 },
     '寒冰氣息': { dir:'寒冰氣息', prefix:'1804-0', n:21, fps:16, blend:'screen', h:1.2, ax:0.50, ay:0.55 },
@@ -66,6 +69,7 @@ const SPELL_FX = {
     '火風暴': { dir:'火風暴', prefix:'1819-0', n:14, fps:14, blend:'screen', h:1.3, ax:0.50, ay:0.55 },
     '烈炎術': { dir:'烈炎術', prefix:'1811-0', n:19, fps:16, blend:'screen', h:1.2, ax:0.50, ay:0.55 },
     '燃燒的火球': { dir:'燃燒的火球', dirPrefix:'171-', dirs:8, n:5, fps:12, blend:'screen', proj:true, nw:43, nh:49, ax:0.50, ay:0.50 },
+    '爆裂的火球': { dir:'燃燒的火球', dirPrefix:'171-', dirs:8, n:5, fps:12, blend:'screen', proj:true, nw:43, nh:49, ax:0.50, ay:0.50 },   // 🏺 遺物 爆裂的火球：沿用燃燒的火球 VFX（同 sprite 目錄）
     '疾病術': { dir:'疾病術', prefix:'2230-0', n:11, fps:14, blend:'screen', h:1, ax:0.50, ay:0.55 },
     '究極光裂術': { dir:'究極光裂術', prefix:'1815-0', layers:['1816-0', '1817-0'], n:21, fps:16, blend:'screen', h:1.9, ax:0.50, ay:0.85 },
     '緩速術': { dir:'緩速術', prefix:'752-0', n:8, fps:14, blend:'screen', h:0.85, ax:0.50, ay:0.55 },
@@ -107,6 +111,10 @@ const MOB_ANIM_DEATH_FX = {
     '冰之女王侍女': { n: 25, ew: 158, eh: 115, anchored: { ox: -26, oy: 10, bw: 101, bh: 114 } },
 };   // v3.0.13 冰之女王新版動畫無 death_effect→移除(死亡改由 21 幀 death_ 序列本身表現)
 let _deathFxCache = {};
+// 🎬 v3.4.43 死亡序列殘影「專屬節流計數」：同時存在的死亡殘影數。與傷害數字/粒子洪水解耦——
+//   原本用 layer.childElementCount<150 判斷會被跳字/法術粒子洪水誤擋，AoE 連殺時死亡幀「有時不播」。
+//   改看此獨立計數（上限 12≈前後排 5 格 × 2 波重疊 + 餘裕），正常必定播完，只有病態重疊才擋。
+let _deathGhostCount = 0;
 function _preloadDeathFx(name, n) {
     if (_deathFxCache[name]) return _deathFxCache[name];
     let arr = [];
@@ -263,6 +271,7 @@ const SELF_FX = {
     '暴風神射': { dir:'暴風神射', prefix:'2248-0', n:13, fps:14, blend:'screen', h:0.50, overHead:true },
     '毒性抵抗': { dir:'毒性抵抗', prefix:'2948-0', n:11, fps:14, blend:'screen', h:0.50, overHead:true },
     '水之元氣': { dir:'水之元氣', prefix:'4401-0', n:21, fps:14, blend:'screen', h:0.50, overHead:true },
+    '治癒能量風暴': { dir:'治癒能量風暴', prefix:'hs', n:19, fps:14, blend:'screen', h:0.60, overHead:true },
     '淨化精神': { dir:'淨化精神', prefix:'2180-0', n:11, fps:14, blend:'screen', h:0.50, overHead:true },
     '火焰武器': { dir:'火焰武器', prefix:'2182-0', n:11, fps:14, blend:'screen', h:0.50, overHead:true },
     '火牢': { dir:'火牢', prefix:'168-0', n:11, fps:14, blend:'screen', h:0.50, overHead:true },
@@ -539,13 +548,27 @@ function _vfxFlush() {
     }
     _vfxPending = [];
 }
+// 未命中沒有 HP 差值，無法走 _vfxQueueDmg；直接依目標目前的畫面位置顯示淡灰提示。
+function vfxMiss(mob) {
+    if (window.__vfxNumOff || !mob || (typeof state !== 'undefined' && state.ff)) return;
+    let ml = document.getElementById('mob-list');
+    let slot = ml && ml.querySelector('.mob-target[data-uid="' + mob.uid + '"]');
+    if (!slot) return;
+    let box = slot.querySelector('.mob-img-inner') || slot.querySelector('.mob-img-wrap') || slot;
+    let r = box.getBoundingClientRect();
+    if (r.width === 0) return;
+    let layer = _vfxLayer();
+    if (layer.childElementCount >= 200) return;
+    _vfxNumber(r.left + r.width / 2 + (Math.random() * 18 - 9), r.top + r.height * 0.40, '未命中', 'miss');
+}
 function _vfxNumber(x, y, dmg, ele, big) {
     if (window.__vfxNumOff) return;   // 🔢 v3.0.2 「只關傷害數字」獨立開關：關掉所有飄動傷害數字(致命/非致命皆走此唯一渲染點)·其餘特效不受影響
     let el = document.createElement('div');
-    el.className = 'vfx-dmg' + (big ? ' vfx-crit' : '') + (big === 'crit' ? ' vfx-critical' : (big === 'heavy' ? ' vfx-heavy' : ''));
+    let isMiss = ele === 'miss';
+    el.className = 'vfx-dmg' + (big ? ' vfx-crit' : '') + (big === 'crit' ? ' vfx-critical' : (big === 'heavy' ? ' vfx-heavy' : '')) + (isMiss ? ' vfx-miss' : '');
     el.style.left = x + 'px'; el.style.top = y + 'px';
-    el.style.color = big === 'crit' ? '#ff3b30' : (big === 'heavy' ? '#ffd54f' : (_VFX_ELE_COLOR[ele] || '#f1f5f9'));   // 爆擊大紅／重擊大金／其餘依屬性
-    el.style.fontSize = (big ? 32 : 20) + 'px';   // ⚔️ 清晰 RPG 飄字：保留強弱差異，避免過大重疊或厚描邊糊字
+    el.style.color = isMiss ? 'rgba(203,213,225,.78)' : (big === 'crit' ? '#ff3b30' : (big === 'heavy' ? '#ffd54f' : (_VFX_ELE_COLOR[ele] || '#f1f5f9')));   // 未命中淡灰／爆擊大紅／重擊大金／其餘依屬性
+    el.style.fontSize = (isMiss ? 14 : (big ? 32 : 20)) + 'px';   // 未命中刻意較小；傷害飄字保留強弱差異
     const dmgText = dmg >= 10000 ? (dmg / 1000).toFixed(1) + 'k' : ('' + dmg);
     if (big === 'crit' || big === 'heavy') {
         const tag = document.createElement('span');
@@ -654,7 +677,7 @@ function _mobImgAnchor(imgEl) {
 function vfxKill(mob) {
     try {
         if (!mob) return;
-        if (typeof state !== 'undefined' && state.ff) return;   // 🚀 v3.2.65 背景補跑期間不播擊殺/死亡特效（避免回前景爆量）
+        if (typeof state !== 'undefined' && state.ff && !state.ffSmall) return;   // 🚀 v3.2.65 背景補跑不播擊殺特效 → 🩹 v3.4.49 小補跑(≤2秒·前景微卡頓 GC/存檔造成)放行：死亡殘影仍受 _deathGhostCount<12 節流·長補跑維持靜音免回前景爆量
         // 🎚️ v3.0.1 關閉特效時「保留死亡動畫」：不再整個 return，改為只擋「傷害數字/頭目閃光」等純裝飾（見下），死亡序列殘影(death_*.png)＋死亡特效層(death_effect)照播＝怪物死亡畫面不消失
         let ml = document.getElementById('mob-list');
         let slot = ml && ml.querySelector('.mob-target[data-uid="' + mob.uid + '"]');
@@ -682,8 +705,8 @@ function vfxKill(mob) {
             ? (typeof _mob8Cache !== 'undefined' ? _mob8Cache[mob.n + '#' + (mob._face8Loaded != null ? mob._face8Loaded : 6)] : null)   // 🧭 v3.2.11 八方向怪：取當前面向的方向 cache（死亡殘影播該向 death 幀；無 weapon 層→下方 _da[_wk] 為 undefined 安全）
             : ((typeof _mobAnimCache !== 'undefined') ? _mobAnimCache[mob.n] : null);
         let _deathSeq = (_da && _da !== 'probing' && _da.death) ? _da.death : null;
-        // ✨ 強化死亡表現（讓「怪物被消滅」更明顯）：白閃殘影 + 衝擊波環 + 核心爆閃。場上特效過多(>150)時略過較重的殘影/環，只留粒子，避免大量 AoE 連殺洗版。
-        if (layer.childElementCount < 150) {
+        // ✨ 強化死亡表現（讓「怪物被消滅」更明顯）。🎬 v3.4.43 節流改看「死亡殘影專屬計數」_deathGhostCount<12（原 layer.childElementCount<150 會被跳字/法術粒子洪水誤擋→AoE 連殺時死亡幀有時不播）；上限 12≈前後排 5 格 × 2 波重疊 + 餘裕。
+        if (_deathGhostCount < 12) {
             // 1) 死亡殘影：複製怪物圖像 → 白化＋放大＋淡出（強烈的「被抹除」感）
             try {
                 let _img = box.querySelector('img:not(.mob-anim-shadow):not(.mob-anim-weapon):not(.mob-anim-weapon2)');
@@ -699,6 +722,9 @@ function vfxKill(mob) {
                     gh.style.transformOrigin = (_anc.hc * 100).toFixed(1) + '% ' + (_anc.vc * 100).toFixed(1) + '%';   // 🎯 v2.6.45 放大自「怪物身體中心」擴散(非方框中心)→白閃由怪身發散
                     layer.appendChild(gh);
                     if (_deathSeq) {   // 🎞️ v2.6.86 死亡序列（death_*.png）：殘影原位逐幀播一輪→短淡出（取代白閃；怪卡本體照常移除）
+                        _deathGhostCount++;   // 🎬 v3.4.43 專屬節流：生殘影 +1；淡出結束/保險回收擇一 _release() 保證只減一次
+                        let _dghReleased = false;
+                        let _release = () => { if (_dghReleased) return; _dghReleased = true; _deathGhostCount = Math.max(0, _deathGhostCount - 1); };
                         gh.src = _deathSeq[0].src;
                         // ⚔️ v2.7.44 死亡殘影武器層(death_w/death_w2·screen 疊上)：與 body death 同鐘逐幀(--multi 共畫布同幾何)·如爆彈花爆炸(僅 death_w)/龍死亡火焰。嚴格 1:1(本幀無 _w 幀→不換 src)。
                         let _ghW = [];
@@ -718,10 +744,22 @@ function vfxKill(mob) {
                         let _fi = 0, _fint = setInterval(() => {
                             _fi++;
                             if (_fi < _deathSeq.length) { gh.src = _deathSeq[_fi].src; _ghW.forEach(W => { if (W.seq[_fi]) W.el.src = W.seq[_fi].src; }); }
-                            else { clearInterval(_fint); try { gh.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' }).onfinish = () => gh.remove(); } catch (e) { gh.remove(); } _ghW.forEach(W => { try { W.el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' }).onfinish = () => W.el.remove(); } catch (e) { W.el.remove(); } }); }
+                            else { clearInterval(_fint); try { gh.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' }).onfinish = () => { gh.remove(); _release(); }; } catch (e) { gh.remove(); _release(); } _ghW.forEach(W => { try { W.el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' }).onfinish = () => W.el.remove(); } catch (e) { W.el.remove(); } }); }
                         }, 1000 / MOB_ANIM_FPS);
-                        setTimeout(() => { try { clearInterval(_fint); if (gh.isConnected) gh.remove(); _ghW.forEach(W => { if (W.el.isConnected) W.el.remove(); }); } catch (e) {} }, _deathSeq.length * (1000 / MOB_ANIM_FPS) + 2000);   // 保險回收
+                        setTimeout(() => { try { clearInterval(_fint); if (gh.isConnected) gh.remove(); _ghW.forEach(W => { if (W.el.isConnected) W.el.remove(); }); } catch (e) {} _release(); }, _deathSeq.length * (1000 / MOB_ANIM_FPS) + 2000);   // 保險回收
                     }   // 🚫 v2.7.49 移除無死亡序列時的 CSS 白閃殘影 else 分支
+                } else if (_img && _img.src && _img.naturalWidth !== 0 && typeof MOB_ANIM_NAMES !== 'undefined' && MOB_ANIM_NAMES.has(mob.n)) {
+                    // 🩹 v3.4.49 死亡幀「應有而未就緒」的退場保底：動畫怪的 death 快取還在探測中(換圖後首殺)／八方向怪當前面向尚未載入 → 原本無殘影＝瞬消。
+                    //   改用「最後一格可見幀淡出」(~0.4s·無白閃·不違反 v2.7.49 移除靜態白閃的決策——非名單靜態怪照舊)。計入 _deathGhostCount 同一節流。
+                    _deathGhostCount++;
+                    let _fgDone = false; let _fgRelease = () => { if (_fgDone) return; _fgDone = true; _deathGhostCount = Math.max(0, _deathGhostCount - 1); };
+                    let gh2 = document.createElement('img'); gh2.className = 'vfx-ghost'; gh2.src = _img.src;
+                    let _ir2 = _img.getBoundingClientRect();
+                    gh2.style.left = (_ir2.width > 0 ? (_ir2.left + _ir2.width / 2) : bcx) + 'px'; gh2.style.top = (_ir2.width > 0 ? (_ir2.top + _ir2.height / 2) : bcy) + 'px';
+                    gh2.style.width = (_ir2.width > 0 ? _ir2.width : r.width) + 'px'; gh2.style.height = (_ir2.width > 0 ? _ir2.height : r.height) + 'px';
+                    layer.appendChild(gh2);
+                    try { gh2.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, easing: 'ease-out' }).onfinish = () => { gh2.remove(); _fgRelease(); }; } catch (e) { gh2.remove(); _fgRelease(); }
+                    setTimeout(() => { try { if (gh2.isConnected) gh2.remove(); } catch (e) {} _fgRelease(); }, 900);   // 保險回收
                 }
             } catch (e) {}
             // 🧊 v2.7.46 死亡多重特效：death_effect anchored 疊層(獨立時間軸·可比 body death 長·如冰之女王碎裂 body5幀/effect25幀)。錨定同 skill_effect：殘影錨在 box rect·offset×scale·screen 加亮。
@@ -1207,7 +1245,7 @@ function _renderMobsImpl() {
 
             let _badgeTags = '';
             if(_showMobStatus && m.st) {   // 🩹 狀態開關關閉時不顯示異常狀態徽章
-                let order = ['freeze','stun','stone','sleep','blind','weaken','disease','vacuum','broken','slow','mrhalf','magicseal','fragile','armorbreak','confuse','panic','guardbreak','terror','doom'];   // 🔮 含脆弱、🔧 破甲(黑妖破壞盔甲)、🔮 混亂/恐慌、🐉 護衛毀滅/恐懼/死神；中毒不顯示、出血改用 🩸 emoji（見下方圖片下方列）
+                let order = ['freeze','stun','stone','sleep','blind','weaken','disease','vacuum','broken','slow','mrhalf','magicseal','fragile','armorbreak','confuse','panic','guardbreak','terror','doom','muddywater'];   // 🔮 含脆弱、🔧 破甲(黑妖破壞盔甲)、🔮 混亂/恐慌、🐉 護衛毀滅/恐懼/死神、🌊 污濁；中毒不顯示、出血改用 🩸 emoji（見下方圖片下方列）
                 _badgeTags = order.filter(k => m.st[k] > 0).map(k =>
                     `<span class="px-1 rounded bg-purple-900/70 text-purple-200 text-[10px]">${STATUS_NAME[k]}</span>`).join(' ');
             }
@@ -1505,6 +1543,69 @@ function _mobImgErr(img) {
 //   ⚠️ 目標怪須已部署且在 MOB_ANIM_NAMES；共用怪自身也要加進 MOB_ANIM_NAMES(+SPRITE_SHADOW 若目標有 _s)。目標更新→共用怪自動跟著(真共用非複製)。
 const MOB_ANIM_ALIAS = { '老虎': '虎男' };   // 🔗 動畫資料夾共用 alias(名→目標名)·🐾 v3.2.17 老虎共用虎男素材（真共用非複製）
 function _animDir(name) { return (typeof MOB_ANIM_ALIAS !== 'undefined' && MOB_ANIM_ALIAS[name]) ? MOB_ANIM_ALIAS[name] : name; }
+// 🚀 v3.4.37 幀探測平行化（滑動窗口）：取代「載完第 N 張才載第 N+1 張」的串行鏈——一次最多 6 張在途，
+//   高延遲環境（GitHub Pages RTT ~100ms）首次動畫就緒時間 ≈ 原本 1/6（法利昂 death 27 幀：27 次往返→5 次）。
+//   語意不變：幀必須從 0 連續、遇缺號即止；缺號當下已在途的最多多載 5 個 404（無害·不進結果）。
+//   urlFor(i)→第 i 幀 URL；done(frames|null, n)=連續幀陣列（<minF 給 null）＋連續幀數。共用於 _mobAnimProbe/_mob8Probe/_battleSpriteProbe/js22 寵物八方向。
+// 📇 v3.4.40 幀數 manifest 查表（js/anim-manifest.js·工具 tools/gen-anim-manifest.js）：由 urlFor(0) 反解「資料夾＋前綴」→ 已知幀數。
+//   回傳 number＝確定幀數（0＝確定沒有此序列·連一個請求都不用發）；null＝manifest 未涵蓋 → 呼叫端退回原本的 404 探測（安全網）。
+//   ⚠️ 三棵資產樹的 URL 編碼不一致（_mobAnimProbe 用裸中文名·_mob8Probe/js22/classanim 用 encodeURIComponent）→ 一律 decodeURIComponent 正規化後再查。
+function _manifestCount(url0) {
+    if (typeof ANIM_MANIFEST === 'undefined' || !ANIM_MANIFEST) return null;
+    let p; try { p = decodeURIComponent(url0); } catch (e) { return null; }   // 壞的 % 序列→退探測
+    if (p.slice(-5) !== '0.png') return null;
+    let parts = p.slice(0, -5).split('/');                                    // 去掉結尾的 "0.png"（urlFor(0) 的索引恆為單字元 0）
+    if (parts.length < 4) return null;
+    let ent = ANIM_MANIFEST[parts.slice(0, 3).join('/')];                     // assets/<tree>/<資料夾>
+    if (!ent) return null;                                                    // 整個資料夾不在表內→退探測（不敢斷言 0）
+    let n = ent[parts.slice(3).join('/')];                                    // 前綴（八方向含 "d6/" 前置）
+    return (typeof n === 'number') ? n : 0;                                   // 資料夾在表內但無此前綴＝確定 0 幀
+}
+function _probeFramesWin(urlFor, maxF, minF, done) {
+    // 🚀 v3.4.40 快路徑：幀數已知→直接平行載精確張數（零 404·零探測往返·離線同樣受益）。
+    //    仍逐幀檢查載入結果並只取「從 0 起的連續段」→ manifest 過期(少載/多載)也不會壞，語意與探測完全一致。
+    let known = _manifestCount(urlFor(0));
+    if (known !== null) {
+        if (known === 0) { done(null, 0); return; }                           // 確定沒有此序列→零請求
+        let got = [], left = known;
+        let step = () => {
+            if (--left > 0) return;
+            let n = 0;
+            while (n < known && got[n]) n++;                                  // 連續段（與探測同語意）
+            done(n >= (minF || 2) ? got.slice(0, n) : null, n);
+        };
+        for (let i = 0; i < known; i++) {
+            let im = new Image();
+            im.onload = () => { got[i] = im; step(); };
+            im.onerror = () => { got[i] = false; step(); };                   // manifest 過期→該幀當缺號·截斷至連續段
+            im.src = urlFor(i);
+        }
+        return;
+    }
+    const WIN = 6;
+    let results = [], next = 0, inFlight = 0, stopAt = maxF, finished = false;
+    function settle() {
+        if (finished) return;
+        let n = 0;
+        while (n < stopAt && results[n]) n++;                      // 從 0 起算的連續已載幀數
+        if (n >= stopAt || results[n] === false) {                 // 連續段已確定（其後在途的載完也不影響結果）
+            finished = true;
+            done(n >= minF ? results.slice(0, n) : null, n);
+            return;
+        }
+        pump();
+    }
+    function pump() {
+        while (!finished && inFlight < WIN && next < stopAt) {
+            let i = next++; inFlight++;
+            let im = new Image();
+            im.onload = () => { inFlight--; results[i] = im; settle(); };
+            im.onerror = () => { inFlight--; results[i] = false; if (i < stopAt) stopAt = i; settle(); };
+            im.src = urlFor(i);
+        }
+    }
+    pump();
+}
 function _mobAnimProbe(name) {
     if (_mobAnimCache[name] !== undefined) return;
     _mobAnimCache[name] = 'probing';
@@ -1521,17 +1622,13 @@ function _mobAnimProbe(name) {
     if (hasSkillFx) out.skillFx = { start: null, end: null };
     let pending = 6 + (hasShadow ? 6 : 0) + (hasWeapon ? 6 : 0) + (hasWeapon2 ? 6 : 0) + (hasSkillFx ? (1 + (skfCfg.endPfx ? 1 : 0) + (skfCfg.startPfx2 ? 1 : 0) + (skfCfg.startPfx3 ? 1 : 0)) : 0);
     let finish = () => { if (--pending > 0) return; _mobAnimCache[name] = (out.idle || out.spawn || out.attack || out.skill || out.hurt || out.death) ? out : null; };
-    let probeSeq = (target, key, prefixes, minF) => {   // 依前綴逐號載入到缺號為止；idle 先試 idle_ 再退裸編號。minF=最少幀數(受擊 hurt 允許 1 幀)
-        let frames = [], pi = 0, _min = minF || 2;
-        let done = () => { target[key] = frames.length >= _min ? frames : null; finish(); };
-        let tryLoad = (i) => {
-            if (i >= MOB_ANIM_MAX_FRAMES) { done(); return; }
-            let im = new Image();
-            im.onload = () => { frames.push(im); tryLoad(i + 1); };
-            im.onerror = () => { if (i === 0 && pi + 1 < prefixes.length) { pi++; tryLoad(0); } else done(); };
-            im.src = `assets/anim/${animName}/${prefixes[pi]}${i}.png`;
-        };
-        tryLoad(0);
+    let probeSeq = (target, key, prefixes, minF) => {   // 依前綴平行探測(滑動窗口)到缺號為止；idle 先試 idle_ 再退裸編號。minF=最少幀數(受擊 hurt 允許 1 幀)
+        let pi = 0;
+        let attempt = () => _probeFramesWin(i => `assets/anim/${animName}/${prefixes[pi]}${i}.png`, MOB_ANIM_MAX_FRAMES, minF || 2, (frames, n) => {
+            if (!frames && n === 0 && pi + 1 < prefixes.length) { pi++; attempt(); return; }   // 第 0 幀即缺→換下一個前綴重試（同舊制：僅首幀缺才換前綴）
+            target[key] = frames; finish();
+        });
+        attempt();
     };
     probeSeq(out, 'idle', ['idle_', '']);
     probeSeq(out, 'spawn', ['spawn_']);
@@ -1609,17 +1706,8 @@ function _mob8Probe(name, dir) {
     let acts = ['idle', 'attack', 'hurt', 'death'];
     let pending = acts.length * 2;
     let finish = () => { if (--pending > 0) return; _mob8Cache[key] = out.idle ? out : null; };
-    let probeSeq = (target, k, pfx, minF) => {
-        let frames = [], _min = minF || 2;
-        let done = () => { target[k] = frames.length >= _min ? frames : null; finish(); };
-        let tryLoad = (i) => {
-            if (i >= MOB_ANIM_MAX_FRAMES) { done(); return; }
-            let im = new Image();
-            im.onload = () => { frames.push(im); tryLoad(i + 1); };
-            im.onerror = () => done();
-            im.src = folder + pfx + i + '.png';
-        };
-        tryLoad(0);
+    let probeSeq = (target, k, pfx, minF) => {   // 🚀 平行探測（滑動窗口·見 _probeFramesWin）
+        _probeFramesWin(i => folder + pfx + i + '.png', MOB_ANIM_MAX_FRAMES, minF || 2, frames => { target[k] = frames; finish(); });
     };
     acts.forEach(a => { probeSeq(out, a, a + '_', a === 'hurt' ? 1 : 2); probeSeq(out.shadow, a, a + '_s_', 1); });
 }
@@ -1747,7 +1835,8 @@ function _mobAnimApply() {
 const MORPH_BATTLE_ANIM = new Set(['克特', '卡司特王', '思克巴女皇', '死亡騎士', '炎魔', '白金法師', '白金騎士', '艾莉絲', '銀光法師', '銀光騎士', '騎士范德', '黃金法師', '黃金騎士', '黑暗法師', '黑暗騎士',
     '亞力安', '人形殭屍', '侏儒', '哥布林', '地靈', '多羅', '妖魔', '妖魔弓箭手', '小惡魔', '巴列斯', '巴風特', '思克巴', '惡魔', '歐吉', '死亡', '狼人', '萊肯', '食人妖精王', '食屍鬼', '骷髏弓箭手', '骷髏斧手', '骷髏槍兵', '黑暗妖精刺客',   // 🧝 v3.0.50 +23 變身（惡魔＝象牙塔惡魔套裝 SET_POLY_FORMS.demon 直接同名命中）
     '反王肯恩', '吸血鬼', '巨人', '白金巡守', '賽尼斯', '銀光巡守', '阿魯巴', '黃金巡守', '黑暗巡守', '黑暗精靈',   // 🧝 v3.0.52 +10 變身（黑暗精靈＝黑暗妖精套裝 高等黑暗精靈 經別名映射）
-    '卡士柏', '史巴托', '妖魔巡守', '妖魔鬥士', '巨大牛人', '巴土瑟', '暴走兔', '果凍怪', '格利芬', '歐姆民兵', '獨眼巨人', '甘地妖魔', '石頭高崙', '紙人', '羅孚妖魔', '西瑪', '那魯加妖魔', '都達瑪拉妖魔', '重裝歐姆', '長老', '阿吐巴妖魔', '雪怪', '食人妖精', '馬庫爾', '骷髏', '黑暗妖精運送員', '黑長者', '黑騎士']);   // 🧝 v3.0.57 +28 變身（合計 76＝POLY_TIERS 全形態·變身動畫全數到位）
+    '卡士柏', '史巴托', '妖魔巡守', '妖魔鬥士', '巨大牛人', '巴土瑟', '暴走兔', '果凍怪', '格利芬', '歐姆民兵', '獨眼巨人', '甘地妖魔', '石頭高崙', '紙人', '羅孚妖魔', '西瑪', '那魯加妖魔', '都達瑪拉妖魔', '重裝歐姆', '長老', '阿吐巴妖魔', '雪怪', '食人妖精', '馬庫爾', '骷髏', '黑暗妖精運送員', '黑長者', '黑騎士',   // 🧝 v3.0.57 +28 變身（合計 76＝POLY_TIERS 全形態·變身動畫全數到位）
+    '真死亡騎士 冥皇丹特斯', '烈焰的死亡騎士']);   // 🌑 v3.4.67 冥皇執行劍變身＋烈焰死騎（scroll/裝備變身·assets/morphanim 同名資料夾）
 const MORPH_BATTLE_ALIAS = { '真‧死亡騎士': '死亡騎士', '真‧克特': '克特', '高等黑暗精靈': '黑暗精靈' };   // 套裝變身→同源動畫（v3.0.52 黑暗妖精套裝→黑暗精靈·與 js/19 立繪別名一致）
 // ===== 🗡️ v3.0.67 職業戰鬥動態（ARPG Tier1·用戶確認：未變身＝職業 sprite 常駐場上·有變身＝變身形態取代）=====
 //   assets/classanim/<avatar>/：檔名＝<武器key>_<idle|attack|hurt>_N.png（+_s 影子）＋全武器共用 skill_N/death_N（+_s）·無 _w 層。
@@ -1833,16 +1922,8 @@ function _battleSpriteProbe(form) {
         if (form.wpn === 'bow' && !out.wskill && out.attack) { out.wskill = out.attack; if (out.shadow && !out.shadow.wskill && out.shadow.attack) out.shadow.wskill = out.shadow.attack; }
         _morphBattleCache[form.key] = out;
     } };
-    let probeSeq = (target, key, pfx, minF) => {
-        let frames = [], _min = minF || 2;
-        let tryLoad = (i) => {
-            if (i >= MOB_ANIM_MAX_FRAMES) { target[key] = frames.length >= _min ? frames : null; finish(); return; }
-            let im = new Image();
-            im.onload = () => { frames.push(im); tryLoad(i + 1); };
-            im.onerror = () => { target[key] = frames.length >= _min ? frames : null; finish(); };
-            im.src = form.base + pfx + i + '.png';
-        };
-        tryLoad(0);
+    let probeSeq = (target, key, pfx, minF) => {   // 🚀 平行探測（滑動窗口·見 _probeFramesWin）
+        _probeFramesWin(i => form.base + pfx + i + '.png', MOB_ANIM_MAX_FRAMES, minF || 2, frames => { target[key] = frames; finish(); });
     };
     let pfxOf = (a) => (form.wpn && a !== 'skill' && a !== 'death') ? form.wpn + '_' + a + '_' : a + '_';   // 職業形態：idle/attack/hurt 帶武器前綴·skill/death 共用
     ['idle', 'attack', 'skill', 'hurt', 'death'].forEach(a => {

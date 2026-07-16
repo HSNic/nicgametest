@@ -628,6 +628,7 @@ const WEAPON_TAGS = {
     wpn_dk_flameblade:['單手劍'], wpn_kurt_sword:['單手劍'],   // 🔧 傳說單手劍（反擊）：死亡騎士的烈炎之劍／克特之劍
     wpn_assassin_mark:['雙刀'],   // 🔧 暗殺軍王之痕（雙刀・連擊）
     wpn_dual_bronze:['雙刀'], wpn_dual_steel:['雙刀'], wpn_dual_silver:['雙刀'], wpn_dual_gloom:['雙刀'], wpn_dual_dark:['雙刀'], wpn_dual_shadow:['雙刀'], wpn_dual_damascus:['雙刀'], wpn_dual_abyss:['雙刀'], wpn_thebes_dual:['雙刀'],
+    wpn_rond_dual:['雙刀'],   // 🗡️ v3.4.33 倫得雙刀（雙刀・雙擊33/貫穿/5% 復仇尖石）
     wpn_manadagger:['匕首'], wpn_crystal_dagger:['匕首'],
     wpn_chaos_thorn:['匕首'], wpn_demonking_dual:['雙刀'], wpn_demonking_2hsword:['雙手劍'],   // 🌑 暗影神殿：混沌之刺(匕首/出血)、惡魔王雙刀(雙刀/連擊)、惡魔王雙手劍(雙手劍/切割)
     // 🔧 拉斯塔巴德掉落武器：匕首(出血)/單手劍(反擊)/雙刀(連擊)
@@ -642,6 +643,7 @@ const WEAPON_TAGS = {
     wpn_dual_destroy:['雙刀'], wpn_claw_destroy:['鋼爪'],   // 💥 破壞雙刀／破壞鋼爪（猛爆劇毒）
     wpn_old_sword:['單手劍','武士刀'],   // 🏛️ 古老的劍：反擊(單手劍)＋居合(武士刀)
     wpn_cursed_emperor_blade:['單手劍','武士刀'],   // 🌑 v3.4.0 受詛咒的真．冥皇執行劍：反擊(單手劍)＋居合(武士刀)·貫穿=ignHardSkin·裝備變身死亡騎士(js/02)
+    wpn_uncursed_emperor_blade:['單手劍','武士刀'],   // 🌑 v3.4.67 解除詛咒的真死亡騎士．冥皇執行劍：反擊(單手劍)＋居合(武士刀)·貫穿=ignHardSkin·裝備變身真死亡騎士 冥皇丹特斯(js/02)·對地/風敵×1.4·大地崩裂 proc
     wpn_ancient_darkelf_sword:['單手劍'],   // 🏛️ 古代黑暗妖精之劍：反擊(單手劍)
     wpn_demon_sword_hidden:['單手劍'],   // 👹 隱藏的魔族之劍：反擊(單手劍)
     wpn_demon_claw_hidden:['鋼爪'],   // 👹 隱藏的魔族鋼爪：鋼爪標籤(雙擊33預設＋貫穿＋黑暗妖精可裝)
@@ -680,7 +682,11 @@ const WEAPON_TAGS = {
     // 🏺 遺物 第十四批（v3.3.0）：兇殘惡鬼的毒牙/殘暴骸骨的破片=單手劍(反擊)、傳說海賊的迷幻雙刀=雙刀(雙擊)、熔岩灼燒的雙拳=單手鈍器(鈍擊＋自動貫穿)；屍毒之針(isBow)/不定形的變幻劍(chainsword) 靠旗標自判免 tag
     relic_ghoul_fang:['單手劍'], relic_sparto_shard:['單手劍'], relic_pirate_dual:['雙刀'], relic_lava_fists:['單手鈍器'],
     // 🏺 遺物 第十五批：爆焰＝雙手劍（切割）、撫摸＝鋼爪（雙擊）；兩把魔杖與弓由 isWand/isBow 旗標判定。
-    relic_fireking_blast:['雙手劍'], relic_waterking_caress:['鋼爪']
+    relic_fireking_blast:['雙手劍'], relic_waterking_caress:['鋼爪'],
+    // 🏺 遺物 第十六批：三頭釵＝鋼爪（雙擊）、金屬棍棒/灰燼之拳＝單手鈍器（鈍擊）、昆蟲巨鉗＝單手劍+武士刀（反擊+居合）、鐮刀破片＝雙手劍（切割靠 eff）；海洋水晶球(isWand)/迷你闇精靈(qigu)/十字弩弓(isBow) 靠旗標自判免 tag。
+    relic_cerberus_pin:['鋼爪'], relic_dark_metal_club:['單手鈍器'], relic_ash_fist:['單手鈍器'], relic_ant_pincer:['單手劍','武士刀'], relic_reaper_scythe:['雙手劍'],
+    // 🏺 遺物 第十七批：法師的護身短刀＝匕首（出血）；骸骨意志之弓由 isBow 旗標判定免 tag。
+    relic_mage_dagger:['匕首']
 };
 function getWeaponTags(id){ return WEAPON_TAGS[id] || []; }
 // ⚔️ 雙擊機率 comboRate：未明定者依武器標籤套預設（鋼爪 33% / 雙刀 25%）；個別武器可在 def 寫 comboRate 覆寫（底比斯歐西里斯雙刀30 / 死亡之指20 / 恨之鋼爪50 / 破壞雙刀·破壞鋼爪30）。日後新增 combo 武器自動取得預設機率。
@@ -716,10 +722,13 @@ function relicPurposeLabels(d) {
     const skillName = id => (DB.skills[id] && DB.skills[id].n) || '技能';
     const pctText = v => `${Math.round(v * 100)}%`;
 
-    if (d.reqAvatar) out.push(`裝備限制（僅限${d.reqAvatar}）`);
+    if (d.relicRole) out.push(`用途定位（${d.relicRole}）`);
+    if (d.reqAvatar) out.push(`裝備限制（僅限${d.reqAvatar}；其他角色無法裝備）`);
+    if (d.petDmgReduce) out.push(`寵物護甲（裝備的寵物受到傷害-${Math.round(d.petDmgReduce * 100)}%）`);
+    if (d.petBleed) out.push('寵物出血（一般攻擊命中疊加8秒出血；每層每秒造成該次傷害20%，最多5層）');
     if (d.armguard) out.push('臂甲（裝於副手，可與雙手武器並用）');
     if (d.resNone) out.push(`無屬性魔法抗性+${d.resNone}%`);
-    if (d.mrPerWis) out.push(`精神轉魔防（每1點精神，MR+${d.mrPerWis}）`);
+    if (d.mrPerWis) out.push(`精神屏障（每1點最終精神，MR+${d.mrPerWis}）`);
     if (d.type === 'wpn' && d.mr) out.push(`魔防(MR)+${d.mr}`);
     if (d.mcrit) out.push(`近距離爆擊率+${d.mcrit}%`);
     if (d.mcritDmg) out.push(`近距離爆擊傷害+${d.mcritDmg}%`);
@@ -731,6 +740,11 @@ function relicPurposeLabels(d) {
     if (d.immBurn) out.push('免疫灼燒');
     if (d.immFreeze) out.push('免疫冰凍');
     if (d.atkSpdPct) out.push(`攻擊速度${d.atkSpdPct > 0 ? '+' : ''}${d.atkSpdPct}%`);
+    if (d.hpRegenFaster) out.push(`快速再生（HP自然恢復間隔縮短${d.hpRegenFaster}秒）`);
+    if (d.fireballBurst) out.push('爆裂火球（將已學會的「燃燒的火球」升級為威力更強的「爆裂的火球」）');
+    if (d.noEvade) out.push('沉重代價（無法進行一般迴避；暗隱術的必定迴避不受影響）');
+    if (d.summonCtrl) out.push('召喚控制（可指定召喚物；28～48級召喚上限由5隻提高至6隻）');
+    if (d.autoReviveScroll) out.push('巨靈守護（傭兵或寵物死亡時立即消耗1張復活卷軸使其復活）');
     if (d.meleeHaste) out.push(`裝備近戰武器時攻速+${d.meleeHaste}%`);
     if (d.polyAtkSpdPct) out.push(`變身時攻速+${d.polyAtkSpdPct}%`);
     if (d.moveSpeedPct) out.push(`移動速度${d.moveSpeedPct > 0 ? '+' : ''}${d.moveSpeedPct}%`);
@@ -742,7 +756,7 @@ function relicPurposeLabels(d) {
     if (d.thorns) out.push(`受擊反傷（反彈${d.thorns}點傷害）`);
     if (d.dmgReflect) out.push(`傷害反射 ${d.dmgReflect}%（免疫該次一般攻擊並反射傷害）`);
     if (d.hurtExplode) out.push(`受擊爆裂（自己與全體敵人受到${d.hurtExplode}點火焰魔法傷害）`);
-    if (d.hurtRapidfire) out.push('受擊反制（受到傷害時立即觸發一次連射）');
+    if (d.hurtRapidfire) out.push('受擊反制（受到傷害時立即觸發一次連射；經典模式亦生效）');
     if (d.counterBarrierX2) out.push('反擊屏障強化（反擊傷害×2）');
     if (d.crushDr) out.push(`重擊防護（受到重擊傷害-${d.crushDr}%）`);
     if (d.physDrGated) out.push(`物理防護（一般攻擊傷害-${d.physDrGated}%，每3秒一次）`);
@@ -755,7 +769,7 @@ function relicPurposeLabels(d) {
     if (d.fullHpMpHalf) out.push('滿血施法（自身滿血時魔力消耗減半）');
     if (d.lowHpPotionX2) out.push('瀕危急救（低HP時藥水恢復量×2）');
     if (d.lowMpRegenBonus) out.push(`魔力枯竭回復（MP低於15%時，MP自然恢復+${d.lowMpRegenBonus}）`);
-    if (d.hotHealMult) out.push(`持續治癒強化（持續回復量×${d.hotHealMult}）`);
+    if (d.groupHealMult) out.push(`團體治癒強化（體力回復術、生命的祝福恢復量×${d.groupHealMult}）`);
     if (d.onDmgHeal) out.push(`受擊自癒（每${d.onDmgHealCd || 5}秒自動施放${skillName(d.onDmgHeal)}）`);
     if (d.poisonHealMult) out.push(`毒素轉生（受到毒性持續傷害時，改為恢復其${pctText(d.poisonHealMult)}的HP）`);
     if (d.poisonMult) out.push(`劇毒增幅（附加劇毒傷害×${d.poisonMult}）`);
@@ -767,11 +781,12 @@ function relicPurposeLabels(d) {
     if (d.hardWear) out.push(`碎甲（命中時額外削減${d.hardWear}點硬皮）`);
     if (d.heavyRatePct) out.push(`重擊率額外+${d.heavyRatePct}%`);
     if (d.heavyMult) out.push(`重擊威力（重擊傷害×${d.heavyMult}）`);
-    if (d.missGrazeRate) out.push(`擦傷補正（未命中時${d.missGrazeRate}%改為造成一半傷害）`);
-    if (d.hitEchoMagic) out.push(`元素爆破 ${d.hitEchoMagic.rate}%（追加等同本次傷害的${eleName(d.hitEchoMagic.ele)}屬性魔法傷害）`);
+    if (d.missGrazeRate) out.push(`擦傷補正（未命中時${d.missGrazeRate}%改判為擦傷，造成50%傷害且不會爆擊）`);
+    if (d.hitEchoMagic) out.push(`元素爆破 ${d.hitEchoMagic.rate}%（命中後追加等同本次一般攻擊傷害的${eleName(d.hitEchoMagic.ele)}屬性魔法傷害）`);
+    if (d.onHitWet) out.push('潮濕（命中後持續10秒；下一次風屬性傷害×2並解除）');
     if (d.onHitCastSkill) out.push(`命中施法（每${d.onHitCastSkill.cdSec || 5}秒觸發${skillName(d.onHitCastSkill.skId)}）`);
     if (d.onHitEleVuln) out.push(`元素弱點（命中使目標受到的${eleName(d.onHitEleVuln)}屬性傷害提高）`);
-    if (d.windSpellProcRate) out.push(`風魔法共振 ${d.windSpellProcRate}%（施放風屬性傷害魔法時追加龍捲風）`);
+    if (d.windSpellProcRate) out.push(`風魔法共振 ${d.windSpellProcRate}%（主動施放風屬性傷害魔法時追加龍捲風）`);
     if (d.hasteStrike) out.push('加速突擊（加速時命中與傷害+30；命中後失去加速）');
     if (d.selfBreakProc) out.push(`易碎爆發（3%造成1.5倍傷害，但自身傷害降低${d.selfBreakProc.dur || 5}秒）`);
     if (d.stoneInstakill) out.push('石化斬殺（命中石化中的非首領敵人時即死）');
@@ -779,10 +794,14 @@ function relicPurposeLabels(d) {
     if (d.strawCurse) out.push(`稻草詛咒 ${d.strawCurse.rate}%（命中時附加${d.strawCurse.stacks || 3}層追加傷害）`);
     if (d.procFireSkillRate) out.push(`火焰法術 ${d.procFireSkillRate}%（攻擊時隨機施放火屬性傷害魔法）`);
     if (d.procHealFlat) out.push(`命中治癒 ${d.procHealFlat.rate}%（恢復${d.procHealFlat.hp}點HP）`);
+    if (d.rapidMax) out.push('最大連射（連射發動時，固定射出目前可用的最大額外箭數）');
+    if (d.bonespike) out.push('骨刺爆裂（連射額外箭命中累積骨刺，最多10層；下一次一般攻擊命中引爆，每層20點固定傷害）');
+    if (d.critDmgLowHp) out.push(`背水爆擊（HP低於${d.critDmgLowHp.hp}時，近距離爆擊傷害+${d.critDmgLowHp.add}%）`);
+    if (d.castOnHurt) out.push(`護身反擊 ${d.castOnHurt.rate}%（玩家受到物理或魔法傷害時，免費施放目前設定的自動攻擊傷害法術）`);
 
     if (d.lvDmgDiv || d.lvHitDiv) out.push(`等級成長（每${d.lvDmgDiv || d.lvHitDiv}級，傷害與命中提高）`);
     if (d.highestAttrPlus) out.push('主屬性強化（目前最高的六維屬性+1；並列皆增加）');
-    if (d.swordStr) out.push(`握劍強化（裝備單手劍或雙手劍時力量+${d.swordStr}）`);
+    if (d.swordStr) out.push(`握劍強化（主手裝備單手劍或雙手劍時，力量+${d.swordStr}）`);
     if (d.raceBonus) out.push(`${d.raceBonus.race}剋星（對${d.raceBonus.race}傷害×${d.raceBonus.mult}）`);
     if (d.raceFlat) out.push(`${d.raceFlat.race}剋星（對${d.raceFlat.race}額外傷害+${d.raceFlat.add}）`);
     if (d.giantBonus) out.push('巨人剋星（攻擊巨人額外造成1D20傷害）');
@@ -959,6 +978,7 @@ function buildItemDescHTML(item) {
             _eff.push(`屬性專攻（攻擊${_bonusEleName}屬性敵人時額外傷害+${d.eleBonusDmg.dmg || d.eleBonusDmg.add || 0}）`);
         }
         if (d.counterAllEle)         _eff.push('一般攻擊剋制所有屬性敵人');
+        if (d.counterEles)           _eff.push(`一般攻擊剋制${d.counterEles.map(e => ({ earth: '地', wind: '風', fire: '火', water: '水' }[e] || e)).join('、')}屬性敵人（×1.4）`);
         if (d.procBurn)              _eff.push(`灼燒${d.procBurn.rate ? ` ${d.procBurn.rate}%` : ''}（命中後每秒${d.procBurn.dmg || 10}點火傷，持續${d.procBurn.dur || 6}秒）`);
         if (d.onHitEleDmg) {
             let _eleName = { fire:'火焰', water:'寒冰', wind:'風雷', earth:'大地', none:'無屬性' }[d.onHitEleDmg.ele] || '屬性';
@@ -2168,7 +2188,8 @@ function renderSquadPanel() {
             </div>`;
         }).join('')
             + ((typeof renderPetTeamHTML === 'function') ? renderPetTeamHTML() : '')
-            + ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 召喚物
+            + ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '')
+            + ((typeof renderMercSummonTeamHTML === 'function') ? renderMercSummonTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 玩家召喚物 → 🧱 v3.4.51 傭兵召喚物(血條比照玩家)
         _squadRebuilt = true;
     }
     if (sigSkill !== _squadSigSkill) {

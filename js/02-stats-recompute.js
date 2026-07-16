@@ -16,6 +16,8 @@ function recomputeStats() {
     d.ac = 10; d.er = 0; d.dr = 0;
     d.meleeDmg = 0; d.meleeHit = 0; d.meleeCrit = 0;
     d.crushDr = 0; d.meleeHaste = 0; d.atkSpdPct = 0;   // 🏺 遺物 第二批：受重擊減傷% / 裝近戰武器攻速% / 通用攻速%
+    d.hpRegenFaster = 0; d.noEvade = false;   // 🏺 遺物 第十六批：巨魔的再生戒指（HP恢復間隔縮短秒數）／笨重的鋼鐵石盾（無法迴避）
+    d.critDmgLowHp = null;   // 🏺 遺物 第十七批：鬥士的決戰服裝（HP<N 時近爆傷+add）
     d.thornsDmg = 0; d.instakillFull = 0; d.onDmgHeal = null; d.onDmgHealCd = 0; d.onDmgHealName = '';   // 🏺 遺物 第三批：受擊反傷固定值 / 命中滿血怪即死率 / 受擊自癒技能id（onDmgHealCd=冷卻秒數、onDmgHealName=來源名稱）
     d.hurtExplode = 0;   // 🏺 遺物 第四批 爆彈花蕊：受擊時對自己與全體敵人的火魔傷固定值
     d.fireNullify = false;   // 🏺 遺物 火熱愛意：免疫受到的火屬性傷害（每10秒最多1次·js/04 火魔傷攔截·player._fireNullCd 節流）
@@ -337,6 +339,9 @@ d.mr += (baseMr + bonusMr);
         if(ed.dotCrit) d.dotCrit = true;                       // 🏺 v3.1.80 永不終止的夢魘：持續傷害可爆擊（js/06 _teamDotCrit）
         if(ed.dmgReflect) d.dmgReflect = Math.max(d.dmgReflect, ed.dmgReflect);   // 🏺 v3.1.80 魅魔女皇的誘惑：受一般攻擊 N% 反射＋免疫（取最高·不疊加）
         if(ed.eleWpnMult) d.eleWpnMult = ed.eleWpnMult;        // 🏺 v3.1.80 四之牙臂甲：裝對應屬性武器時一般攻擊 ×mult（僅副手單槽·無疊加疑慮）
+        if(ed.hpRegenFaster) d.hpRegenFaster += ed.hpRegenFaster;   // 🏺 遺物 巨魔的再生戒指：HP 自然恢復間隔縮短 N 秒（js/03 regenTick 排程）
+        if(ed.noEvade) d.noEvade = true;                       // 🏺 遺物 笨重的鋼鐵石盾：無法迴避攻擊（js/04 受擊迴避閘）
+        if(ed.critDmgLowHp) d.critDmgLowHp = ed.critDmgLowHp;   // 🏺 遺物 鬥士的決戰服裝：HP<N 時近爆傷+add（js/03 getPhysicalDmg／js/06 allyAttackOnce）
         // 🛡️ 臂甲（副手）：每強化+1 → HP+10；門檻特效（達 +5/+7/+9 套用對應階、取最高階、非累加）
         if(ed.armguard) {
             let _agEn = capEn(e.en, ed);
@@ -407,6 +412,8 @@ d.mr += (baseMr + bonusMr);
     if(setCheck['emperor'] >= 5) { d.ac -= 20; p.mhp += 100; p.mmp += 20; d.hpR += 10; d.atkSpdPct += 30; d.meleeDmg += 5; d.rangedDmg += 5; }   // 🌑 v3.3.33 真‧冥皇套裝（披風/鎧甲/面甲/護手/鋼靴 5 件·黑暗妖精聖地.md）：防禦-20、HP+100、MP+20、HP自然恢復+10、攻速額外+30%（atkSpdPct 管線·與加速/勇敢藥水乘算堆疊）、額外傷害+5（近/遠皆加）
     // 🌑 v3.4.0 受詛咒的真．冥皇執行劍：裝備時變身 死亡騎士（走 _setPoly 管線＝卸下即消失·速度覆蓋沿 POLY_TIERS 死亡騎士；套裝變身優先於本劍故加 !p._setPoly 守衛）
     if(!p._setPoly && p.eq && p.eq.wpn && p.eq.wpn.id === 'wpn_cursed_emperor_blade') { let _ceb = findPolyForm('死亡騎士'); if(_ceb) p._setPoly = makePolyState(_ceb.form, _ceb.color); }
+    // 🌑 v3.4.67 解除詛咒的真死亡騎士．冥皇執行劍：裝備時變身 真死亡騎士 冥皇丹特斯（equip-only·per-weapon APM 攻速·套裝變身優先故加 !p._setPoly 守衛）
+    if(!p._setPoly && p.eq && p.eq.wpn && p.eq.wpn.id === 'wpn_uncursed_emperor_blade') { p._setPoly = Object.assign({}, DANTES_POLY_FORM); }
 
     // ===== 🔮 席琳套裝效果：⚠️v3.1.68 改「席琳遺骸」計件——只掃 8 格遺骸欄（SHERINE_REMAINS·欄位鍵=物品id）=====
     // 每格遺骸必附一種席琳詞綴(seteff)，相同組名的遺骸格數達 2/3/5 → 發動效果（門檻/效果不變）。
@@ -449,7 +456,7 @@ d.mr += (baseMr + bonusMr);
     if (_shN('暗影') >= 2) { d.extraDmg += 7; }   // 🔧 暗影 2/5：額外傷害+7
     p._setShadow3 = _shN('暗影') >= 3;            // 🔧 暗影 3/5：觸發迴避時恢復 2% HP（迴避處套用）
     p._setShadow5 = _shN('暗影') >= 5;            // 🔧 暗影 5/5：雙擊額外攻擊傷害加倍（×2·procCombo/allyComboAttack 套用）
-    // 🔮 幻覺：2件 魔傷命中回「Lv/10」MP；3件 輔助技耗MP-50%；5件 敵人受非自動攻擊魔法傷害再受一次同傷（不再觸發套裝效果）
+    // 🔮 幻覺：立方、冰雪颶風/火牢 DoT、魔爆、spellProc/procSkill 等免費觸發魔法有效；2件每次法術事件僅回一次MP（AOE不逐目標回）；一般傷害法術、共鳴、反射無效；玩家與傭兵規則相同
     p._setIllusion2 = _shN('幻覺') >= 2;
     p._setIllusion3 = _shN('幻覺') >= 3;
     p._setIllusion5 = _shN('幻覺') >= 5;
@@ -528,7 +535,13 @@ d.mr += (baseMr + bonusMr);
         let pf = _polyForm;
         // 🆕 v3.0.28 速度覆蓋（凡有 atk 者皆套用）：POLY_TIERS 速度型變身、及套裝變身 SET_POLY_FORMS（現在也帶 atk/wlk/cast/stun）。
         //   攻擊間隔＝動畫幀換算秒（APM=1440/幀），之後仍照常 ×spdMult（加速/勇敢/精通疊加）；移動速度 pf.wlk 於出怪排程（js/03）影響重生。
-        if(pf.atk != null) {
+        if(pf.apm != null) {   // 🌑 v3.4.67 逐武器種類 APM 攻速（冥皇執行劍/烈焰死騎變身）：依當前武器種類查表→6000/APM/100=秒（同 atkSpdBaseItv）；空手/缺項退單手劍
+            let _fam = (p.eq && p.eq.wpn && typeof atkSpdFamily === 'function') ? atkSpdFamily(p.eq.wpn.id) : null;
+            let _apm = (_fam && pf.apm[_fam]) || pf.apm['單手劍'] || 60;
+            d.aspd = Math.round(6000 / Math.max(1, _apm)) / 100;
+            if(pf.cast != null) d.castLock = pf.cast;
+            if(pf.stun != null) d.hitstun  = pf.stun;
+        } else if(pf.atk != null) {
             d.aspd = Math.round(pf.atk * 6000 / 1440) / 100;         // 攻擊間隔（秒）
             if(pf.cast != null) d.castLock = pf.cast;                // 施法冷卻下限（tick）
             if(pf.stun != null) d.hitstun  = pf.stun;               // 被擊硬直（tick）
@@ -572,6 +585,11 @@ d.mr += (baseMr + bonusMr);
     if(p.buffs.sk_dragon_bloodlust > 0) spdMult *= 0.85;   // 🐉 血之渴望：攻速+15%（與加速/覺醒/變身相乘疊加）
     // 🌟 v3.0.100 玩家攻擊也吃「傭兵提供的幻覺攻擊光環」(化身+10/歐吉+4傷+4命/巫妖+2魔傷)：玩家自身幻覺已由上方 buff 迴圈套入 d·此處只補「傭兵來源」(teamIlluAura(p) 已排除玩家自身避免雙算)·限玩家(_recomputingAlly=false·傭兵走 alliesTick 注入)。傭兵化身狀態變動時由 allyMaintainBuffs 觸發 calcStats 刷新此段。
     if (!_recomputingAlly && typeof teamIlluAura === 'function') { let _mia = teamIlluAura(p); if (_mia) { d.extraDmg += _mia.ed; d.extraHit += _mia.eh; d.magicDmg += _mia.md; } }
+    // 原版方向魔法公式拆分：INT 提供 SP 封頂 33；其餘 extraMp 才列為道具／套裝／增益 SP。
+    // 用未封頂的 INT 原始提供量扣除，避免 INT 100 多出的 2 點被誤判成道具 SP。
+    let _rawIntSp = Math.max(0, getIntExtraMp(d.int));
+    d.intSp = Math.min(33, _rawIntSp);
+    d.itemSp = Math.max(0, (d.extraMp || 0) - _rawIntSp);
     d.spdMult = spdMult;   // 速度倍率（受加速/勇敢藥水/精靈餅乾/變身影響），供自動施法間隔使用
     d.aspd = d.aspd * spdMult;
 
@@ -749,6 +767,7 @@ const POLY_TIERS = [
     { min:70, max:9999, color:"text-yellow-400", forms:[
         { n:"死亡", lv:70, atk:18, wlk:24, cast:10, stun:7 },
         { n:"反王肯恩", lv:75, atk:20, wlk:18, cast:11, stun:6 },
+        { n:"烈焰的死亡騎士", lv:80, apm:{ '單手劍':120,'單手鈍器':103,'雙手鈍器':103,'弓':90,'十字弓':90,'單手矛':111,'雙手矛':111,'魔杖':120,'匕首':131,'雙手劍':103,'雙刀':120,'鋼爪':120,'奇古獸':120,'鎖鏈劍':111,'雙斧':120 }, wlk:16, cast:7, stun:2 },   // 🌑 v3.4.67 逐武器種類 APM 攻速（用戶「變身速度」CSV·6000/APM/100=秒）
     ]},
 ];
 
@@ -769,6 +788,8 @@ const SET_POLY_FORMS = {
     demon:   { n: "惡魔", ed: 4, eh: 4, mgd: 3, sp: 3, mpr: 3,     atk: 18, wlk: 16, cast: 9, stun: 4, c: "text-red-400" },      // 速度＝惡魔
     darkelf: { n: "高等黑暗精靈", rd: 5, rh: 5,                    atk: 19, wlk: 16, cast: 10, stun: 5, c: "text-violet-300" }     // 速度＝黑暗精靈
 };
+// 🌑 v3.4.67 解除詛咒的真死亡騎士．冥皇執行劍 裝備變身（equip-only·不進隨機變形池；per-weapon APM 攻速·來源 CSV）
+const DANTES_POLY_FORM = { n: "真死亡騎士 冥皇丹特斯", lv: 99, apm: { '單手劍':124,'單手鈍器':103,'雙手鈍器':103,'弓':90,'十字弓':90,'單手矛':111,'雙手矛':111,'魔杖':120,'匕首':131,'雙手劍':103,'雙刀':120,'鋼爪':120,'奇古獸':120,'鎖鏈劍':111,'雙斧':120 }, wlk: 16, cast: 7, stun: 2, c: "text-yellow-300" };
 
 // 是否持有「變形控制戒指」(acc_117)
 // 🔧 改為「背包攜帶即可觸發」：裝備中或背包內任一處有戒指都算持有，不需佔用戒指欄位
@@ -847,7 +868,12 @@ function applyPolyForce(stateObj) {
 // 將變身能力整理成可讀文字（給選單顯示）
 function polyFormDesc(f) {
     let p = [];
-    if (f.atk != null) {   // 🆕 v3.0.26 速度型變身：攻擊間隔/施法/硬直/重生（套裝變身另接傷害加成於後）
+    if (f.apm != null) {   // 🌑 v3.4.67 逐武器 APM 變身：顯示單手劍代表值（實際依當前武器）
+        p.push(`攻擊間隔 ${(Math.round(6000 / Math.max(1, f.apm['單手劍'] || 60)) / 100).toFixed(2)}秒(依武器)`);
+        if (f.cast != null) p.push(`施法 ${(f.cast/10).toFixed(1)}秒`);
+        if (f.stun != null) p.push(`硬直 ${(f.stun/10).toFixed(1)}秒`);
+        if (f.wlk != null)  p.push(`重生 ${(5 * f.wlk / 16).toFixed(1)}秒`);
+    } else if (f.atk != null) {   // 🆕 v3.0.26 速度型變身：攻擊間隔/施法/硬直/重生（套裝變身另接傷害加成於後）
         p.push(`攻擊間隔 ${(Math.round(f.atk * 6000 / 1440) / 100).toFixed(2)}秒`);
         if (f.cast != null) p.push(`施法 ${(f.cast/10).toFixed(1)}秒`);
         if (f.stun != null) p.push(`硬直 ${(f.stun/10).toFixed(1)}秒`);

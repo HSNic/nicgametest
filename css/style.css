@@ -90,6 +90,7 @@
 .ability-detail-column > div{display:grid;grid-template-columns:74% 26%;align-items:center;min-height:0;white-space:nowrap}
 .ability-detail-column > .ability-detail-spacer{display:block;pointer-events:none}
 .ability-detail-column span{padding-left:5%;overflow:hidden;text-overflow:clip}
+.ability-detail-column .ability-magic-crit-dmg span{position:relative;top:-1px}
 .ability-detail-column strong{display:flex;align-items:center;justify-content:flex-end;height:100%;padding-right:8%;box-sizing:border-box;color:#ded9cc;font:600 2.72cqw/1 Arial,sans-serif;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:0}
 .ability-res-fire span{color:#e77d76}
 .ability-res-water span{color:#79a9e8}
@@ -167,6 +168,16 @@
         /* 🔤 表單控制項（下拉選單/輸入框/按鈕）強制繼承全站字型——native <select> 的選項清單預設不繼承，
            會挑到不同的中文後備字，導致「展開的選項」字體與「關閉的值/全站文字」不一致。釘住同一套字型修正之。 */
         select, option, optgroup, input, textarea, button { font-family: inherit; }
+        /* 原生下拉選單備援：即使未啟用自訂選單，也維持遊戲的深色介面。 */
+        select { color-scheme: dark; }
+        select option, select optgroup {
+            background-color: #111827;
+            color: #dbeafe;
+        }
+        select option:checked {
+            background-color: #1d4ed8;
+            color: #ffffff;
+        }
         /* 血盟盟主頭像：沿用左上角色狀態框約 340:250 的橫向比例，依詩蒂／特羅斯皆從人物上方裁切。 */
         .pledge-leader-portrait {
             width: 240px;
@@ -1515,1239 +1526,6 @@ button.classic-skill-cell { cursor:pointer; }
     left:67.95%;
 }
 
-#creation-panel.creation-layout-v2:not(.hidden) {
-    overflow:hidden;
-}
-
-#creation-panel.creation-layout-v2 #creation-bg-image {
-    object-fit:cover;
-}
-
-#creation-panel.creation-layout-v2 #creation-class-desc-frame {
-    left:7.0%;
-    top:11.5%;
-    width:32.4%;
-    height:57.2%;
-    padding:5.3% 4.7% 4.0%;
-}
-
-#creation-panel.creation-layout-v2 #creation-avatar-stage {
-    left:54.2%;
-    top:11.0%;
-    width:29.6%;
-    height:43.8%;
-}
-
-#creation-panel.creation-layout-v2 #class-preview-img {
-    height:112% !important;
-    max-width:118%;
-    filter:drop-shadow(0 18px 14px rgba(0,0,0,.82)) drop-shadow(0 0 18px rgba(236,184,72,.2)) contrast(1.08) saturate(1.08);
-}
-
-#creation-panel.creation-layout-v2 #creation-class-list {
-    left:46.5%;
-    top:8.3%;
-    width:44.8%;
-    height:48.7%;
-}
-
-#creation-panel.creation-layout-v2 .creation-class-btn {
-    width:12.2%;
-    height:14.7%;
-}
-
-#creation-panel.creation-layout-v2 .creation-class-btn.class-left { left:3.5%; }
-#creation-panel.creation-layout-v2 .creation-class-btn.class-right { right:3.5%; }
-#creation-panel.creation-layout-v2 .creation-class-btn.class-pos-1 { top:1.2%; }
-#creation-panel.creation-layout-v2 .creation-class-btn.class-pos-2 { top:26.8%; }
-#creation-panel.creation-layout-v2 .creation-class-btn.class-pos-3 { top:52.4%; }
-#creation-panel.creation-layout-v2 .creation-class-btn.class-pos-4 { top:78.0%; }
-
-#creation-panel.creation-layout-v2 #creation-gender-panel {
-    left:58.7%;
-    top:57.0%;
-    width:31.5%;
-    height:6.8%;
-    padding:0 7.2%;
-}
-
-#creation-panel.creation-layout-v2 .creation-gender-btn {
-    width:clamp(24px,3.8vw,48px);
-    height:clamp(24px,3.8vw,48px);
-}
-
-#creation-panel.creation-layout-v2 #creation-pts {
-    left:73.0%;
-    top:67.0%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con { left:62.2%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { left:76.6%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:64.0%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:67.3%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:70.6%; }
-
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    left:58.5%;
-    top:77.0%;
-    width:auto;
-    height:3.4%;
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    position:absolute;
-    z-index:7;
-    left:68.2%;
-    top:76.1%;
-    width:22.8%;
-    height:11.8%;
-    display:grid;
-    grid-template-rows:1fr .86fr;
-    gap:13%;
-}
-
-#creation-panel.creation-layout-v2 #btn-start.creation-start-button,
-#creation-panel.creation-layout-v2 #creation-back-button {
-    position:static;
-    width:100%;
-    height:100%;
-}
-
-#creation-panel.creation-layout-v2 #btn-start.creation-start-button {
-    font-size:clamp(11px,1.22vw,18px);
-    background:linear-gradient(180deg,rgba(111,75,24,.9),rgba(45,28,8,.92));
-    box-shadow:0 0 15px rgba(221,166,63,.3), inset 0 0 10px rgba(255,224,137,.18);
-}
-
-#creation-panel.creation-layout-v2 #creation-back-button {
-    font-size:clamp(9px,1vw,14px);
-}
-
-@media (max-width:768px), (pointer:coarse) and (max-width:900px) {
-    #creation-panel.creation-layout-v2:not(.hidden) {
-        position:fixed;
-        inset:0;
-        left:0;
-        top:0;
-        transform:none;
-        width:100vw;
-        height:100dvh;
-        aspect-ratio:auto;
-        overflow:auto;
-        padding:12px;
-        display:flex !important;
-        flex-direction:column;
-        gap:10px;
-        background:#050505;
-        -webkit-overflow-scrolling:touch;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-bg-image {
-        position:fixed;
-        inset:0;
-        width:100%;
-        height:100%;
-        object-fit:cover;
-        opacity:.45;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-zone {
-        position:relative !important;
-        left:auto !important;
-        right:auto !important;
-        top:auto !important;
-        width:100% !important;
-        height:auto !important;
-        min-height:0;
-        z-index:4;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-desc-frame {
-        order:1;
-        flex:0 0 auto;
-        padding:24px 22px 22px;
-        min-height:174px;
-        max-height:none;
-        border:1px solid rgba(204,159,63,.78);
-        border-radius:8px;
-        background:linear-gradient(180deg,rgba(11,10,8,.9),rgba(10,9,8,.82)), rgba(0,0,0,.82);
-        box-shadow:inset 0 0 24px rgba(221,169,70,.12),0 8px 22px rgba(0,0,0,.48);
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-title {
-        font-size:clamp(22px,7.2vw,30px);
-        margin-bottom:14px;
-    }
-
-    #creation-panel.creation-layout-v2 #class-desc {
-        overflow:visible;
-        font-size:clamp(14px,4.2vw,16px);
-        line-height:1.55;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-avatar-stage {
-        order:2;
-        min-height:260px;
-        display:flex;
-        align-items:flex-end;
-        justify-content:center;
-        padding:10px 0 52px;
-        border:1px solid rgba(204,159,63,.72);
-        border-radius:8px;
-        background:radial-gradient(circle at 50% 70%,rgba(237,179,66,.22),transparent 36%), linear-gradient(180deg,rgba(10,9,7,.38),rgba(0,0,0,.56));
-    }
-
-    #creation-panel.creation-layout-v2 #class-preview-img {
-        height:210px !important;
-        max-width:72%;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-list {
-        order:3;
-        margin-top:-62px;
-        padding:0 18px 12px;
-        display:grid;
-        grid-template-columns:repeat(4,minmax(0,1fr));
-        gap:8px;
-        pointer-events:auto;
-        z-index:8;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-class-btn {
-        position:relative;
-        left:auto !important;
-        right:auto !important;
-        top:auto !important;
-        width:48px;
-        height:48px;
-        justify-self:center;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-gender-panel {
-        order:4;
-        min-height:70px;
-        display:grid;
-        grid-template-columns:1fr 1fr;
-        gap:12px;
-        padding:8px 14px;
-        pointer-events:auto;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-gender-btn {
-        width:100%;
-        height:54px;
-        border-radius:6px;
-    }
-
-    #creation-panel.creation-layout-v2 #stat-allocation {
-        order:5;
-        display:grid;
-        grid-template-columns:1fr 1fr;
-        gap:8px 12px;
-        padding:14px;
-        border:1px solid rgba(204,159,63,.72);
-        border-radius:8px;
-        background:rgba(0,0,0,.62);
-        pointer-events:auto;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-pts {
-        position:relative;
-        grid-column:1 / -1;
-        justify-self:center;
-        width:auto;
-        height:auto;
-        padding:4px 14px;
-        color:#f5d77f;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control {
-        position:relative;
-        left:auto !important;
-        top:auto !important;
-        height:38px;
-        display:grid;
-        grid-template-columns:1fr 2.1em 2.1em 2.1em;
-        gap:6px;
-        align-items:center;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control::before {
-        position:static;
-        transform:none;
-        font-size:14px;
-        text-align:left !important;
-        color:#f0df9f;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-str::before { content:"力量"; }
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex::before { content:"敏捷"; }
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-con::before { content:"體質"; }
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis::before { content:"精神"; }
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha::before { content:"魅力"; }
-    #creation-panel.creation-layout-v2 .creation-stat-control.stat-int::before { content:"智力"; }
-
-    #creation-panel.creation-layout-v2 .creation-stat-value {
-        min-width:0;
-        font-size:15px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-btn {
-        width:2.1em;
-        height:2.1em;
-        border-radius:5px;
-        font-size:16px;
-    }
-
-    #creation-panel.creation-layout-v2 #classic-mode-control {
-        order:6;
-        min-height:54px;
-        display:flex;
-        justify-content:center;
-        gap:10px;
-        padding:10px;
-        border:1px solid rgba(204,159,63,.66);
-        border-radius:8px;
-        background:rgba(0,0,0,.58);
-        font-size:16px;
-    }
-
-    #creation-panel.creation-layout-v2 #classic-mode-control input {
-        width:22px;
-        height:22px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-action-panel {
-        order:7;
-        display:grid;
-        grid-template-rows:none;
-        grid-template-columns:1fr;
-        gap:12px;
-        padding-bottom:12px;
-    }
-
-    #creation-panel.creation-layout-v2 #btn-start.creation-start-button,
-    #creation-panel.creation-layout-v2 #creation-back-button {
-        min-height:56px;
-        border-radius:6px;
-        font-size:20px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-back-button {
-        font-size:18px;
-    }
-}
-
-@media (max-width:420px) {
-    #creation-panel.creation-layout-v2 #stat-allocation {
-        grid-template-columns:1fr;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-list {
-        grid-template-columns:repeat(4,1fr);
-        padding-left:8px;
-        padding-right:8px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-class-btn {
-        width:42px;
-        height:42px;
-    }
-}
-
-/* ===== 創建人物 UI v2.1：依實機截圖修正遮擋與桌機控制大小 ===== */
-#creation-panel.creation-layout-v2 .creation-stat-control {
-    grid-template-columns:2.2em 1.42em 1.42em;
-    gap:.62em;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control::before {
-    font-size:clamp(15px,1.72vw,26px);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-value {
-    min-width:2.2em;
-    font-size:clamp(12px,1.18vw,18px);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-btn {
-    width:1.42em;
-    height:1.42em;
-    border-radius:3px;
-    font-size:clamp(10px,.95vw,15px);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con { left:62.8%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { left:73.4%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:63.4%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:67.0%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:70.6%; }
-
-#creation-panel.creation-layout-v2 #creation-pts {
-    left:74.0%;
-    top:67.1%;
-    font-size:clamp(12px,1.22vw,18px);
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    left:68.2%;
-    top:71.4%;
-    width:22.8%;
-    height:4.35%;
-    justify-content:center;
-    gap:.45em;
-    padding:0;
-    border:1px solid #9f7b36;
-    border-radius:2px;
-    background:linear-gradient(180deg,rgba(60,42,17,.72),rgba(13,10,6,.75));
-    color:#f5e7bd;
-    box-shadow:inset 0 0 8px rgba(234,184,83,.18);
-    font-size:clamp(9px,1vw,15px);
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control:hover {
-    color:#fff3c7;
-    border-color:#d7ae57;
-    background:linear-gradient(180deg,rgba(96,65,24,.82),rgba(31,20,8,.82));
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control input {
-    position:absolute;
-    opacity:0;
-    pointer-events:none;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control span::before {
-    content:"";
-    display:inline-block;
-    width:.86em;
-    height:.86em;
-    margin-right:.45em;
-    vertical-align:-.08em;
-    border:1px solid rgba(238,204,127,.75);
-    background:rgba(0,0,0,.42);
-    box-shadow:inset 0 0 4px rgba(255,229,155,.16);
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control input:checked + span::before {
-    background:linear-gradient(180deg,#f8dfa1,#9d6b22);
-    box-shadow:0 0 10px rgba(235,183,70,.7), inset 0 0 3px rgba(255,255,255,.3);
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    left:68.2%;
-    top:78.4%;
-    width:22.8%;
-    height:10.2%;
-    gap:14%;
-}
-
-@media (max-width:768px), (pointer:coarse) and (max-width:900px) {
-    #creation-panel.creation-layout-v2:not(.hidden) {
-        gap:12px;
-        padding:10px 12px 18px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-desc-frame {
-        min-height:auto;
-        padding:22px 20px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-avatar-stage {
-        min-height:236px;
-        padding:8px 0 14px;
-    }
-
-    #creation-panel.creation-layout-v2 #class-preview-img {
-        height:194px !important;
-        max-width:66%;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-list {
-        margin-top:0;
-        padding:10px 12px;
-        border:1px solid rgba(204,159,63,.64);
-        border-radius:8px;
-        background:rgba(0,0,0,.5);
-    }
-
-    #creation-panel.creation-layout-v2 .creation-class-btn {
-        width:44px;
-        height:44px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-gender-panel {
-        min-height:64px;
-        padding:6px 0;
-    }
-
-    #creation-panel.creation-layout-v2 #stat-allocation {
-        grid-template-columns:1fr;
-        gap:8px;
-        padding:14px 16px 16px;
-        overflow:visible;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control {
-        height:40px;
-        grid-template-columns:minmax(3.8em,1fr) 2.3em 2.3em 2.3em;
-        gap:8px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control::before {
-        font-size:15px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-value {
-        font-size:16px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-btn {
-        width:2.3em;
-        height:2.3em;
-        font-size:16px;
-    }
-
-    #creation-panel.creation-layout-v2 #classic-mode-control {
-        min-height:56px;
-        width:100% !important;
-        height:auto !important;
-        border-radius:8px;
-        font-size:17px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-action-panel {
-        width:100% !important;
-        height:auto !important;
-    }
-}
-
-/* ===== 創建人物 UI v2.2：避免縮放時區塊互蓋 ===== */
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    top:75.05%;
-    height:4.05%;
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    top:80.15%;
-    height:9.25%;
-}
-
-@media (max-width:768px), (pointer:coarse) and (max-width:900px) {
-    #creation-panel.creation-layout-v2:not(.hidden) {
-        height:100dvh;
-        overflow-y:auto;
-        overflow-x:hidden;
-        align-items:stretch;
-        gap:12px;
-        padding:10px 14px 22px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-desc-frame,
-    #creation-panel.creation-layout-v2 #creation-avatar-stage,
-    #creation-panel.creation-layout-v2 #creation-class-list,
-    #creation-panel.creation-layout-v2 #creation-gender-panel,
-    #creation-panel.creation-layout-v2 #stat-allocation,
-    #creation-panel.creation-layout-v2 #classic-mode-control,
-    #creation-panel.creation-layout-v2 #creation-action-panel {
-        flex:0 0 auto;
-        margin:0;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-desc-frame {
-        max-height:none;
-        overflow:visible;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-avatar-stage {
-        min-height:238px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-list {
-        min-height:110px;
-        grid-template-columns:repeat(4,minmax(44px,1fr));
-        align-items:center;
-        justify-items:center;
-        gap:10px 8px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-class-btn {
-        width:44px;
-        height:44px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-gender-panel {
-        min-height:62px;
-    }
-
-    #creation-panel.creation-layout-v2 #stat-allocation {
-        min-height:340px;
-        grid-template-columns:1fr;
-        align-content:start;
-        gap:9px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control {
-        min-height:40px;
-        height:40px;
-        grid-template-columns:minmax(4em,1fr) 2.5em 2.5em 2.5em;
-        column-gap:9px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-btn {
-        width:2.5em;
-        height:2.5em;
-    }
-
-    #creation-panel.creation-layout-v2 #classic-mode-control {
-        min-height:56px;
-        width:100% !important;
-        top:auto !important;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-action-panel {
-        min-height:126px;
-        top:auto !important;
-        display:grid;
-        grid-template-columns:1fr;
-        grid-template-rows:56px 56px;
-        gap:12px;
-        padding:0 0 12px;
-    }
-
-    #creation-panel.creation-layout-v2 #btn-start.creation-start-button,
-    #creation-panel.creation-layout-v2 #creation-back-button {
-        min-height:56px;
-        height:56px;
-    }
-}
-
-@media (max-width:420px) {
-    #creation-panel.creation-layout-v2:not(.hidden) {
-        padding-left:10px;
-        padding-right:10px;
-    }
-
-    #creation-panel.creation-layout-v2 #creation-class-list {
-        min-height:104px;
-        gap:8px 4px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-class-btn {
-        width:40px;
-        height:40px;
-    }
-
-    #creation-panel.creation-layout-v2 #stat-allocation {
-        min-height:336px;
-        padding-left:12px;
-        padding-right:12px;
-    }
-
-    #creation-panel.creation-layout-v2 .creation-stat-control {
-        grid-template-columns:minmax(3.4em,1fr) 2.35em 2.35em 2.35em;
-        column-gap:7px;
-    }
-}
-
-/* ===== 創建人物 UI v2.3：手機選角縮放、人物去黑底、桌機右側重心重排 ===== */
-#creation-panel.creation-layout-v2 #creation-avatar-stage {
-    left:51.0%;
-    top:8.3%;
-    width:28.0%;
-    height:46.0%;
-    background:transparent !important;
-}
-
-#creation-panel.creation-layout-v2 #class-preview-img {
-    mix-blend-mode:screen !important;
-    height:116% !important;
-    max-width:120%;
-    background:transparent !important;
-    filter:drop-shadow(0 18px 14px rgba(0,0,0,.78)) drop-shadow(0 0 18px rgba(236,184,72,.18)) contrast(1.08) saturate(1.1);
-}
-
-#creation-panel.creation-layout-v2 #creation-class-list {
-    left:44.0%;
-    top:7.3%;
-    width:43.2%;
-    height:48.0%;
-}
-
-#creation-panel.creation-layout-v2 #creation-gender-panel {
-    left:57.2%;
-    top:56.35%;
-    width:22.2%;
-    height:5.9%;
-    padding:0 2.8%;
-}
-
-#creation-panel.creation-layout-v2 .creation-gender-btn {
-    width:clamp(24px,3.25vw,42px);
-    height:clamp(24px,3.25vw,42px);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control {
-    grid-template-columns:2.0em 1.34em 1.34em;
-    gap:.52em;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con { left:55.2%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { left:66.6%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:64.7%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:68.05%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:71.4%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con::before {
-    right:calc(100% + .55em);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int::before {
-    left:calc(100% + .55em);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-value {
-    min-width:2.0em;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-btn {
-    width:1.34em;
-    height:1.34em;
-}
-
-#creation-panel.creation-layout-v2 #creation-pts {
-    left:63.2%;
-    top:74.75%;
-    width:3.4%;
-    height:3.0%;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    left:60.1%;
-    top:78.6%;
-    width:22.2%;
-    height:4.25%;
-    padding:0 1.0%;
-    border:1px solid rgba(198,156,74,.68);
-    border-radius:3px;
-    background:linear-gradient(180deg, rgba(28,23,15,.9), rgba(7,5,3,.95));
-    color:#d8bf79;
-    font-family:Georgia, "Times New Roman", "Microsoft JhengHei", serif;
-    font-size:clamp(8px,.9vw,12px);
-    font-weight:700;
-    text-shadow:0 1px 2px #000, 0 0 8px rgba(228,187,87,.38);
-    box-shadow:inset 0 1px 0 rgba(255,232,167,.16), 0 0 12px rgba(0,0,0,.55);
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control span {
-    position:relative;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:100%;
-    height:100%;
-    padding-right:3.8em;
-    box-sizing:border-box;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control span::before {
-    content:"";
-    position:absolute;
-    right:.62em;
-    top:50%;
-    transform:translateY(-50%);
-    width:2.85em;
-    height:1.42em;
-    margin:0;
-    border-radius:999px;
-    background:linear-gradient(180deg,rgba(36,35,31,.98),rgba(10,10,9,.96));
-    border:1px solid rgba(238,204,127,.48);
-    box-shadow:inset 0 1px 2px rgba(0,0,0,.88), inset 0 -1px 0 rgba(255,255,255,.05), 0 0 6px rgba(0,0,0,.45);
-    transition:background .18s ease, border-color .18s ease, box-shadow .18s ease;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control span::after {
-    content:"";
-    position:absolute;
-    right:1.95em;
-    top:50%;
-    transform:translateY(-50%);
-    width:1.12em;
-    height:1.12em;
-    border-radius:50%;
-    background:linear-gradient(180deg,#fff,#d7d7d7);
-    box-shadow:0 1px 3px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.95);
-    transition:right .18s ease, background .18s ease, box-shadow .18s ease;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control input:checked + span::before {
-    border-color:rgba(155,255,168,.8);
-    background:linear-gradient(180deg,#43f071,#19b84c);
-    box-shadow:inset 0 1px 1px rgba(255,255,255,.28), inset 0 -2px 4px rgba(0,82,25,.28), 0 0 12px rgba(60,255,105,.62);
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control input:checked + span::after {
-    right:.78em;
-    background:linear-gradient(180deg,#fff,#f1fff2);
-    box-shadow:0 1px 4px rgba(0,0,0,.72), 0 0 5px rgba(255,255,255,.62);
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    left:60.1%;
-    top:84.0%;
-    width:22.2%;
-    height:9.2%;
-}
-
-/* ===== 創建人物 UI v2.4：桌機人物下方控制區參考圖排列 ===== */
-#creation-panel.creation-layout-v2 #creation-gender-panel {
-    left:54.5%;
-    top:56.2%;
-    width:25.2%;
-    height:6.3%;
-    padding:0 2.4%;
-    background:transparent !important;
-    border:0 !important;
-}
-
-#creation-panel.creation-layout-v2 #creation-pts {
-    left:62.15%;
-    top:63.1%;
-    width:3.6%;
-    height:3.45%;
-    padding:0 !important;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    border:1px solid rgba(238,204,127,.68);
-    border-radius:3px;
-    color:#fff1ba;
-    background:rgba(0,0,0,.72);
-    box-shadow:inset 0 0 8px rgba(255,229,151,.12), 0 0 10px rgba(0,0,0,.55);
-    font:700 clamp(10px,1.0vw,15px)/1 Georgia, "Times New Roman", serif;
-    text-shadow:0 1px 2px #000;
-}
-
-#creation-panel.creation-layout-v2 #creation-pts::before {
-    content:"剩餘點數";
-    white-space:pre;
-    position:absolute;
-    left:50%;
-    bottom:100%;
-    transform:translateX(-50%);
-    width:5.2em;
-    margin-bottom:.28em;
-    color:#d8bf79;
-    font:700 clamp(8px,.78vw,12px)/1.0 "Microsoft JhengHei", Georgia, serif;
-    text-align:center;
-    text-shadow:0 0 7px rgba(245,219,126,.55),0 1px 2px #000;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control {
-    grid-template-columns:2.0em 1.18em 1.18em;
-    gap:.36em;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con {
-    left:52.5%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int {
-    left:66.3%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:67.4%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:70.55%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:73.7%; }
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con::before {
-    right:calc(100% + .22em);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha::before,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int::before {
-    left:calc(100% + .22em);
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-btn {
-    width:1.18em;
-    height:1.18em;
-}
-
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    left:60.1%;
-    top:78.8%;
-    width:22.2%;
-    height:4.45%;
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    left:60.1%;
-    top:84.2%;
-    width:22.2%;
-    height:9.1%;
-}
-
-/* ===== 創建人物 UI v2.5：桌機控制區共用中線、手機素質置中 ===== */
-#creation-panel.creation-layout-v2 #creation-gender-panel {
-    left:54.5%;
-    top:56.15%;
-    width:25.2%;
-}
-
-#creation-panel.creation-layout-v2 #creation-pts {
-    left:65.3%;
-    top:62.65%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con {
-    left:55.8%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int {
-    left:69.1%;
-}
-
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:67.4%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:70.55%; }
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-#creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:73.7%; }
-
-#creation-panel.creation-layout-v2 #classic-mode-control {
-    left:56.0%;
-    top:78.8%;
-    width:22.2%;
-}
-
-#creation-panel.creation-layout-v2 #creation-action-panel {
-    left:56.0%;
-    top:84.2%;
-    width:22.2%;
-}
-
-body.m-mobile #load-art-stage #load-slot-grid {
-    flex:0 0 auto !important;
-    width:min(100vw, calc((var(--app-h, 100dvh) - 232px) * .56)) !important;
-    max-width:100% !important;
-    aspect-ratio:500 / 820 !important;
-    min-height:0 !important;
-    height:auto !important;
-    margin:0 auto !important;
-    align-self:center !important;
-}
-
-body.m-mobile #load-art-stage #m-load-arch-overlay {
-    inset:0 !important;
-}
-
-body.m-mobile #load-art-stage .load-slot-card img {
-    max-width:58% !important;
-    max-height:70% !important;
-    object-fit:contain !important;
-}
-
-@media (max-width:768px), (pointer:coarse) and (max-width:900px) {
-    #creation-panel.creation-layout-v2 #creation-avatar-stage {
-        background:radial-gradient(circle at 50% 72%,rgba(237,179,66,.22),transparent 34%), linear-gradient(180deg,rgba(10,9,7,.20),rgba(0,0,0,.30)) !important;
-    }
-
-    #creation-panel.creation-layout-v2 #class-preview-img {
-        mix-blend-mode:screen !important;
-        height:205px !important;
-        max-width:68%;
-    }
-
-    #creation-panel.creation-layout-v2 #classic-mode-control {
-        border-radius:8px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #creation-gender-panel {
-        min-height:58px !important;
-        display:grid !important;
-        grid-template-columns:1fr 1fr !important;
-        gap:22px !important;
-        padding:8px 18px !important;
-        border:0 !important;
-        background:transparent !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-gender-btn {
-        width:42px !important;
-        height:42px !important;
-        justify-self:center !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #stat-allocation {
-        position:relative !important;
-        order:5;
-        display:block !important;
-        min-height:208px !important;
-        height:208px !important;
-        padding:0 !important;
-        border:1px solid rgba(204,159,63,.72);
-        border-radius:8px;
-        background:rgba(0,0,0,.60);
-        pointer-events:auto;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #creation-pts {
-        position:absolute !important;
-        left:50% !important;
-        top:24px !important;
-        transform:translateX(-50%) !important;
-        width:34px !important;
-        height:26px !important;
-        padding:0 !important;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        border:1px solid rgba(238,204,127,.68);
-        border-radius:3px;
-        color:#fff1ba;
-        background:rgba(0,0,0,.72);
-        box-shadow:inset 0 0 8px rgba(255,229,151,.12),0 0 10px rgba(0,0,0,.55);
-        font-size:16px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #creation-pts::before {
-        content:"剩餘點數";
-        position:absolute;
-        left:50%;
-        bottom:100%;
-        transform:translateX(-50%);
-        width:72px;
-        margin-bottom:3px;
-        color:#d8bf79;
-        font-size:11px;
-        line-height:1.05;
-        text-align:center;
-        text-shadow:0 0 6px #000;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control {
-        position:absolute !important;
-        left:auto !important;
-        top:auto !important;
-        width:43% !important;
-        height:30px !important;
-        min-height:30px !important;
-        display:grid !important;
-        align-items:center;
-        gap:3px !important;
-        pointer-events:auto;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-con {
-        left:5% !important;
-        grid-template-columns:2.8em 1.55em 1.45em 1.45em !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int {
-        right:5% !important;
-        grid-template-columns:1.45em 1.45em 1.7em minmax(4.8em,1fr) !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis { top:86px !important; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha { top:119px !important; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-con,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int { top:152px !important; }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control::before {
-        position:static !important;
-        transform:none !important;
-        min-width:0;
-        color:#f0df9f;
-        font-size:14px;
-        line-height:1;
-        text-shadow:0 0 7px rgba(245,219,126,.55),0 1px 2px #000;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-str::before { content:"力量"; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex::before { content:"敏捷"; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-con::before { content:"體質"; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis::before { content:"精神"; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha::before { content:"魅力"; }
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int::before { content:"智力"; }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-str::before,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex::before,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-con::before {
-        text-align:right !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis::before,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha::before,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int::before {
-        grid-column:4;
-        grid-row:1;
-        text-align:left !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis .creation-stat-value,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha .creation-stat-value,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int .creation-stat-value {
-        grid-column:3;
-        grid-row:1;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-value {
-        min-width:0 !important;
-        color:#fff;
-        font-size:15px;
-        font-weight:700;
-        text-align:center;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-btn {
-        width:22px !important;
-        height:22px !important;
-        border-radius:3px !important;
-        font-size:13px !important;
-        line-height:1;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #classic-mode-control {
-        min-height:56px !important;
-        height:56px !important;
-        width:100% !important;
-        padding:0 14px !important;
-        display:flex !important;
-        align-items:center !important;
-        justify-content:center !important;
-        border-radius:8px !important;
-        font-size:20px !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #classic-mode-control span {
-        justify-content:center;
-        padding-right:64px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #classic-mode-control span::before {
-        right:10px;
-        width:46px;
-        height:24px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #classic-mode-control span::after {
-        right:32px;
-        width:20px;
-        height:20px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #classic-mode-control input:checked + span::after {
-        right:12px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #stat-allocation {
-        width:100% !important;
-        box-sizing:border-box;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control {
-        width:41.5% !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-str,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-dex,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-con {
-        left:7.0% !important;
-        grid-template-columns:2.55em 1.45em 1.38em 1.38em !important;
-        justify-content:end;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-wis,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-cha,
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-control.stat-int {
-        right:7.0% !important;
-        grid-template-columns:1.38em 1.38em 1.45em 2.55em !important;
-        justify-content:start;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-value {
-        font-size:15px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 .creation-stat-btn {
-        width:21px !important;
-        height:21px !important;
-    }
-
-    body.m-mobile #afk-confirm-modal.open {
-        position:fixed !important;
-        inset:0 !important;
-        display:flex !important;
-        align-items:center !important;
-        justify-content:center !important;
-        padding:18px !important;
-        transform:none !important;
-    }
-
-    body.m-mobile #afk-confirm-card {
-        position:relative !important;
-        width:min(440px,88vw) !important;
-        max-height:78dvh !important;
-        overflow:auto !important;
-        transform:none !important;
-    }
-}
-
 /* ===== 開始遊戲角色選擇畫面 ===== */
 #load-select-panel:not(.hidden) {
     position:fixed;
@@ -3327,8 +2105,119 @@ body.m-mobile #load-art-stage .load-slot-card img {
         gap: 10px;
     }
     #load-action-panel button { width: 100%; height: 48px; font-size: 14px; }
+    #load-btn-enter,
+    #load-btn-delete { grid-column: 1 / -1; }
     #load-btn-back { grid-column: 1 / -1; }
 
+    /* Character creation: a scrollable portrait composition with no overlapping controls. */
+    #creation-panel:not(.hidden) {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform: none;
+        width: 100%;
+        height: 1120px;
+        min-height: 1120px;
+        max-height: none;
+        aspect-ratio: auto;
+        flex: 0 0 auto;
+        overflow: hidden;
+        background: #090807;
+    }
+    #creation-bg-image { object-fit: cover; object-position: 62% top; opacity: .48; }
+    #creation-class-desc-frame {
+        left: 12px;
+        top: 14px;
+        width: calc(100% - 24px);
+        height: 252px;
+        padding: 18px 20px;
+        box-sizing: border-box;
+        border: 1px solid rgba(163, 124, 60, .68);
+        background: rgba(20, 15, 10, .79);
+    }
+    #creation-class-title { margin-bottom: 10px; font-size: 24px; }
+    #class-desc { overflow-y: auto; padding-right: 5px; font-size: 15px; line-height: 1.62; }
+    #creation-avatar-stage { left: 24%; top: 278px; width: 52%; height: 290px; }
+    #creation-class-list {
+        left: 12px;
+        top: 578px;
+        width: calc(100% - 24px);
+        height: 140px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(2, 64px);
+        gap: 10px 6px;
+        pointer-events: auto;
+    }
+    .creation-class-btn,
+    .creation-class-btn.class-left,
+    .creation-class-btn.class-right,
+    .creation-class-btn.class-pos-1,
+    .creation-class-btn.class-pos-2,
+    .creation-class-btn.class-pos-3,
+    .creation-class-btn.class-pos-4 {
+        position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
+        width: 64px;
+        height: 64px;
+        justify-self: center;
+    }
+    #creation-gender-panel {
+        left: 50%;
+        top: 736px;
+        width: 210px;
+        height: 58px;
+        padding: 0;
+        transform: translateX(-50%);
+    }
+    .creation-gender-btn { width: 52px; height: 52px; font-size: 36px; }
+    #creation-pts { left: 46%; top: 808px; width: 8%; height: 36px; font-size: 16px; }
+    .creation-stat-control {
+        grid-template-columns: 30px 28px 28px;
+        gap: 7px;
+        width: 100px;
+        height: 34px;
+    }
+    .creation-stat-control::before { right: calc(100% + 6px) !important; left: auto !important; font-size: 15px; text-align: right !important; }
+    .creation-stat-control.stat-str,
+    .creation-stat-control.stat-dex,
+    .creation-stat-control.stat-con { left: 30%; }
+    .creation-stat-control.stat-wis,
+    .creation-stat-control.stat-cha,
+    .creation-stat-control.stat-int { left: 74%; }
+    .creation-stat-control.stat-str,
+    .creation-stat-control.stat-wis { top: 852px; }
+    .creation-stat-control.stat-dex,
+    .creation-stat-control.stat-cha { top: 900px; }
+    .creation-stat-control.stat-con,
+    .creation-stat-control.stat-int { top: 948px; }
+    .creation-stat-value { min-width: 30px; font-size: 14px; }
+    .creation-stat-btn { width: 28px; height: 28px; font-size: 14px; }
+    #classic-mode-control {
+        left: 16px;
+        top: 1011px;
+        width: 116px;
+        height: 48px;
+        justify-content: flex-start;
+        font-size: 13px;
+    }
+    #classic-mode-control input { width: 18px; height: 18px; }
+    #btn-start.creation-start-button {
+        left: 142px;
+        top: 1008px;
+        width: calc(100% - 158px);
+        height: 48px;
+        font-size: 15px;
+    }
+    #creation-back-button {
+        left: 142px;
+        top: 1064px;
+        width: calc(100% - 158px);
+        height: 42px;
+        font-size: 14px;
+    }
 }
 
 /* ===== Unified floating-window palette ===== */
@@ -3591,6 +2480,41 @@ body.m-mobile #load-art-stage .load-slot-card img {
     background: #111925fc; border: 3px solid #8b6a2f; border-radius: 13px;
     box-shadow: 0 22px 48px rgba(0,0,0,.85);
 }
+/* 村莊 NPC 浮動視窗表頭：限制左右內容尺寸，長名稱不再把關閉鈕推出框外。 */
+#town-interaction-header {
+    min-width: 0;
+    gap: 12px;
+    padding: 10px 12px !important;
+    margin-bottom: 10px !important;
+}
+#town-interaction-heading {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+    overflow: hidden;
+}
+#interaction-npc-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 20px !important;
+    line-height: 1.25 !important;
+}
+#interaction-npc-title {
+    flex: 0 0 auto;
+    margin: 0 !important;
+    white-space: nowrap;
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+}
+#town-interaction-close {
+    flex: 0 0 auto;
+    min-width: 64px;
+    padding: 6px 12px !important;
+    font-size: 14px !important;
+    line-height: 1.25 !important;
+}
 
 /* ===== Mobile floating-window bounds (desktop remains untouched) ===== */
 @media (max-width: 768px), (max-height: 520px) and (pointer: coarse) {
@@ -3714,164 +2638,5 @@ body.m-mobile #load-art-stage .load-slot-card img {
         max-height: calc(100dvh - 16px) !important;
         box-sizing: border-box !important;
         overflow: auto !important;
-    }
-}
-
-/* Codex mobile polish: creation description scroll + load buttons safe area. */
-@media (max-width: 768px), (pointer: coarse) and (max-width: 900px) {
-    body.m-mobile #creation-panel.creation-layout-v2 #creation-class-desc-frame {
-        min-height: 178px !important;
-        height: 44dvh !important;
-        max-height: 232px !important;
-        padding: 18px 18px 14px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        overflow: hidden !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #creation-class-title {
-        flex: 0 0 auto !important;
-        margin: 0 0 10px !important;
-        line-height: 1.12 !important;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #class-desc {
-        flex: 1 1 auto !important;
-        min-height: 0 !important;
-        height: auto !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding-right: 8px !important;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #class-desc::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    body.m-mobile #creation-panel.creation-layout-v2 #class-desc::-webkit-scrollbar-thumb {
-        border-radius: 999px;
-        background: rgba(214, 170, 70, .72);
-    }
-
-    body.m-mobile #load-select-panel:not(.hidden) {
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        padding: 0 0 max(96px, calc(env(safe-area-inset-bottom) + 72px)) !important;
-        box-sizing: border-box !important;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
-    }
-
-    body.m-mobile #load-select-panel:not(.hidden)::-webkit-scrollbar {
-        width: 7px;
-    }
-
-    body.m-mobile #load-select-panel:not(.hidden)::-webkit-scrollbar-thumb {
-        border-radius: 999px;
-        background: rgba(214, 170, 70, .72);
-    }
-
-    body.m-mobile #load-art-stage {
-        width: min(100vw, 500px) !important;
-        min-width: 0 !important;
-        max-width: 100vw !important;
-        height: auto !important;
-        min-height: 0 !important;
-        aspect-ratio: 500 / 760 !important;
-        margin: 0 auto !important;
-        overflow: hidden !important;
-    }
-
-    body.m-mobile #load-action-panel {
-        top: 80.8% !important;
-        left: 3.5% !important;
-        width: 93% !important;
-        display: grid !important;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-        grid-template-rows: 40px 40px !important;
-        gap: 8px !important;
-        z-index: 12 !important;
-    }
-
-    body.m-mobile #load-btn-enter {
-        grid-column: 1 / -1 !important;
-    }
-
-    body.m-mobile #load-action-panel button {
-        min-height: 40px !important;
-        height: 40px !important;
-        font-size: 13px !important;
-    }
-}
-
-/* Codex mobile load screen: force a real draggable vertical scrollbar. */
-@media (max-width: 768px), (pointer: coarse) and (max-width: 900px) {
-    #load-select-panel:not(.hidden) {
-        align-items: flex-start !important;
-        justify-content: flex-start !important;
-        width: 100vw !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
-        overflow-x: hidden !important;
-        overflow-y: scroll !important;
-        overscroll-behavior: contain !important;
-        -webkit-overflow-scrolling: touch;
-        touch-action: pan-y !important;
-        padding: 0 0 max(180px, calc(env(safe-area-inset-bottom) + 150px)) !important;
-        box-sizing: border-box !important;
-        scrollbar-width: thin;
-    }
-
-    #load-select-panel:not(.hidden)::-webkit-scrollbar {
-        width: 8px;
-    }
-
-    #load-select-panel:not(.hidden)::-webkit-scrollbar-track {
-        background: rgba(0, 0, 0, .35);
-    }
-
-    #load-select-panel:not(.hidden)::-webkit-scrollbar-thumb {
-        border-radius: 999px;
-        background: rgba(214, 170, 70, .82);
-        border: 1px solid rgba(255, 224, 128, .35);
-    }
-
-    #load-art-stage {
-        flex: 0 0 auto !important;
-        width: min(100vw, 500px) !important;
-        max-width: 100vw !important;
-        height: max(720px, calc(100dvh + 20px)) !important;
-        min-height: 720px !important;
-        max-height: none !important;
-        aspect-ratio: auto !important;
-        margin: 0 auto !important;
-        overflow: visible !important;
-    }
-
-    #load-action-panel {
-        top: 82.6% !important;
-        left: 3.5% !important;
-        width: 93% !important;
-        display: grid !important;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-        grid-template-rows: 40px 40px !important;
-        gap: 8px !important;
-        z-index: 12 !important;
-    }
-
-    #load-btn-enter {
-        grid-column: 1 / -1 !important;
-    }
-
-    #load-action-panel button {
-        min-height: 40px !important;
-        height: 40px !important;
-        font-size: 13px !important;
     }
 }

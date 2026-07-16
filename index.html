@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -31,7 +31,7 @@
     <title>放置天堂 - 吉爾塔斯降臨</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=8f39661a24">
+    <link rel="stylesheet" href="css/style.css?v=b4764c954c">
     <link rel="stylesheet" href="css/floating-ui.css?v=4f1d5ac98e">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -96,27 +96,27 @@
                 <div class="load-info-row int"><span>Intelligence</span><strong id="load-info-int"></strong></div>
             </section>
             <div id="load-action-panel">
-                <button onclick="loadEnterSelected()" id="load-btn-enter" type="button">進入遊戲</button>
                 <button onclick="loadCreateSelected()" id="load-btn-create" type="button">創新角色</button>
                 <button onclick="loadImportSelected()" id="load-btn-import" type="button">匯入進度</button>
-                <button onclick="loadRestoreSelected()" id="load-btn-restore" type="button" class="hidden">還原備份</button>
+                <button onclick="loadEnterSelected()" id="load-btn-enter" type="button" class="hidden">進入遊戲</button>
+                <button onclick="loadDeleteSelected()" id="load-btn-delete" type="button" class="hidden" style="color:#e7a09a;border-color:rgba(151,61,52,.82);">刪除角色</button>
                 <button onclick="loadBackToMenu()" id="load-btn-back" type="button">返回</button>
             </div>
           </div>
         </div>
 
-                <div id="creation-panel" class="hidden creation-layout-v2" aria-label="創建角色">
+                <div id="creation-panel" class="hidden" aria-label="創建角色">
             <img id="creation-bg-image" src="public/assets/login/824.png" alt="創角背景" draggable="false">
 
-            <section id="creation-class-desc-frame" class="creation-zone creation-zone-desc" aria-live="polite">
+            <section id="creation-class-desc-frame" aria-live="polite">
                 <h2 id="creation-class-title">王子</h2>
                 <div id="class-desc"></div>
             </section>
 
-            <div id="creation-avatar-stage" class="creation-zone creation-zone-preview" aria-hidden="true">
-                <img id="class-preview-img" src="assets/start-transparent/prince/714.png" alt="職業預覽" draggable="false">
+            <div id="creation-avatar-stage" aria-hidden="true">
+                <img id="class-preview-img" src="assets/start/prince/714.png" alt="職業預覽" draggable="false">
             </div>
-            <nav id="creation-class-list" class="creation-zone creation-zone-class" aria-label="職業選擇">
+            <nav id="creation-class-list" aria-label="職業選擇">
                 <button onclick="selectClassBase('royal')" id="btn-class-base-royal" class="creation-class-btn class-left class-pos-1" type="button" title="王族"><img src="assets/logo/王族logo.png" alt="王族"></button>
                 <button onclick="selectClassBase('knight')" id="btn-class-base-knight" class="creation-class-btn class-left class-pos-2" type="button" title="騎士"><img src="assets/logo/騎士logo.png" alt="騎士"></button>
                 <button onclick="selectClassBase('mage')" id="btn-class-base-mage" class="creation-class-btn class-left class-pos-3" type="button" title="法師"><img src="assets/logo/法師logo.png" alt="法師"></button>
@@ -127,11 +127,11 @@
                 <button onclick="selectClassBase('warrior')" id="btn-class-base-warrior" class="creation-class-btn class-right class-pos-4" type="button" title="戰士"><img src="assets/logo/戰士logo.png" alt="戰士"></button>
             </nav>
 
-            <div id="creation-gender-panel" class="creation-zone creation-zone-gender" aria-label="性別選擇">
+            <div id="creation-gender-panel" aria-label="性別選擇">
                 <button onclick="selectGender('m')" id="btn-gender-m" class="creation-gender-btn" type="button" title="男性">♂</button>
                 <button onclick="selectGender('f')" id="btn-gender-f" class="creation-gender-btn" type="button" title="女性">♀</button>
             </div>
-<div id="stat-allocation" class="creation-zone creation-zone-stats" aria-label="能力配點">
+<div id="stat-allocation" aria-label="能力配點">
                 <div id="creation-pts">0</div>
                 <div class="creation-stat-control stat-str"><span id="c-str" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('str', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('str', 1)">+</button></div>
                 <div class="creation-stat-control stat-dex"><span id="c-dex" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('dex', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('dex', 1)">+</button></div>
@@ -141,14 +141,12 @@
                 <div class="creation-stat-control stat-int"><span id="c-int" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('int', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('int', 1)">+</button></div>
             </div>
 
-            <label id="classic-mode-control" class="creation-zone creation-zone-classic" title="開啟後此角色永久套用經典規則，無法事後關閉">
+            <label id="classic-mode-control" title="開啟後此角色永久套用經典規則，無法事後關閉">
                 <input type="checkbox" id="create-classic-toggle" onchange="onToggleClassic(this)">
                 <span>經典模式</span>
             </label>
-            <div id="creation-action-panel" class="creation-zone creation-zone-actions">
-                <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始遊戲</button>
-                <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
-            </div>
+            <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
+            <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始遊戲</button>
         </div>
     </div>
 
@@ -265,12 +263,12 @@
                         </div>
 
                     <div id="town-interaction-container" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-4 flex-1 mt-2 hidden flex-col min-h-0">
-                        <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3 shrink-0">
-                            <div class="flex items-end gap-3">
-                                <h3 class="text-2xl font-bold text-yellow-400" id="interaction-npc-name">NPC名稱</h3>
-                                <span class="text-slate-400 text-sm mb-1" id="interaction-npc-title">[職業]</span>
+                        <div id="town-interaction-header" class="flex justify-between items-center mb-4 border-b border-slate-700 pb-3 shrink-0">
+                            <div id="town-interaction-heading" class="flex items-center">
+                                <h3 class="font-bold text-yellow-400" id="interaction-npc-name">NPC名稱</h3>
+                                <span class="text-slate-400" id="interaction-npc-title">[職業]</span>
                             </div>
-                            <button class="btn px-4 py-2 bg-slate-700 hover:bg-slate-600 text-base font-bold" onclick="closeNpcInteraction()">返回村莊</button>
+                            <button id="town-interaction-close" class="btn bg-slate-700 hover:bg-slate-600 font-bold" onclick="closeNpcInteraction()">關閉</button>
                         </div>
                         <div id="interaction-content" class="flex-1 overflow-y-auto pe-2">
                             </div>
@@ -365,7 +363,7 @@
                         <div class="text-slate-200">攻擊速度</div> <div class="text-white text-right font-bold" id="dt-spd">1.0s</div>
                     </div>
                     <div class="border-t border-slate-700 pt-4 text-base leading-relaxed" id="dt-buffs"></div>
-                    
+
                     <!-- 升級點數／回憶蠟燭配點：點數與「確認/取消」工具列（+/- 按鈕已併入上方六大屬性列） -->
                     <div id="alloc-edit-bar" class="hidden mt-auto border-t border-slate-700 pt-4 bg-slate-800 -mx-5 -mb-5 p-5 rounded-b-xl flex items-center justify-between gap-3 flex-wrap">
                         <div class="flex flex-col">
@@ -432,7 +430,7 @@
                         <label id="ui-elfcookie-row" class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-elfcookie" class="w-4 h-4"> <span class="text-yellow-200">精靈餅乾</span></label>
                         <label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-poly" class="w-4 h-4"> <span class="text-gray-300">變形卷軸</span></label>
                         <label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-magicbarrier" class="w-4 h-4"> <span class="text-cyan-300">魔法屏障卷軸</span></label>
-                        <label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-teleport" class="w-4 h-4"> <span class="text-sky-300">瞬移卷軸(遇BOSS)</span></label>
+                        <label class="cursor-pointer flex items-center gap-2"><input type="checkbox" id="set-teleport" class="w-4 h-4"> <span class="text-sky-300">迴避頭目(瞬移卷軸)</span></label>
                         <label class="col-span-2 cursor-pointer flex items-center gap-2 border-t border-slate-700 pt-2 mt-1"><input type="checkbox" id="set-auto-buy-arrow" class="w-4 h-4" checked> <span class="text-orange-300">弓箭耗盡時自動購買 1000 銀箭</span></label>
 						<div id="auto-buff-skills" class="col-span-2 grid grid-cols-2 gap-1 mt-1 border-t border-slate-600 pt-2"></div>
                     </div>
@@ -442,7 +440,7 @@
         </div>
     </div>
 
-    <section id="equipment-window" class="equipment-window hidden" aria-label="角色裝備" aria-hidden="true"><div id="equipment-window-frame" class="equipment-window-frame"><img class="equipment-window-bg" src="assets/equipment-window-bg.png" alt="" draggable="false"><div id="equipment-window-drag" class="equipment-window-drag"></div><button id="equipment-window-close" class="equipment-window-close" type="button" aria-label="關閉裝備視窗"></button><button id="equipment-window-next" class="equipment-window-arrow equipment-window-next" type="button" aria-label="下一頁"></button><button id="equipment-window-prev" class="equipment-window-arrow equipment-window-prev" type="button" aria-label="上一頁"></button><div id="equipment-window-weight" class="equipment-window-weight" aria-live="polite">負重 0 %</div><div id="equipment-window-stats" class="equipment-window-stats"></div><div id="equipment-window-slots" class="equipment-window-slots"></div><div id="equipment-morph-snapshot" class="equipment-morph-snapshot hidden" aria-live="polite"><div id="equipment-morph-name" class="equipment-morph-name"></div><img id="equipment-morph-image" class="equipment-morph-image" alt="" draggable="false"><div id="equipment-morph-bonus" class="equipment-morph-bonus"></div></div><aside id="equipment-side-panel" class="equipment-side-panel hidden"><header class="equipment-side-header"><div><strong id="equipment-side-title">武器</strong><small>單擊查看・雙擊直接裝備</small></div><button id="equipment-side-close" type="button">✕</button></header><div id="equipment-side-list" class="equipment-side-list"></div></aside></div></section>
+    <section id="equipment-window" class="equipment-window hidden" aria-label="角色裝備" aria-hidden="true"><div id="equipment-window-frame" class="equipment-window-frame"><img class="equipment-window-bg" alt="" draggable="false"><div id="equipment-window-drag" class="equipment-window-drag"></div><button id="equipment-window-close" class="equipment-window-close" type="button" aria-label="關閉裝備視窗"></button><button id="equipment-window-next" class="equipment-window-arrow equipment-window-next" type="button" aria-label="下一頁"></button><button id="equipment-window-prev" class="equipment-window-arrow equipment-window-prev" type="button" aria-label="上一頁"></button><div id="equipment-window-weight" class="equipment-window-weight" aria-live="polite">負重 0 %</div><div id="equipment-window-stats" class="equipment-window-stats"></div><div id="equipment-window-slots" class="equipment-window-slots"></div><div id="equipment-morph-snapshot" class="equipment-morph-snapshot hidden" aria-live="polite"><div id="equipment-morph-name" class="equipment-morph-name"></div><img id="equipment-morph-image" class="equipment-morph-image" alt="" draggable="false"><div id="equipment-morph-bonus" class="equipment-morph-bonus"></div></div><aside id="equipment-side-panel" class="equipment-side-panel hidden"><header class="equipment-side-header"><div><strong id="equipment-side-title">武器</strong><small>單擊查看・雙擊直接裝備</small></div><button id="equipment-side-close" type="button">✕</button></header><div id="equipment-side-list" class="equipment-side-list"></div></aside></div></section>
     <section id="warehouse-window" class="warehouse-window hidden" aria-label="共用倉庫" aria-hidden="true"><div id="warehouse-window-frame" class="warehouse-window-frame"><header id="warehouse-window-drag" class="warehouse-window-header"><div><h2>共用倉庫</h2><span>背包與倉庫之間存入／取出物品</span></div><button id="warehouse-window-close" type="button">Close</button></header><div id="warehouse-window-content" class="warehouse-window-content"></div></div></section>
 
     <!-- 物品操作 Modal -->
@@ -537,30 +535,31 @@
     })();
     </script>
 
-    <script src="js/00-data.js?v=a78cf51819"></script>
-<script src="js/01-drops-config.js?v=daba84e106"></script>
-<script src="js/02-stats-recompute.js?v=6432e235f8"></script>
-    <script src="js/03-combat-core.js?v=2d209bf287"></script>
-    <script src="js/04-combat-attack.js?v=9b34e4c595"></script>
-<script src="js/05-kill-progression.js?v=a54e6a0dab"></script>
-    <script src="js/06-status-allies.js?v=a8e2b6e225"></script>
-    <script src="js/07-skills-cast.js?v=ef696cc81e"></script>
-<script src="js/08-items-equip.js?v=57d9516a0d"></script>
-<script src="js/09-vfx-render.js?v=0e6ce9d6fb"></script>
-<script src="js/10-ui-tabs.js?v=810e33a7b9"></script>
-<script src="js/11-world-map.js?v=1febd2c5fc"></script>
-<script src="js/12-npc-quests.js?v=18baddba1a"></script>
-<script src="js/13-shop-save.js?v=ef1a67474b"></script>
-<script src="js/14-craft-pandora.js?v=849c5d1bdf"></script>
+    <script src="js/anim-manifest.js?v=d047a221c0"></script>
+    <script src="js/00-data.js?v=aed2e7afa7"></script>
+<script src="js/01-drops-config.js?v=de9d726776"></script>
+<script src="js/02-stats-recompute.js?v=84aea57811"></script>
+    <script src="js/03-combat-core.js?v=9061f3a92e"></script>
+    <script src="js/04-combat-attack.js?v=bdadb06608"></script>
+<script src="js/05-kill-progression.js?v=f3c4401d12"></script>
+    <script src="js/06-status-allies.js?v=96f2b8f30d"></script>
+    <script src="js/07-skills-cast.js?v=5fdd06ba71"></script>
+<script src="js/08-items-equip.js?v=b7f19e61f1"></script>
+<script src="js/09-vfx-render.js?v=d951514974"></script>
+<script src="js/10-ui-tabs.js?v=b341c44919"></script>
+<script src="js/11-world-map.js?v=1600f9bfbd"></script>
+<script src="js/12-npc-quests.js?v=311918837e"></script>
+<script src="js/13-shop-save.js?v=2217a57b50"></script>
+<script src="js/14-craft-pandora.js?v=97958810b2"></script>
 <script src="js/15-cards.js?v=20cf88749b"></script>
 <script src="js/16-equip-book.js?v=45290f2d29"></script>
 <script src="js/18-misc-book.js?v=cc8f8f7ce4"></script>
-<script src="js/17-audio.js?v=afbbb3d33c"></script>
-<script src="js/19-equipment-window.js?v=8f9dd83f4e"></script>
+<script src="js/17-audio.js?v=d80fa88ad6"></script>
+<script src="js/19-equipment-window.js?v=d809031cd2"></script>
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
-    <script src="js/23-summons.js?v=3af548bd15"></script>
-    <script src="js/22-pets.js?v=0a9fd63a6b"></script>
+    <script src="js/23-summons.js?v=cfd0f6ed28"></script>
+    <script src="js/22-pets.js?v=8c2435138f"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -578,7 +577,7 @@
 <!-- 怪物/掉落查詢外掛(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-dex.js?v=20260717a"></script>
 <!-- 小百科外掛(專精/武器特性/職業魔法;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-wiki.js?v=20260717a"></script>
+<script src="afk-wiki.js?v=20260717b"></script>
 <!-- 共用倉庫視覺註記:可學技能書顯示「可學」、角色不可使用的裝備/技能書顯示淡紅色外框，背包／倉庫兩側都標(純視覺;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-warehouse-skill.js?v=20260714c"></script>
 <!-- 自動販賣「個別例外」bug修復:永遠保留/永遠販賣後搜尋字/分類/捲動位置不再被重置(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -630,7 +629,7 @@
 <!-- 席琳神殿菈克希絲遺骸拆分面板:換裝後即時刷新(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-lachesis-refresh.js?v=20260712a"></script>
 <!-- 爆擊特效仿天堂W:被動監看飄傷害數字,爆擊時追加衝擊環/全螢幕閃光/戰場震動(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-crit-fx.js?v=20260713a"></script>
+<script src="afk-crit-fx.js?v=20260716a"></script>
 <!-- 協力傭兵隊伍面板顯示 buff 圖示(讀 ally.buffs,共用玩家狀態圖示資源;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-ally-buffs.js?v=20260712a"></script>
 <!-- 萬能藥一次選數量批量服用(物品詳情視窗多加批量鈕,外面迴圈呼叫既有單瓶服用邏輯;可獨立維護,原作者更新後重新加回此行即可) -->
