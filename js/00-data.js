@@ -3347,8 +3347,14 @@ function _origEnforce() {
     var mainMenu = document.getElementById('main-menu');
     var onHome = !!mainMenu && !mainMenu.classList.contains('hidden');
     var existing = document.getElementById('_orig_pbar');
-    if (!onHome) { if (existing) existing.remove(); return; }
-    if (existing) return;
+    // 🏠 加掛版客製(2026-07-17 使用者回報:手機直向橫幅文字換成兩行時會蓋住下方標題):
+    //   橫幅是 position:fixed,不會把下面內容往下推,故手動幫首頁畫面加對應高度的上邊距。
+    if (!onHome) {
+      if (existing) existing.remove();
+      if (mainMenu) mainMenu.style.paddingTop = '';
+      return;
+    }
+    if (existing) { if (mainMenu) mainMenu.style.paddingTop = existing.offsetHeight + 'px'; return; }
     var url = 'https://shines871.github.io/idle-lineage-class/';
     var bar = document.createElement('div');
     bar.id = '_orig_pbar';
@@ -3368,6 +3374,7 @@ function _origEnforce() {
       + '<a href="' + url + '" style="color:#7fd9c4;font-weight:bold;text-decoration:underline">'
       + 'shines871.github.io/idle-lineage-class</a>';
     document.body.appendChild(bar);
+    if (mainMenu) mainMenu.style.paddingTop = bar.offsetHeight + 'px';
   } catch (_) {}
 }
 

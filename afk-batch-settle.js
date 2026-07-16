@@ -355,15 +355,14 @@
         '<div class="m-bs-toast">⚠️ 別忘了到「雲端同步」面板按一次「立即上傳」，否則其他裝置可能還會看到舊的結果。</div>';
 
       _running = false;
-      // 收尾:有活著的原角色→換回去,並開放手動關閉
+      // 收尾:有活著的原角色→換回去;不論哪種情況都停在原畫面、開放使用者自己按 ✕ 關閉,不自動跳轉/整頁重整
       if (originLive) {
-        allowClose();
         currentSlot = originSlot; try { loadGame(); } catch (e) {}
       } else {
-        // 從首頁/選存檔位觸發(批次前沒有登入任何角色):不開放手動關閉、不等使用者點 ✕,
-        // 顯示完成摘要片刻後直接自動整頁重新整理回乾淨首頁,全程不曝光任何角色的即時畫面。
-        setTimeout(function () { location.reload(); }, 1500);
+        // 從首頁/選存檔位觸發(批次前沒有登入任何角色):把 currentSlot 還原成觸發前的值,避免殘留在最後一次迴圈的存檔位
+        currentSlot = originSlot;
       }
+      allowClose();
     }
 
     function buildModal() {
