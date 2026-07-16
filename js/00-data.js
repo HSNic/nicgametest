@@ -3342,17 +3342,19 @@ function _origEnforce() {
   try {
     if (_origAuthorizedHost()) return;
     if (!document.body) return;
-    // 🏠 加掛版客製(2026-07-16 使用者明訂):橫幅只在首頁(角色選擇畫面)顯示,進入遊戲後自動隱藏——
-    //   #creation-screen 帶 .hidden 就代表已進入遊戲,這時把橫幅拿掉;回到首頁(#creation-screen 沒有 .hidden)才重新掛回。
-    var home = document.getElementById('creation-screen');
-    var onHome = !!home && !home.classList.contains('hidden');
+    // 🏠 加掛版客製(2026-07-16/17 使用者明訂):橫幅只在「首頁」(#main-menu:開始遊戲/設定那個最初畫面)顯示,
+    //   選角(#load-select-panel)、創角(#slot-select-panel 等)、進入遊戲後都要自動隱藏——不是整個 #creation-screen 都算首頁。
+    var mainMenu = document.getElementById('main-menu');
+    var onHome = !!mainMenu && !mainMenu.classList.contains('hidden');
     var existing = document.getElementById('_orig_pbar');
     if (!onHome) { if (existing) existing.remove(); return; }
     if (existing) return;
     var url = 'https://shines871.github.io/idle-lineage-class/';
     var bar = document.createElement('div');
     bar.id = '_orig_pbar';
-    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;'
+    // ⚠️ z-index 故意壓在 1000 以下(小百科/掉落查詢彈窗用 z-index:1000~1002):
+    //   之前用 2147483647(最大值)會蓋住這兩個彈窗的上緣、擋住點擊,踩過(2026-07-17 使用者回報)。
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:500;'
       + 'background:linear-gradient(90deg,#241f38,#3a2f5c,#241f38);color:#eee9f7;'
       + 'font:bold 15px/1.5 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
       + 'padding:11px 16px;text-align:center;letter-spacing:.3px;'
@@ -3373,3 +3375,7 @@ try {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _origEnforce);
   else _origEnforce();
 } catch (_) {}
+// 🏠 加掛版客製(2026-07-17):原作者只在 gameLoop(戰鬥中)重掛,但選角/創角畫面切換時遊戲還沒開始跑、
+//   gameLoop 不會執行,單靠那個掛點抓不到「首頁→選角畫面」這種切換,橫幅會卡在畫面上一直不消失。
+//   改用低成本的輪詢(每 600ms)確保各畫面切換都能即時反映首頁顯示/隱藏狀態。
+try { setInterval(_origEnforce, 600); } catch (_) {}
