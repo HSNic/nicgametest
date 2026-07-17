@@ -3347,34 +3347,45 @@ function _origEnforce() {
     var mainMenu = document.getElementById('main-menu');
     var onHome = !!mainMenu && !mainMenu.classList.contains('hidden');
     var existing = document.getElementById('_orig_pbar');
-    // 🏠 加掛版客製(2026-07-17 使用者回報:手機直向橫幅文字換成兩行時會蓋住下方標題):
-    //   橫幅是 position:fixed,不會把下面內容往下推,故手動幫首頁畫面加對應高度的上邊距。
+    var stage = document.getElementById('login-art-stage');
+    var titleLayer = document.getElementById('login-title-layer');
     if (!onHome) {
       if (existing) existing.remove();
-      if (mainMenu) mainMenu.style.paddingTop = '';
+      if (titleLayer) titleLayer.style.top = '';   // 還原標題層位置(離開首頁時)
       return;
     }
-    if (existing) { if (mainMenu) mainMenu.style.paddingTop = existing.offsetHeight + 'px'; return; }
+    if (existing) return;
+    if (!stage) return;   // 找不到藝術舞台容器就不硬掛回 body,避免又變回覆蓋式
     var url = 'https://shines871.github.io/idle-lineage-class/';
     var bar = document.createElement('div');
     bar.id = '_orig_pbar';
-    // ⚠️ z-index 故意壓在 1000 以下(小百科/掉落查詢彈窗用 z-index:1000~1002):
-    //   之前用 2147483647(最大值)會蓋住這兩個彈窗的上緣、擋住點擊,踩過(2026-07-17 使用者回報)。
-    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:500;'
-      + 'background:linear-gradient(90deg,#241f38,#3a2f5c,#241f38);color:#eee9f7;'
-      + 'font:bold 15px/1.5 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
-      + 'padding:11px 16px;text-align:center;letter-spacing:.3px;'
-      + 'box-shadow:0 2px 14px rgba(0,0,0,.45);border-bottom:2px solid #7fd9c4;';
+    // 🎨(2026-07-17 使用者明訂)改成「跟背景圖同一層、置頂位置」:掛在 #login-art-stage 內部、
+    //   position:relative(不再是 position:fixed 蓋住整個瀏覽器視窗),寬度跟著 4:3 舞台走,不再橫跨全螢幕。
+    //   z-index 跟標題層同層級(3),比 main-menu(4)低,不會蓋到按鈕。
+    //   ⚠️ 用 relative(佔真實版面空間)而非 absolute:手機版(afk-mobile.js)把 #login-art-stage 改成
+    //   flex 直排、標題/選單改 position:relative 參與排版(!important,JS 改不動)——橫幅要用同一種
+    //   「佔位」方式插在最前面,手機才會自然把下面內容擠下去,不用另外量高度去推(見下方桌機分支)。
+    bar.style.cssText = 'position:relative;z-index:3;'
+      + 'background:linear-gradient(90deg,rgba(36,31,56,.88),rgba(58,47,92,.88),rgba(36,31,56,.88));color:#eee9f7;'
+      + 'font:bold 13px/1.4 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
+      + 'padding:6px 10px;text-align:center;letter-spacing:.2px;'
+      + 'box-shadow:0 2px 10px rgba(0,0,0,.4);border-bottom:1px solid #7fd9c4;';
     // ⚠️中性措辭·勿加「盜版/未授權/廣告/惡意」等指控（授權允許非商業轉載→指控合法轉載者有毀謗風險）
-    // 🎨 加掛版客製文字/配色(2026-07-16 使用者明訂):與原作者原文「非官方轉載版本，內容可能不是最新」不同,
-    //    改成「加掛外掛的非官方版本（不定期跟進原作者更新）」較準確；配色故意跟其他轉載版本區隔(灰紫+青綠,非原作的深藍+金黃)。
+    // 🎨 加掛版客製文字/配色(2026-07-17 使用者明訂):標明原作者(秋玥)與加掛版維護者(Chaos),
+    //    請支持原作、勿販售;配色故意跟其他轉載版本區隔(灰紫+青綠,非原作的深藍+金黃)。
     //    ⚠️ 這段是直接改本體(非外掛疊加),下次同步覆蓋本體時這段客製文字/配色會被原作者版本洗掉,要記得重新套用。
-    bar.innerHTML = 'ℹ️ 這是<span style="color:#7fd9c4">加掛外掛的非官方版本</span>（不定期跟進原作者更新）。'
-      + '前往<span style="color:#7fd9c4">官方最新版</span>：'
-      + '<a href="' + url + '" style="color:#7fd9c4;font-weight:bold;text-decoration:underline">'
-      + 'shines871.github.io/idle-lineage-class</a>';
-    document.body.appendChild(bar);
-    if (mainMenu) mainMenu.style.paddingTop = bar.offsetHeight + 'px';
+    bar.innerHTML = 'ℹ️ 本版本為非官方加掛版本，原作：秋玥；加掛版：Chaos。僅供個人交流使用，'
+      + '請支持原作者，勿販售本作品或其衍生版本。 '
+      + '<a href="' + url + '" style="color:#7fd9c4;font-weight:bold;text-decoration:underline">前往原作者最新版</a>';
+    stage.insertBefore(bar, stage.firstChild);   // 插最前面:手機 flex 直排會自然把標題/選單擠下去
+    // 🔧(2026-07-17 使用者回報)橫幅文字變長,手機直向常會換成兩行、蓋住下方標題:
+    //   桌機的標題層仍是 position:absolute(top:14%,不參與版面排擠),要另外用量出來的橫幅高度
+    //   手動往下推;手機已經靠上面的 flex 排版自然擠開,不需要、也推不動(afk-mobile.js 用
+    //   !important 把 top 鎖死 auto)。用 computed position 分辨走哪條路。
+    if (titleLayer && getComputedStyle(titleLayer).position === 'absolute') {
+      var baseTop = parseFloat(getComputedStyle(titleLayer).top) || 0;
+      titleLayer.style.top = (baseTop + bar.offsetHeight) + 'px';
+    }
   } catch (_) {}
 }
 

@@ -91,6 +91,7 @@ const PLUGINS = [
   { file: 'afk-char-switch.js', comment: '「協力傭兵隊伍」面板加「存檔並切換至此角色」(monkey-patch renderSquadPanel,重用既有選存檔位讀取路徑;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-asset-manager.js', comment: '首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-batch-settle.js', comment: '首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可' },
+  { file: 'afk-whatsnew.js', comment: '首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-uilayout.js', comment: '版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-player-ring.js', comment: '玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-skin.js', comment: '首頁「加掛版」品牌標記 + 外掛區外框(純視覺;需排在其他 afk-* 之後;可獨立維護,原作者更新後重新加回此行即可)' },

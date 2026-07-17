@@ -293,7 +293,7 @@
       try { if (orig.vfxNum !== !window.__vfxNumOff && typeof toggleVfxNumPref === 'function') toggleVfxNumPref(); } catch (e) {}
     }
 
-    var _layer = null, _running = false;
+    var _layer = null, _running = false, _originLive = false;
     function openOverlay() {
       var m = document.getElementById('m-bs-modal'); if (!m) return;
       document.getElementById('m-bs-foot').innerHTML = '';
@@ -305,13 +305,22 @@
       document.getElementById('m-bs-close').style.display = '';
       _layer = window.AFK_UI ? AFK_UI.openLayer(hideModal) : null;
     }
-    function hideModal() { var m = document.getElementById('m-bs-modal'); if (m) m.classList.remove('open'); _layer = null; }
+    function hideModal() {
+      var m = document.getElementById('m-bs-modal'); if (m) m.classList.remove('open'); _layer = null;
+      // 🔧 批次結算若是從首頁/選存檔位觸發(_originLive=false):迴圈逐格 loadGame() 跑到最後一格時,
+      //   畫面會停在「最後一個存檔位」的遊戲主畫面(#game-screen 顯示、#creation-screen 仍 .hidden),
+      //   而 #main-menu 本身從沒被加回 .hidden,導致首頁公告橫幅的顯示判斷誤判成「在首頁」而冒出來
+      //   (踩過 2026-07-17)。比照既有「登出回首頁」的做法整頁重新整理回乾淨首頁,不用 DOM patch
+      //   (只切 class 沒清掉 tick/計時器等狀態,不夠乾淨)。
+      if (!_originLive) { try { location.reload(); } catch (e) {} }
+    }
     function closeModal() { if (!_running) { if (_layer && window.AFK_UI) AFK_UI.closeLayer(_layer); else hideModal(); } }
 
     async function start() {
       if (_running) return;
       _running = true;
       var originLive = !!(player && player.cls);
+      _originLive = originLive;
       var originSlot = currentSlot;
       buildRows();
       openOverlay();

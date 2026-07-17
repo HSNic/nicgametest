@@ -54,14 +54,17 @@
   var CSS = [
     /* 標題下方兩行副標:「(加掛版)」+ 加掛版版本號(A2 移除舊的雲朵 icon、A3 改成純文字兩行,同字體同色) */
     /* 浮在標題區下方、置中、絕對定位(不佔版面、不把按鈕往下推) */
-    '#afk-brand-badge{position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;}',
-    '#afk-brand-badge .afk-brand-line{font-size:14px;font-weight:800;letter-spacing:1.5px;color:#fde68a;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.4);white-space:nowrap;line-height:1.5;}',
+    /* ⚠️(2026-07-17)字級放大後兩行變高,bottom 的負值也要跟著加大,不然會蓋到標題下面那行「創造您的角色並開始冒險」 */
+    '#afk-brand-badge{position:absolute;left:50%;bottom:-58px;transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;}',
+    '#afk-brand-badge .afk-brand-line{font-size:19px;font-weight:800;letter-spacing:1.5px;color:#fde68a;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.4);white-space:nowrap;line-height:1.6;}',
+    /* 🎨(2026-07-17 使用者明訂)版本號那行跟「(加掛版)」字樣分開上色,不要同色混在一起難分辨 */
+    '#afk-brand-badge .afk-brand-ver{color:#7fd9c4;}',
     /* 桌機:作者藝術舞台的標題層(#login-title-layer,text-center)是獨立圖層,原本 absolute
        bottom:-34px 會讓副標懸空、脫離標題看起來很怪 → 改成正常流、置中排在標題下方,像標題的一部分。
        (手機維持 absolute;現況良好、勿動) */
     'body:not(.m-mobile) #afk-brand-badge{position:static;left:auto;bottom:auto;transform:none;display:block;margin:6px auto 0;text-align:center;}',
-    /* 手機(body.m-mobile;此版用 viewport=1180 縮放,純寬度 media query 失效,故靠 m-mobile class)：字略縮一點 */
-    'body.m-mobile #afk-brand-badge .afk-brand-line{font-size:12px;letter-spacing:1px;}',
+    /* 手機(body.m-mobile;此版用 viewport=1180 縮放,純寬度 media query 失效,故靠 m-mobile class)：字級比桌機略縮,但仍比原本放大 */
+    'body.m-mobile #afk-brand-badge .afk-brand-line{font-size:16px;letter-spacing:1px;}',
 
     /* 外掛區外框:2026-07-11 依使用者提供的 V17 參考稿改成「金色 fieldset + 2x2 方格」風格,
        呼應首頁登入畫面的黑金改版——桌機/手機共用同一套,不分裝置 */
