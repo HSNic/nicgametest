@@ -3396,21 +3396,51 @@ function _origAuthorizedHost() {
 function _origEnforce() {
   try {
     if (_origAuthorizedHost()) return;
-    if (!document.body || document.getElementById('_orig_pbar')) return;
+    if (!document.body) return;
+    // 🏠 加掛版客製(2026-07-16/17 使用者明訂):橫幅只在「首頁」(#main-menu:開始遊戲/設定那個最初畫面)顯示,
+    //   選角(#load-select-panel)、創角(#slot-select-panel 等)、進入遊戲後都要自動隱藏——不是整個 #creation-screen 都算首頁。
+    var mainMenu = document.getElementById('main-menu');
+    var onHome = !!mainMenu && !mainMenu.classList.contains('hidden');
+    var existing = document.getElementById('_orig_pbar');
+    var stage = document.getElementById('login-art-stage');
+    var titleLayer = document.getElementById('login-title-layer');
+    if (!onHome) {
+      if (existing) existing.remove();
+      if (titleLayer) titleLayer.style.top = '';   // 還原標題層位置(離開首頁時)
+      return;
+    }
+    if (existing) return;
+    if (!stage) return;   // 找不到藝術舞台容器就不硬掛回 body,避免又變回覆蓋式
     var url = 'https://shines871.github.io/idle-lineage-class/';
     var bar = document.createElement('div');
     bar.id = '_orig_pbar';
-    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;'
-      + 'background:linear-gradient(90deg,#0d1f3a,#17408a,#0d1f3a);color:#eef4ff;'
-      + 'font:bold 15px/1.5 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
-      + 'padding:11px 16px;text-align:center;letter-spacing:.3px;'
-      + 'box-shadow:0 2px 14px rgba(0,0,0,.45);border-bottom:2px solid #ffcf5a;';
+    // 🎨(2026-07-17 使用者明訂)改成「跟背景圖同一層、置頂位置」:掛在 #login-art-stage 內部、
+    //   position:relative(不再是 position:fixed 蓋住整個瀏覽器視窗),寬度跟著 4:3 舞台走,不再橫跨全螢幕。
+    //   z-index 跟標題層同層級(3),比 main-menu(4)低,不會蓋到按鈕。
+    //   ⚠️ 用 relative(佔真實版面空間)而非 absolute:手機版(afk-mobile.js)把 #login-art-stage 改成
+    //   flex 直排、標題/選單改 position:relative 參與排版(!important,JS 改不動)——橫幅要用同一種
+    //   「佔位」方式插在最前面,手機才會自然把下面內容擠下去,不用另外量高度去推(見下方桌機分支)。
+    bar.style.cssText = 'position:relative;z-index:3;'
+      + 'background:linear-gradient(90deg,rgba(36,31,56,.88),rgba(58,47,92,.88),rgba(36,31,56,.88));color:#eee9f7;'
+      + 'font:bold 13px/1.4 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
+      + 'padding:6px 10px;text-align:center;letter-spacing:.2px;'
+      + 'box-shadow:0 2px 10px rgba(0,0,0,.4);border-bottom:1px solid #7fd9c4;';
     // ⚠️中性措辭·勿加「盜版/未授權/廣告/惡意」等指控（授權允許非商業轉載→指控合法轉載者有毀謗風險）
-    bar.innerHTML = '📢 這是<span style="color:#ffcf5a">非官方轉載版本</span>，內容可能不是最新。'
-      + '本遊戲<span style="color:#ffcf5a">永久免費</span>，前往<span style="color:#ffcf5a">官方最新版</span>：'
-      + '<a href="' + url + '" style="color:#ffcf5a;font-weight:bold;text-decoration:underline">'
-      + 'shines871.github.io/idle-lineage-class</a>';
-    document.body.appendChild(bar);
+    // 🎨 加掛版客製文字/配色(2026-07-17 使用者明訂):標明原作者(秋玥)與加掛版維護者(Chaos),
+    //    請支持原作、勿販售;配色故意跟其他轉載版本區隔(灰紫+青綠,非原作的深藍+金黃)。
+    //    ⚠️ 這段是直接改本體(非外掛疊加),下次同步覆蓋本體時這段客製文字/配色會被原作者版本洗掉,要記得重新套用。
+    bar.innerHTML = 'ℹ️ 本版本為非官方加掛版本，原作：秋玥；加掛版：Chaos。僅供個人交流使用，'
+      + '請支持原作者，勿販售本作品或其衍生版本。 '
+      + '<a href="' + url + '" style="color:#7fd9c4;font-weight:bold;text-decoration:underline">前往原作者最新版</a>';
+    stage.insertBefore(bar, stage.firstChild);   // 插最前面:手機 flex 直排會自然把標題/選單擠下去
+    // 🔧(2026-07-17 使用者回報)橫幅文字變長,手機直向常會換成兩行、蓋住下方標題:
+    //   桌機的標題層仍是 position:absolute(top:14%,不參與版面排擠),要另外用量出來的橫幅高度
+    //   手動往下推;手機已經靠上面的 flex 排版自然擠開,不需要、也推不動(afk-mobile.js 用
+    //   !important 把 top 鎖死 auto)。用 computed position 分辨走哪條路。
+    if (titleLayer && getComputedStyle(titleLayer).position === 'absolute') {
+      var baseTop = parseFloat(getComputedStyle(titleLayer).top) || 0;
+      titleLayer.style.top = (baseTop + bar.offsetHeight) + 'px';
+    }
   } catch (_) {}
 }
 
@@ -3418,3 +3448,7 @@ try {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _origEnforce);
   else _origEnforce();
 } catch (_) {}
+// 🏠 加掛版客製(2026-07-17):原作者只在 gameLoop(戰鬥中)重掛,但選角/創角畫面切換時遊戲還沒開始跑、
+//   gameLoop 不會執行,單靠那個掛點抓不到「首頁→選角畫面」這種切換,橫幅會卡在畫面上一直不消失。
+//   改用低成本的輪詢(每 600ms)確保各畫面切換都能即時反映首頁顯示/隱藏狀態。
+try { setInterval(_origEnforce, 600); } catch (_) {}
