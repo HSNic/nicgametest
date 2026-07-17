@@ -976,7 +976,10 @@ function doEnhance(targetUid, isEq = true) {
             player.inv = player.inv.filter(i => i.uid !== target.uid); // 碎掉背包裝備
         }
     } else {
-        logSys(`<span class="text-slate-400">${fn} 一瞬間發出銀色的光芒。</span>`);
+        // 🔧 加掛版客製(2026-07-17 使用者明訂):原作原文「一瞬間發出銀色的光芒」跟上面「成功」的文字幾乎一樣(只差顏色深淺),
+        //   使用者反映容易把「無事」誤看成「成功」而困惑強化值怎麼沒變。改成明確講「沒有任何變化」,不再用容易混淆的「發出光芒」措辭。
+        //   ⚠️ 這段是直接改本體(非外掛疊加),下次同步覆蓋本體時這段文字客製會被原作者版本洗掉,要記得重新套用。
+        logSys(`<span class="text-slate-400">${fn} 卷軸的魔力消散了，沒有任何變化。</span>`);
     }
     
     calcStats();

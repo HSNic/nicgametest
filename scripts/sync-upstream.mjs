@@ -62,6 +62,7 @@ const PLUGINS = [
   { file: 'afk-autosell-fix.js', comment: '自動販賣「個別例外」bug修復:永遠保留/永遠販賣後搜尋字/分類/捲動位置不再被重置(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-autosell-ui.js', comment: '自動販賣規則視窗 UI 優化:各別例外清單加捲動+搜尋、三大區塊可收合、文字修正(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-fixes.js',   comment: '通用修正外掛(補原作者坑,桌機/手機通用;含 saveGame 空白角色防呆,建議排在 afk-offline 之後最乾淨——順序反了防呆仍擋得住毀檔,只是不夠乾淨;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-status-always-text.js', comment: '能力分頁狀態文字列不管在哪個畫面都顯示(monkey-patch renderStatusEffects;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-sw.js',      comment: '背景大圖快取 Service Worker 註冊(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-toast.js',   comment: '手機 toast 提示(點按鈕的系統日誌訊息浮現;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-statpts.js', comment: '能力值面板補點數分解 始/升/藥/總(可獨立維護;原作者更新後重新加回此行即可)' },
