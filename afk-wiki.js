@@ -457,6 +457,12 @@
     ]},
     { t: '頂級技（apex）是什麼', lines: [
       '部分高階魔法（如流星雨、究極光裂術）內部標了 <b>apex</b> 標記——這只是原作者拿來區分「這招是該系列的頂級技」的內部分類，<b>不影響你實際使用</b>，傷害／冷卻／MP 消耗一樣照該技能本身數值計算，看到 apex 不用特別在意。'
+    ]},
+    { t: '日出之國：三段變身頭目與幾個特殊怪物機制（v3.5.4 新增）', blocks: [
+      { t: 'p', p: '「日出之國」的頭目 ' + wB('白面金毛九尾狐') + ' 是<b>三段變身</b>：打到 HP 剩 <b>50%</b> 不會死，會原地直接變身成第二階「' + wB('九尾') + '」（滿血、屬性變強）；九尾再打到剩 <b>30%</b> 又會變身成第三階「' + wB('殺生石') + '」——<b>真正的死亡結算、掉落與經驗，只發生在打死最終階「殺生石」的那一下</b>，前兩階被打到「消失」不算擊殺、不會有任何獎勵。' },
+      { t: 'p', p: '<b>卡片圖鑑一樣要注意</b>：玉藻／九尾／殺生石三張卡都會登錄進圖鑑，但<b>掉卡只在殺生石死亡時觸發一次</b>，且是從這三張裡<b>隨機抽一張</b>（不是三張都拿），別誤會「打贏一輪能一次集滿三張」。' },
+      { t: 'p', p: wB('巨大骷髏') + ' 的「恐怖的面貌」技能發動後，會讓自己<b>隨機免疫近距離／遠距離／魔法其中一種攻擊方式 10 秒</b>（跟血壁空間的「反彈」不同，這是「打了沒效果」的免疫，不會傷到你自己）——遇到就先換攻擊手段（例如物理打不動就先改用魔法／召喚物），等 10 秒過了再繼續原本輸出。' },
+      { t: 'p', p: wB('牛鬼') + ' 與 ' + wB('牛鬼之子') + ' 的一般攻擊命中你時，有機率<b>反過來讓你中毒</b>（機率＝（牠的中毒基準值−你的魔防）÷2 %，魔防越高越不容易中鏢），這是少見的「怪物主動下毒給玩家」設計，抗魔法／魔防裝備對這兩隻特別有用。' }
     ]}
   ];
 
@@ -2049,6 +2055,17 @@
       html += LUMIEL_RECIPES.map(function (r) {
         var mats = itemName(r.src) + '（須 +7 以上）×1' + ((r.mats && r.mats.length) ? '、' + r.mats.map(function (m) { return itemName(m.id) + '×' + m.cnt; }).join('、') : '');
         return '<div class="m-wiki-kv"><b>' + esc(itemName(r.result)) + '</b>在 ' + lmWhere + ' 製作　材料：' + esc(mats) + '（會繼承來源戰士團裝備的強化值／詞綴／席琳套裝）</div>';
+      }).join('');
+    }
+    // 🔥 滅魔裝備:宙斯之熔岩高崙客製製作(消耗 +7 以上抗魔法鏈甲 + 材料 + 金幣,不在 CRAFT_RECIPES 裡;成品恆 +0,不繼承強化值/詞綴,與惡魔王/神聖執行團那兩組不同)
+    if (typeof SLAYER_RECIPES !== 'undefined' && SLAYER_RECIPES) {
+      var zgInfo = npcInfo['npc_zeus_golem'] || { name: '宙斯之熔岩高崙', town: '威頓村' };
+      var zgWhere = esc(zgInfo.name) + (zgInfo.town ? '（' + esc(zgInfo.town) + '）' : '');
+      var slayerSrcNm = (typeof SLAYER_SRC_NAME !== 'undefined' && SLAYER_SRC_NAME) ? SLAYER_SRC_NAME : '抗魔法鏈甲';
+      html += '<div class="m-wiki-sub">🔥 ' + zgWhere + '（滅魔裝備・客製）</div>';
+      html += SLAYER_RECIPES.map(function (r) {
+        var mats = slayerSrcNm + '（須 +7 以上）×1' + ((r.mats && r.mats.length) ? '、' + r.mats.map(function (m) { return itemName(m.id) + '×' + m.cnt; }).join('、') : '');
+        return '<div class="m-wiki-kv"><b>' + esc(itemName(r.result)) + '</b>在 ' + zgWhere + ' 製作　材料：' + esc(mats) + '（成品恆為 +0，不繼承來源鏈甲的強化值／詞綴）</div>';
       }).join('');
     }
     return html;

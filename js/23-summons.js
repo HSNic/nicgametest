@@ -384,7 +384,7 @@ function summonV2AttackOnce(s, d, t, owner) {
     dmg = Math.max(1, Math.floor(dmg) - (t.dr || 0));
     dmg = Math.max(1, Math.floor(dmg * _ownerDmgMult));
     markBossPhysicalHit(t);
-    t.curHp -= dmg; t.justHit = 'normal'; mobWake(t);
+    t.curHp -= dmg; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(t, dmg, 'melee'); t.justHit = 'normal'; mobWake(t);   // 🌅 巨大骷髏：召喚物一般攻擊視為近距離
     logCombat(`<span class="text-purple-300">${s.form}</span> 攻擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg}${r === 20 ? '（重擊）' : ''} 點傷害。`, 'player');
     // 技能觸發（10/15/20%·僅召喚術怪有 proc；造屍術殭屍不在 SUMMON_TIERS → e=null 直接跳過）
     const e = _sumTierOf(s.form);
@@ -407,7 +407,7 @@ function summonV2AttackOnce(s, d, t, owner) {
                 targets.forEach(m => {
                     let pd = summonElementDamage([2, Math.max(2, Math.ceil(s.lv * 0.6))], pr.ele || 'none', m, skillPower, _attackMult * (pr.heavy || 1), 0);
                     pd = Math.max(1, Math.floor(pd * _ownerDmgMult));
-                    m.curHp -= pd; m.justHit = (pr.ele && pr.ele !== 'none') ? pr.ele : 'magic'; mobWake(m);
+                    m.curHp -= pd; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(m, pd, 'magic'); m.justHit = (pr.ele && pr.ele !== 'none') ? pr.ele : 'magic'; mobWake(m);   // 🌅 巨大骷髏：召喚物技能視為魔法
                     texts.push(`<span class="${getMobColor(m.lv)}">${m.n}</span> ${pd}`);
                     if (pr.slow && Math.random() * 100 < Math.max(0, (100 - (m.mr || 0)) / 2)) { m.st = m.st || newMobStatus(); m.st.slow = Math.max(m.st.slow || 0, 80); }
                     if (pr.stun && Math.random() * 100 < Math.max(0, (100 - (m.mr || 0)) / 2)) { m.st = m.st || newMobStatus(); m.st.stun = Math.max(m.st.stun || 0, 30); }
@@ -439,7 +439,7 @@ function spiritAttackOnce(s, t, owner) {
     const mult = summonDamageMult(smLike, owner, true, (_ownerIa && _ownerIa.md) || 0);
     const dmg = summonElementDamage(spec.dice || [1, 40], s.ele, t, flat + _sgb.dmg + ((_ia && _ia.royalEd) || 0), mult, mrPen);   // 👑 灼熱武器：魔法型屬性精靈的一般攻擊亦取得全隊額外傷害
     t.justHit = (s.ele && s.ele !== 'none') ? s.ele : 'magic';
-    t.curHp -= dmg; mobWake(t);
+    t.curHp -= dmg; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(t, dmg, 'melee'); mobWake(t);   // 🌅 巨大骷髏：屬性精靈一般攻擊視為近距離
     logCombat(`<span class="text-purple-300">${s.form}</span> 攻擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg} 點傷害。`, 'player');
     // 👑 v3.2.26 精靈王：攻擊命中後 15% 機率釋放「同屬性全體法術」（冰雪暴/火風暴/龍捲風/震裂術·每目標約半發威力·吃魔抗/剋制/DR）
     if (spec.aoe && Math.random() < spec.aoe.p) {
@@ -448,7 +448,7 @@ function spiritAttackOnce(s, t, owner) {
         const texts = [];
         targets.forEach(m => {
             const pd = summonElementDamage([2, spec.dice[1]], s.ele, m, Math.floor(flat / 2), mult, mrPen);
-            m.curHp -= pd; m.justHit = s.ele; mobWake(m);
+            m.curHp -= pd; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(m, pd, 'magic'); m.justHit = s.ele; mobWake(m);   // 🌅 巨大骷髏：精靈王範圍技能視為魔法
             texts.push(`<span class="${getMobColor(m.lv)}">${m.n}</span> ${pd}`);
         });
         if (texts.length) logCombat(`<span class="text-purple-300 font-bold">${s.form}</span> 釋放 <span class="text-cyan-300 font-bold">${spellN}</span> → ${texts.join('、')}`, 'magic');

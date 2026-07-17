@@ -271,6 +271,33 @@ function getItemFullName(item) {
     return `${segs}<span class="${getItemColor(item)}">${en}${setPrefix}${d.n}${cnt}</span>`;
 }
 
+// 🌅 遺物 鐮鼬的藥壺 potionBonus：掃玩家全裝備欄加總「治癒藥水恢復量 +%」（魔法娃娃的 potionBonus 另走 dollFieldVal·此處掃一般裝備/遺物）
+function playerEquipPotionBonusPct() {
+    let sum = 0;
+    try { for (let _k in player.eq) { let _e = player.eq[_k]; if (!_e || !_e.id || _k === 'doll') continue; let _d = DB.items[_e.id]; if (_d && _d.potionBonus) sum += _d.potionBonus; } } catch (e) {}
+    return sum;
+}
+// 🌅 批量使用（batchUse:true 的可使用道具·現用於 巨大骷髏的妖魂 eff:'expsoul'）：prompt 數量（預設全部）→一次結算經驗＋扣數量
+function batchUseItem(u) {
+    let item = player.inv.find(i => i.uid === u);
+    if (!item) return;
+    let d = DB.items[item.id];
+    if (!d || !d.batchUse || d.eff !== 'expsoul') return;
+    if (player.dead) { logSys(`死亡狀態無法使用道具，請先復活。`); return; }
+    let raw = prompt(`要使用幾個 ${d.n}？（持有 ${item.cnt} 個·每個 +${(d.expGain || 1000000).toLocaleString()} 經驗）`, item.cnt);
+    if (raw === null) return;
+    let n = Math.floor(Number(raw));
+    if (!n || n <= 0) { logSys('已取消批量使用。'); return; }
+    n = Math.min(n, item.cnt);
+    let _xp = (d.expGain || 1000000) * n;
+    player.exp += _xp;
+    checkLvUp();
+    item.cnt -= n;
+    if (item.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== item.uid);
+    logSys(`使用了 <span class="${d.c || 'text-sky-300'} font-bold">${d.n}</span> ×${n}，獲得 <span class="text-yellow-300 font-bold">${_xp.toLocaleString()}</span> 點經驗值！`);
+    renderTabs(); updateUI(); saveGame();
+    if (!document.getElementById('item-modal').classList.contains('hidden')) closeModal();
+}
 function useItem(u, silent = false) {
     let item = player.inv.find(i => i.uid === u);
     if (!item) return;
@@ -280,6 +307,18 @@ function useItem(u, silent = false) {
     let d = DB.items[item.id];
     if (d.noUse) { if(!silent) logSys(`此物品無法直接使用。`); return; }
 
+    // 🌅 巨大骷髏的妖魂（eff:'expsoul'·expGain）：使用後獲得經驗值（批量走 batchUseItem）
+    if (d.eff === 'expsoul') {
+        if (silent) return;   // 不參與任何自動使用
+        let _xp = d.expGain || 1000000;
+        player.exp += _xp;
+        checkLvUp();
+        consume(item);
+        logSys(`使用了 <span class="${d.c || 'text-sky-300'} font-bold">${d.n}</span>，獲得 <span class="text-yellow-300 font-bold">${_xp.toLocaleString()}</span> 點經驗值！`);
+        updateUI(); saveGame();
+        if (!document.getElementById('item-modal').classList.contains('hidden')) closeModal();
+        return;
+    }
     // 🎴 卡片收集冊：翻開全螢幕書頁；卡片：登錄圖鑑（已收錄則改賣出）
     if (d.eff === 'cardbook') { if (silent) return; if (typeof openCardBook === 'function') openCardBook(); return; }
     if (d.eff === 'equipbook') { if (silent) return; if (typeof openEquipBook === 'function') openEquipBook(); return; }   // 🗡️ 裝備收集冊
@@ -359,11 +398,12 @@ function useItem(u, silent = false) {
         }
         if (item.id.includes('potion_heal') || item.id === 'potion_strong' || item.id === 'potion_ult') {
             if (player.cds.pot > 0) return;
-            let h = Math.floor(potionHealBase(d) * (1 + (getConPotionPct(player.d.con) + dollFieldVal('potionBonus') + (player._miscPotionBonus || 0)) / 100));   // 🍶 藥水基準改隨機區間 valMin~valMax（紅10~20/橙30~50/白60~80）；🪆 魔法娃娃 potionBonus%（吸血鬼）；🧰 道具收集冊 材料/其他全收集：藥水恢復%
+            let h = Math.floor(potionHealBase(d) * (1 + (getConPotionPct(player.d.con) + dollFieldVal('potionBonus') + playerEquipPotionBonusPct() + (player._miscPotionBonus || 0)) / 100));   // 🍶 藥水基準改隨機區間 valMin~valMax（紅10~20/橙30~50/白60~80）；🪆 魔法娃娃 potionBonus%（吸血鬼）；🧰 道具收集冊 材料/其他全收集：藥水恢復%
             if (hasMastery('k_survive')) h = Math.floor(h * 1.25);   // 🏅 生存精通：治癒藥水恢復 +25%
             if (hasMastery('k_tough') && player.hp < player.mhp * 0.4) h = Math.floor(h * 1.5);   // ⚔️ 堅韌精通：HP<40% 時藥水治癒量 +50%
             if (hasMastery('k_dragonblood')) h = Math.floor(h * 1.15);   // 🐉 龍血精通：治癒藥水恢復 +15%
             if (player.hp < player.mhp * 0.2) { try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].lowHpPotionX2) { h = h * 2; break; } } } catch (e) {} }   // 🏺 v3.2.17 聖伯納的急救酒桶：HP<20% 時治癒藥水恢復量 ×2
+            if (player.statuses && player.statuses.potionFrost > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌅 藥水霜化（巨大骷髏·枯竭詛咒）：治癒藥水恢復量 −50%
             player.hp = Math.min(player.mhp, player.hp + h);
             player.cds.pot = 1;
             if(!silent) logSys(`飲用 ${d.n}，恢復 ${h} HP。`);
@@ -951,7 +991,8 @@ function doEnhance(targetUid, isEq = true) {
 const PLAYER_DEBUFF_NAME = {
     stun: '暈眩', freeze: '冰凍', stone: '石化', paralyze: '麻痺',
     silence: '沉默', magicseal: '魔法封印', poison: '中毒',
-    burn: '灼燒', scald: '燙傷', evilAura: '邪靈之氣'
+    burn: '灼燒', scald: '燙傷', evilAura: '邪靈之氣',
+    weaken: '弱化', disease: '疾病', blind: '目盲', potionFrost: '藥水霜化'   // 🌅 日出之國新異常
 };
 
 // 增益顏色設定：
@@ -1099,7 +1140,11 @@ function renderStatusEffects() {
         poison: 'text-green-500',    // 中毒 (毒綠)
         burn: 'text-red-500',        // 灼燒 (火紅)
         scald: 'text-orange-500',    // 燙傷 (橘紅)
-        evilAura: 'text-purple-400'  // 邪靈之氣 (邪紫)
+        evilAura: 'text-purple-400', // 邪靈之氣 (邪紫)
+        weaken: 'text-amber-400',    // 🌅 弱化 (琥珀)
+        disease: 'text-lime-400',    // 🌅 疾病 (病綠)
+        blind: 'text-purple-300',    // 🌅 目盲 (霧紫)
+        potionFrost: 'text-sky-300'  // 🌅 藥水霜化 (霜藍)
     };
 
     let debuffs = [];

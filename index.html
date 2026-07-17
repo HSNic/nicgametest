@@ -28,10 +28,10 @@
         applyViewport();
       })();
     </script>
-    <title>放置天堂 - 吉爾塔斯降臨</title>
+    <title>放置天堂 - 日出之國</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=8cd4f216a7">
+    <link rel="stylesheet" href="css/style.css?v=7f095bf76f">
     <link rel="stylesheet" href="css/floating-ui.css?v=4f1d5ac98e">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -46,7 +46,7 @@
         <img id="login-bg-image" src="public/assets/login/310.png" alt="登入畫面背景">
         <img id="login-anim-image" src="public/assets/login/273.png" alt="登入畫面動畫">
         <div id="login-title-layer" class="text-center">
-            <h1 class="text-4xl font-bold text-yellow-400 mb-2">放置天堂 - 吉爾塔斯降臨</h1>
+            <h1 class="text-4xl font-bold text-yellow-400 mb-2">放置天堂 - 日出之國</h1>
             <p class="text-base text-slate-400">創造您的角色並開始冒險</p>
         </div>
 
@@ -538,30 +538,30 @@
     </script>
 
     <script src="js/anim-manifest.js?v=d047a221c0"></script>
-    <script src="js/00-data.js?v=9293feb4cb"></script>
-<script src="js/01-drops-config.js?v=de9d726776"></script>
+    <script src="js/00-data.js?v=1a6b542114"></script>
+<script src="js/01-drops-config.js?v=e4cfa3ce57"></script>
 <script src="js/02-stats-recompute.js?v=84aea57811"></script>
-    <script src="js/03-combat-core.js?v=9061f3a92e"></script>
-    <script src="js/04-combat-attack.js?v=bdadb06608"></script>
-<script src="js/05-kill-progression.js?v=f3c4401d12"></script>
-    <script src="js/06-status-allies.js?v=96f2b8f30d"></script>
-    <script src="js/07-skills-cast.js?v=5fdd06ba71"></script>
-<script src="js/08-items-equip.js?v=b7f19e61f1"></script>
-<script src="js/09-vfx-render.js?v=d951514974"></script>
-<script src="js/10-ui-tabs.js?v=b341c44919"></script>
-<script src="js/11-world-map.js?v=1600f9bfbd"></script>
+    <script src="js/03-combat-core.js?v=82dc0220e7"></script>
+    <script src="js/04-combat-attack.js?v=9d3886ceb5"></script>
+<script src="js/05-kill-progression.js?v=7968983b26"></script>
+    <script src="js/06-status-allies.js?v=cdc6d64451"></script>
+    <script src="js/07-skills-cast.js?v=a4a933fa06"></script>
+<script src="js/08-items-equip.js?v=03cc9fd633"></script>
+<script src="js/09-vfx-render.js?v=a14793b3f2"></script>
+<script src="js/10-ui-tabs.js?v=51167fd55c"></script>
+<script src="js/11-world-map.js?v=fa9a26232f"></script>
 <script src="js/12-npc-quests.js?v=311918837e"></script>
-<script src="js/13-shop-save.js?v=0fbc7ac131"></script>
-<script src="js/14-craft-pandora.js?v=97958810b2"></script>
-<script src="js/15-cards.js?v=20cf88749b"></script>
+<script src="js/13-shop-save.js?v=bdb92cc067"></script>
+<script src="js/14-craft-pandora.js?v=c9d091fe17"></script>
+<script src="js/15-cards.js?v=e145564561"></script>
 <script src="js/16-equip-book.js?v=45290f2d29"></script>
 <script src="js/18-misc-book.js?v=cc8f8f7ce4"></script>
-<script src="js/17-audio.js?v=d80fa88ad6"></script>
+<script src="js/17-audio.js?v=987e129b81"></script>
 <script src="js/19-equipment-window.js?v=d809031cd2"></script>
 <script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
-    <script src="js/23-summons.js?v=cfd0f6ed28"></script>
-    <script src="js/22-pets.js?v=8c2435138f"></script>
+    <script src="js/23-summons.js?v=e6321ca162"></script>
+    <script src="js/22-pets.js?v=38b7b42703"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -577,9 +577,9 @@
 <!-- 共用補充資料(掉落查詢+小百科共用的手動清單;純資料無 DOM,需先於 dex/wiki 載入) -->
 <script src="afk-extradata.js?v=20260714a"></script>
 <!-- 怪物/掉落查詢外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-dex.js?v=20260717a"></script>
+<script src="afk-dex.js?v=20260717b"></script>
 <!-- 小百科外掛(專精/武器特性/職業魔法;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-wiki.js?v=20260717k"></script>
+<script src="afk-wiki.js?v=20260717l"></script>
 <!-- 共用倉庫視覺註記:可學技能書顯示「可學」、角色不可使用的裝備/技能書顯示淡紅色外框，背包／倉庫兩側都標(純視覺;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-warehouse-skill.js?v=20260714c"></script>
 <!-- 自動販賣「個別例外」bug修復:永遠保留/永遠販賣後搜尋字/分類/捲動位置不再被重置(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -607,7 +607,7 @@
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260706a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-whatsnew.js?v=20260717e"></script>
+<script src="afk-whatsnew.js?v=20260717f"></script>
 <!-- 首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-storage.js?v=20260713b"></script>
 <!-- 跨裝置雲端存檔同步(配對碼+後端代管,取代舊版Google登入方案afk-cloud-sync.js.disabled;API_BASE未設定前對遊戲零介入;可獨立維護,原作者更新後重新加回此行即可) -->

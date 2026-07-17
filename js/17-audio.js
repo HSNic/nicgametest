@@ -386,6 +386,27 @@ const MORPH_SKILL_SFX = {};
     MOB_ATTACK_SFX[r[0]] = r[1]; MORPH_SKILL_SFX[r[0]] = r[2]; MOB_HURT_SFX[r[0]] = r[3]; MOB_KILL_SFX[r[0]] = r[4];
     MOB_ATTACK_SWING[r[0]] = 248;
 });
+// 🌅 v3.4.100 日出之國 17 怪三組戰鬥音（用戶對照表·[名, 攻擊, 受傷, 死亡]·全數無技能音→施法維持靜音）。
+//   玉藻/九尾 無死亡音＝設計正確：transformTo 在 killMob 頂端攔截（js/05）先於 playMobKill·永不觸發死亡音。229/230/231(牛鬼之子)＝本次新補 .wav·其餘 36 編號 .ogg 已在庫。
+[
+  ["嗚釜",               7612, 7611, 7613], ["憤怒的嗚釜",         7612, 7611, 7613],
+  ["鎌鼬",               7621, 7622, 7620], ["鎌鼬長兄",           7621, 7622, 7620],
+  ["轆轤首",             7617, 7615, 7616], ["唐傘小僧",           7402, 7404, 7403],
+  ["牛鬼之子",            231,  229,  230], ["河童",               7607, 7608, 7609],
+  ["赤鬼",               7639, 7640, 7643], ["青鬼",               7639, 7640, 7643],
+  ["天狗",               7686, 7684, 7685], ["阿修羅像",           7646, 7641, 7642],
+  ["牛鬼",               6014, 6016, 5996], ["巨大骷髏",           7680, 7681, 7682],
+  ["白面金毛九尾狐・玉藻", 5943, 5946, null], ["白面金毛九尾狐・九尾", 5636, 5655, null],
+  ["白面金毛九尾狐・殺生石", 5651, 7641, 7136],
+].forEach(function (r) {
+    MOB_ATTACK_SFX[r[0]] = r[1];
+    MOB_HURT_SFX[r[0]] = r[2];
+    if (r[3] != null) MOB_KILL_SFX[r[0]] = r[3];
+});
+// 🐯 v3.4.102 鵺＝借黑虎音（用戶指定）：受擊 168／死亡 173。
+// 🐯 v3.5.0 黑虎/鵺 攻擊音＝老虎揮擊 520（用戶指定「黑虎套用老虎攻擊音效」·來源 list.spr #1310 tiger attack 幀 [520/[521 取首記·520.wav 新補入庫）。
+MOB_HURT_SFX["鵺"] = 168; MOB_KILL_SFX["鵺"] = 173;
+MOB_ATTACK_SFX["黑虎"] = 520; MOB_ATTACK_SFX["鵺"] = 520;
 var _sfxDynTried = {}, _mobHurtLast = 0, _spellCastLast = 0, _killLast = 0, _mobAtkLast = 0, _mobSkillLast = 0;
 var _mobAtkKeysByLen = null, _mobAtkResolveCache = {};
 function _mobAtkSfxNum(name) {   // 解析怪名→攻擊音編號（精確→別名→最長子字串借用）·查無回 undefined
@@ -551,7 +572,8 @@ Object.keys(CREATE_BGM).forEach(function (cls) { BGM_TRACKS['create_' + cls] = C
 var _TOWN_BGM = {}; TOWN_BGM_LIST.forEach(function (id) { _TOWN_BGM[id] = 1; });
 // 🐍 狩獵區專屬 BGM（地圖 id → 曲目檔名·assets/bgm/<檔>.<ext>）：提卡爾蛇神降世 3 圖。優先於通用 battle/boss，故祭壇(純頭目房)也放自己的曲。
 var HUNT_BGM = { 'tikal_area': 'music122', 'tikal_deep': 'music123', 'tikal_altar': 'music125',
-    'cursed_dark_elf_sanctuary': 'music153', 'collapsed_elder_council_hall': 'music162' };   // 🌑 v3.4.0 黑暗妖精聖地雙 BOSS 房（黑暗妖精聖地.md：music 153／162；一般聖地未指定→維持通用 battle）
+    'cursed_dark_elf_sanctuary': 'music153', 'collapsed_elder_council_hall': 'music162',   // 🌑 v3.4.0 黑暗妖精聖地雙 BOSS 房（黑暗妖精聖地.md：music 153／162；一般聖地未指定→維持通用 battle）
+    'sunrise_castle': 'music161', 'sunrise_east': 'music167', 'sunrise_west': 'music167', 'sunrise_north': 'music167' };   // 🌅 v3.4.98 日出之國：城墎=music161·東/西/北之地=music167
 Object.keys(HUNT_BGM).forEach(function (id) { BGM_TRACKS[HUNT_BGM[id]] = HUNT_BGM[id]; });   // 註冊曲目 scene=檔名，_bgmInit 會預解析 URL
 var _bgmUrl = {}, _bgmEls = [null, null], _bgmActive = -1, _bgmScene = null, _bgmFadeTimer = null, _bgmInited = false;
 

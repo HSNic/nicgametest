@@ -460,6 +460,16 @@
         (_craftIndex[r.result] = _craftIndex[r.result] || []).push({ npcId: 'npc_lumiel', req: req, yield: 1, note: '消耗 +7 以上的「' + (r.srcName || r.src) + '」，會繼承它的強化值／詞綴／席琳套裝效果' });
       });
     }
+    // 🔥 滅魔裝備:宙斯之熔岩高崙客製製作(消耗 +7 以上抗魔法鏈甲 + 材料 + 金幣,不在 CRAFT_RECIPES 裡,要另外補;成品恆 +0,不繼承強化值/詞綴)
+    if (typeof SLAYER_RECIPES !== 'undefined' && SLAYER_RECIPES) {
+      var slayerSrcName = (typeof SLAYER_SRC_NAME !== 'undefined' && SLAYER_SRC_NAME) ? SLAYER_SRC_NAME : '抗魔法鏈甲';
+      var slayerSrcId = (typeof SLAYER_SRC_ID !== 'undefined') ? SLAYER_SRC_ID : null;
+      SLAYER_RECIPES.forEach(function (r) {
+        if (!r || !r.result) return;
+        var req = (slayerSrcId ? [{ id: slayerSrcId, cnt: 1, plus7: true }] : []).concat(r.mats || []);
+        (_craftIndex[r.result] = _craftIndex[r.result] || []).push({ npcId: 'npc_zeus_golem', req: req, yield: 1, note: '消耗 +7 以上的「' + slayerSrcName + '」，成品恆為 +0(不繼承強化值／詞綴)' });
+      });
+    }
   }
   function buildNpcInfo() {
     _npcInfo = {};

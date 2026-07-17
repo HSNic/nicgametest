@@ -67,7 +67,11 @@ const MAP_CATEGORIES = {
         {v:'thebes_temple', t:'底比斯 歐西里斯祭壇', c:'#f87171', needKey:'item_thebes_altar_key'},
         {v:'tikal_area', t:'提卡爾神廟地區', c:'#86efac'},
         {v:'tikal_deep', t:'提卡爾神廟地區深處', c:'#86efac'},
-        {v:'tikal_altar', t:'提卡爾 庫庫爾坎祭壇', c:'#f87171', needKey:'item_tikal_altar_key'}
+        {v:'tikal_altar', t:'提卡爾 庫庫爾坎祭壇', c:'#f87171', needKey:'item_tikal_altar_key'},
+        {v:'sunrise_castle', t:'日出之國城墎', c:'#fbbf24'},
+        {v:'sunrise_east', t:'日出之國東之地', c:'#f9a8d4'},
+        {v:'sunrise_west', t:'日出之國西之地', c:'#d6d3d1'},
+        {v:'sunrise_north', t:'日出之國北之地', c:'#93c5fd'}
     ],
     // 🏴‍☠️ 海賊島：村莊（安全區）＋ 野外（背景＝古魯丁）＋ 地監（背景＝說話之島地監1樓）
     pirate_island: [
@@ -149,7 +153,8 @@ const MAP_REGIONS = [
     ]},
     { key: 'rift', label: '時空裂痕', maps: [
         {v:'town_rift', t:'時空裂痕入口'}, {v:'thebes_desert', t:'底比斯 沙漠'}, {v:'thebes_pyramid', t:'底比斯 金字塔內部'}, {v:'thebes_temple', t:'底比斯 歐西里斯祭壇'},
-        {v:'tikal_area', t:'提卡爾神廟地區'}, {v:'tikal_deep', t:'提卡爾神廟地區深處'}, {v:'tikal_altar', t:'提卡爾 庫庫爾坎祭壇'}
+        {v:'tikal_area', t:'提卡爾神廟地區'}, {v:'tikal_deep', t:'提卡爾神廟地區深處'}, {v:'tikal_altar', t:'提卡爾 庫庫爾坎祭壇'},
+        {v:'sunrise_castle', t:'日出之國城墎'}, {v:'sunrise_east', t:'日出之國東之地'}, {v:'sunrise_west', t:'日出之國西之地'}, {v:'sunrise_north', t:'日出之國北之地'}
     ]},
     { key: 'sherine', label: '席琳神殿', maps: [
         {v:'town_sherine', t:'席琳神殿'}

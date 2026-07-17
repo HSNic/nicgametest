@@ -792,7 +792,7 @@ function _petStatusTick(p) {
     for (let x of dots) {
         if ((st[x[0]] || 0) > 0 && state.ticks % Math.max(1, st[x[2]] || 10) === 0) p.hp -= Math.max(1, st[x[1]] || 1);
     }
-    ['freeze','stun','stone','sleep','paralyze','silence','magicseal','slowAtk','poison','burn','scald','bleed'].forEach(k => { if ((st[k] || 0) > 0) st[k]--; });
+    ['freeze','stun','stone','sleep','paralyze','silence','magicseal','slowAtk','poison','burn','scald','bleed','weaken','disease','blind','potionFrost'].forEach(k => { if ((st[k] || 0) > 0) st[k]--; });
     if (p.hp <= 0) _petDown(p, '持續傷害');
 }
 function _petPickTarget(p) {
@@ -827,17 +827,18 @@ function petAttackOnce(p, d, target, forceCrit, addDmg, skName) {
         let pg = (typeof petGearBonus === 'function') ? petGearBonus(p) : { dmg: 0, hit: 0 };   // 🦴 v3.2.37 讀該寵物自身的武器（p.eq.wpn）
         let cb = petCharmCombatBonus();
         let _ia = (typeof teamIlluAura === 'function') ? teamIlluAura(p, true) : null;   // 🩹 v3.2.67 幻覺攻擊光環（化身+10傷／歐吉+4傷+4命）全隊生效→注入出戰寵物普攻
-        let rawHit = p.lv + d.hit + cb.hit + pg.hit + (_ia ? _ia.eh : 0) - target.lv + mobEffAC(target) + (typeof _relicPartnerHit === 'function' ? _relicPartnerHit(p.form) : 0);
+        let _pst = p._statuses || {};
+        let rawHit = p.lv + d.hit + cb.hit + pg.hit + (_ia ? _ia.eh : 0) - target.lv + mobEffAC(target) + (typeof _relicPartnerHit === 'function' ? _relicPartnerHit(p.form) : 0) - (_pst.weaken > 0 ? 2 : 0) - (_pst.disease > 0 ? 4 : 0) - (_pst.blind > 0 ? 6 : 0);
         let hv = stretchHitValue(rawHit);
         let r = roll(1, 20);
         let heavy = (r === 20) || !!forceCrit;
         if (heavy || (r !== 1 && hv >= r)) {
-            let dmg = (heavy ? d.dice : roll(1, d.dice)) + d.flat + cb.dmg + (addDmg || 0) + pg.dmg + (_ia ? _ia.ed : 0) - (target.dr || 0);
+            let dmg = (heavy ? d.dice : roll(1, d.dice)) + d.flat + cb.dmg + (addDmg || 0) + pg.dmg + (_ia ? _ia.ed : 0) - (target.dr || 0) - (_pst.weaken > 0 ? 5 : 0);
             dmg = Math.max(1, Math.floor(dmg));
             dmg = Math.max(1, Math.floor(dmg * (d.damageMult || 1)));   // 🐾 型態增傷＋低血高傷取向（普攻／extra 技能共用）
             if (skName && typeof _relicPetSkillMult === 'function') dmg = Math.max(1, Math.floor(dmg * _relicPetSkillMult()));
             markBossPhysicalHit(target);
-            target.curHp -= dmg; target.justHit = 'none'; mobWake(target);
+            target.curHp -= dmg; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(target, dmg, skName ? 'magic' : 'melee'); target.justHit = 'none'; mobWake(target);   // 🌅 巨大骷髏：寵物普攻＝近距離、寵物技能＝魔法
             let _pw = p && p.eq && p.eq.wpn ? DB.items[p.eq.wpn.id] : null;
             if (_pw && _pw.petBleed && target.curHp > 0 && typeof applyBleed === 'function') applyBleed(target, dmg, 5, 'pet');   // 🏺 遺物 仿製小惡魔尖牙套：寵物一般攻擊命中造成出血；🎯 DPS 歸夥伴
             _petAnimAct(p, 'attack', target.uid);
@@ -894,7 +895,7 @@ function petCastSkill(p, d, target) {
                 dmg = Math.max(1, Math.floor(dmg * (d.damageMult || 1)));   // 🐾 傷害技能同享型態增傷＋低血高傷取向
                 if (typeof _relicPetSkillMult === 'function') dmg = Math.max(1, Math.floor(dmg * _relicPetSkillMult()));   // 🏺 馴獸師的訓狗棒：寵物技能×1.5
                 if (sk.n && sk.n.includes('冰錐') && typeof equipSkillDmgMult === 'function') dmg = Math.max(1, Math.floor(dmg * equipSkillDmgMult(DB.skills.sk_ice_spike, 'sk_ice_spike')));   // 🏺 v3.2.35 暴走兔最愛的胡蘿蔔：攜帶的暴走兔/高等暴走兔施放的冰錐也 ×1.5（掃玩家裝備 skillDmgMult.sk_ice_spike·與訓狗棒相乘）
-                m.curHp -= dmg; m.justHit = sk.ele || 'none'; mobWake(m);
+                m.curHp -= dmg; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(m, dmg, 'magic'); m.justHit = sk.ele || 'none'; mobWake(m);   // 🌅 巨大骷髏：寵物傷害技能視為魔法
                 texts.push(`<span class="${getMobColor(m.lv)}">${m.n}</span> ${dmg}`);
                 if (sk.drainHalf) { let heal = Math.floor(dmg / 2); if (heal > 0) p.hp = Math.min(p.mhp, p.hp + heal); }
             });
@@ -921,7 +922,8 @@ function enemyAttackPet(mob, p) {
     let st = mob.st || newMobStatus();
     if (st.terror > 0 && Math.random() < 0.90) return;
     let mobHitBonus = (mob.hit || 0) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + tamerAuraHit(mob);
-    let hv = stretchHitValue(mob.lv + mobHitBonus - (p.lv || 1) + (d.ac - (typeof teamAcBonus === 'function' ? teamAcBonus(p, true) : 0)));
+    let _pst = p._statuses || {};
+    let hv = stretchHitValue(mob.lv + mobHitBonus - (p.lv || 1) + (d.ac - (typeof teamAcBonus === 'function' ? teamAcBonus(p, true) : 0)) + (_pst.disease > 0 ? 8 : 0));
     let r = roll(1, 20), hit = false, heavy = false;
     if (r === 20) { hit = true; heavy = true; } else if (r !== 1 && hv >= r) hit = true;
     if (!hit) { logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 對寵物 <span class="text-sky-300 font-bold">${p.form}</span> 的攻擊未命中。`, 'miss', 'enemy'); return; }
@@ -957,6 +959,9 @@ function applyMobMagicToPet(mob, sk, p) {
     if (sk.type === 'sleep') { applyPure('sleep', (sk.dur || 6) * 10, '陷入沉睡', 150); return; }
     if (sk.type === 'stun') { applyPure('stun', 60, '被暈眩了', 150); return; }
     if (sk.type === 'slowatk') { applyPure('slowAtk', (sk.dur || 8) * 10, '的攻擊速度大幅減慢', 150); return; }
+    if (sk.type === 'weaken') { applyPure('weaken', (sk.dur || 15) * 10, '陷入弱化', 150); return; }
+    if (sk.type === 'disease') { applyPure('disease', (sk.dur || 20) * 10, '陷入疾病', 150); return; }
+    if (sk.type === 'potionfrost') { applyPure('potionFrost', (sk.dur || 8) * 10, '陷入藥水霜化', 150); return; }
     if (sk.type === 'frost_breath') { applyPure('slowAtk', (sk.dur || 8) * 10, '的攻擊速度大幅減慢', 200); return; }
     if (sk.type === 'scald') { if (chance(200)) { st.scald=(sk.dur||15)*10; st.scaldDmg=shMul*(sk.d||100); st.scaldTick=(sk.tick||3)*10; } return; }
     if (sk.type === 'poison') { if (chance(100)) { st.poison=(sk.dur||6)*10; st.poisonDmg=shMul*(sk.d||1); st.poisonTick=(sk.tick||1)*10; } return; }
@@ -975,7 +980,8 @@ function applyMobMagicToPet(mob, sk, p) {
     if (sk.vamp || sk.vampFull) { let heal = sk.vampFull ? dmg : roll(sk.vamp[0], sk.vamp[1]); mob.curHp = Math.min(mob.hp, mob.curHp + heal); }
     if (sk.sec) {
         let s = sk.sec;
-        if (s.type === 'freeze' && chance(200, s)) st.freeze = (s.dur || 6) * 10;
+        if (s.type === 'blind' && chance(200, s)) st.blind = (s.dur || 15) * 10;
+        else if (s.type === 'freeze' && chance(200, s)) st.freeze = (s.dur || 6) * 10;
         else if (s.type === 'stun' && chance(150, s)) st.stun = (s.dur || 6) * 10;
         else if (s.type === 'sleep' && chance(150, s)) st.sleep = (s.dur || 6) * 10;
         else if (s.type === 'paralyze' && chance(50, s)) st.paralyze = (s.dur || 6) * 10;
@@ -1010,6 +1016,7 @@ function petTryPotion(p) {   // HP<X% 用治癒藥水（邏輯同傭兵 allyTryP
     }
     stack.cnt--; if (stack.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== stack.uid);   // 🛡️ v3.2.42 稽核修：只移除喝空的那疊（原全背包 filter 會誤刪 cnt 為 undefined 的舊物品）
     let h = Math.max(1, Math.floor(potionHealBase(pdef) * (1 + getConPotionPct((player.d && player.d.con) || 0) / 100)));
+    if (p._statuses && p._statuses.potionFrost > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌅 藥水霜化：寵物也以自己的 MR/狀態判定，不再借用主角色結果
     p.hp = Math.min(p.mhp, p.hp + h);
     p._potCd = 10;
     logCombat(`寵物 <span class="text-emerald-300 font-bold">${p.form}</span> 飲用 ${pdef.n}，恢復 ${h} 點 HP。`, 'heal');

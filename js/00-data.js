@@ -1,6 +1,6 @@
 /** 遊戲核心資料庫 */
 // 🏷️ 遊戲版本號（顯示於登入頁面下方·單一真相來源）：更新版本時只改這一行，登入頁面自動同步。
-const GAME_VERSION = 'v3.4.86';
+const GAME_VERSION = 'v3.5.4';
 // ===== 💾 存檔壓縮（LZString compressToUTF16/decompressFromUTF16·MIT, Pieroxy）：localStorage 內部以 UTF-16 壓縮，省 ~89%，繞過 5MB 上限 =====
 //  ⚠️ 只壓 localStorage（存檔位/倉庫/共用桶/_bak）；匯出檔維持明文 JSON（可攜·importSave 用 JSON.parse 驗證）。_lzGet 相容舊明文存檔（無 'LZ1:' 前綴→原樣回傳）。
 var LZString = (function () {
@@ -834,6 +834,28 @@ const DB = {
         "relic_mage_dagger":     { n: "法師的護身短刀",     type: "wpn", relic: true, noEnhance: true, dmgS: 2, dmgL: 3, hit: 8, dmgBonus: 6, castOnHurt: { rate: 20 }, relicRole: "法師專用受擊反擊武器，20%免費施放設定的自動攻擊傷害法術", req: "mage", p: 10000, gachaWeight: 0, d: "【遺物】短刀並非為決鬥而造；當持有者受創，刃上的護身術式便會自行喚醒反擊魔法。" },
         // 🌑 v3.4.67 解除詛咒的真死亡騎士．冥皇執行劍（遺物·冥皇丹特斯 0.0001% 掉落）：反擊+居合＝WEAPON_TAGS 雙標籤（js/10）·貫穿=ignHardSkin·裝備變身 真死亡騎士 冥皇丹特斯（js/02 _setPoly·APM 依武器查表）·攻擊 15% 觸發大地崩裂（procSkill·遺物 en=0→固定 15%）·對地/風屬性敵一般攻擊 ×1.4（counterEles·js/03/06）
         "wpn_uncursed_emperor_blade": { n: "解除詛咒的真死亡騎士．冥皇執行劍", type: "wpn", relic: true, noEnhance: true, dmgS: 19, dmgL: 22, hit: 19, dmgBonus: 15, ignHardSkin: true, procSkill: "sk_earth_collapse", procRateBase: 15, procRatePerEn: 0, counterEles: ["earth", "wind"], relicRole: "解咒的冥皇執行劍：反擊居合貫穿俱全，化身真死亡騎士並喚起大地崩裂", req: "royal,knight,elf,mage,dark,dragon", p: 10000, gachaWeight: 0, d: "【遺物】詛咒褪去後，劍身浮現冥皇丹特斯的真銘。反擊（一般限定）、居合（一般限定）、貫穿；裝備時變身為 真死亡騎士 冥皇丹特斯；攻擊時15%機率觸發大地崩裂；一般攻擊對地、風屬性敵人傷害×1.4。" },
+        // ===== 🌅 日出之國（依《日出之國.md》）：材料＋2 傳說＋體力戒指＋16 遺物 =====
+        "mat_youkai_soul": { n: "封印的妖怪之魂", type: "etc", p: 1, noUse: true, gachaWeight: 0, c: "text-purple-300", d: "被陰陽師封印於符中的妖怪之魂，蘊含日出之國的妖異之力。希培利亞的巴特爾能以 100 個凝鍊出巨大骷髏的妖魂。" },
+        "mat_gasha_soul": { n: "巨大骷髏的妖魂", type: "etc", eff: "expsoul", expGain: 1000000, batchUse: true, p: 1, gachaWeight: 0, c: "text-sky-300", d: "巨大骷髏的怨念凝鍊而成的妖魂結晶。使用後獲得 100 萬點經驗值（可批量使用）。" },
+        "wpn_onmyoji_fan": { n: "陰陽師的扇子", type: "wpn", legend: true, isWand: true, dmgS: 2, dmgL: 2, hit: 4, dmgBonus: 4, ignHardSkin: true, mdmg: 4, mpR: 4, req: "mage,illusion", safe: 6, p: 385000, gachaWeight: 1, d: "陰陽師驅使式神的摺扇，輕搖之間便有妖力共鳴迴盪。" },
+        "blt_gasha_ring": { n: "巨型骷髏之指環", type: "acc", slot: "belt", legend: true, ac: 0, mmp: 30, wis: 1, mr: 8, weightCap: 150, req: "all", safe: 0, p: 286000, gachaWeight: 1, d: "以巨大骷髏的指骨環繞而成的腰帶，冥界的重量對佩戴者輕若無物。" },
+        "acc_ring_con": { n: "體力戒指", type: "acc", slot: "ring", ac: 0, mhp: 50, con: 1, req: "all", safe: 0, p: 76000, gachaWeight: 10, d: "灌注體力的戒指。" },
+        "relic_sr_kettle_lid":   { n: "沸騰蒸氣的鍋蓋",     type: "arm", slot: "helm", relic: true, noEnhance: true, ac: 10, resWater: 10, resFire: 10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】嗚釜沸騰不止的鍋蓋，蒸氣的熱與釜水的潤同時護持頭頂。" },
+        "relic_sr_kama_pot":     { n: "鐮鼬的藥壺",         type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, potionBonus: 10, hpR: 3, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】鎌鼬三兄弟中么弟隨身的藥壺，塗上傷口便能止痛癒合。" },
+        "relic_sr_neck_scarf":   { n: "長首妖怪的圍巾",     type: "acc", slot: "amulet", relic: true, noEnhance: true, ac: 1, er: 10, dex: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】轆轤首纏繞長頸的圍巾，柔滑得讓攻擊都滑開了。" },
+        "relic_sr_old_umbrella": { n: "老舊的百年唐傘",     type: "arm", slot: "cloak", relic: true, noEnhance: true, ac: 8, resWater: 30, resFire: -10, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】經百年而成妖的老唐傘，撐開便滴水不沾，卻也擋不住火星。" },
+        "relic_sr_kettle_maul":  { n: "沸騰蒸氣的巨釜",     type: "wpn", w2h: true, relic: true, noEnhance: true, eff: "crush", ignHardSkin: true, counterEles: ["earth", "fire"], dmgS: 22, dmgL: 24, hit: 14, dmgBonus: 14, req: "royal,knight,dragon,illusion,warrior", p: 10000, gachaWeight: 0, d: "【遺物】整座嗚釜妖釜倒提為鎚，沸騰的蒸氣隨揮擊噴散。" },
+        "relic_sr_kama_blade":   { n: "鐮鼬的尾刃",         type: "wpn", relic: true, noEnhance: true, iaiCrit: true, mcritDmg: 10, dmgS: 16, dmgL: 10, hit: 18, dmgBonus: 18, req: "knight,dragon", p: 10000, gachaWeight: 0, d: "【遺物】鎌鼬長兄尾端的鐮刃，出鞘的瞬間便已割裂要害。" },
+        "relic_sr_kappa_plate":  { n: "河童的尻子玉",       type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 3, resFire: 3, resWater: 3, resEarth: 3, resWind: 3, wis: -1, cha: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】河童珍藏的尻子玉，妖力溫潤護體，只是讓人有點心神渙散。" },
+        "relic_sr_akaoni_pants": { n: "赤鬼的內褲",         type: "arm", slot: "shin", relic: true, noEnhance: true, ac: 2, str: 2, con: 1, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】赤鬼的虎紋兜襠布，穿上便湧現蠻勇之力。" },
+        "relic_sr_aooni_shirt":  { n: "青鬼的虎皮衫",       type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 12, str: 1, con: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】青鬼披掛的虎皮衫，粗獷厚實如鬼族的筋骨。" },
+        "relic_sr_nue_tail":     { n: "毒鵺的黑尾",         type: "wpn", chainsword: true, relic: true, noEnhance: true, weakExpose: true, ignHardSkin: true, procPoisonPct: { pct: 50, dur: 6 }, atkSpdPct: 20, dmgS: 26, dmgL: 26, hit: 16, dmgBonus: 18, req: "dragon", p: 10000, gachaWeight: 0, d: "【遺物】鵺的蛇頭黑尾製成的鎖鏈劍，噬咬之毒滲入每一道傷口。" },
+        "relic_sr_tengu_fan":    { n: "天狗的羽扇",         type: "wpn", isBow: true, ranged: true, relic: true, noEnhance: true, rapidfire: 80, ignHardSkin: true, wearerEle: "wind", onHitCastSkill: { skId: "sk_windblade", cdSec: 5 }, mdmg: 2, dmgS: 2, dmgL: 2, hit: 17, dmgBonus: 13, req: "elf,illusion", p: 10000, gachaWeight: 0, d: "【遺物】天狗搧起狂風的羽團扇，每一擊都挾帶撕裂的風刃。" },
+        "relic_sr_asura_arm":    { n: "阿修羅的武神技",     type: "arm", slot: "shield", armguard: { stat: "none", base: 0, th: [0, 0, 0] }, relic: true, noEnhance: true, ac: 0, atkSpdPct: 20, extraDmg: 2, extraHit: 2, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】阿修羅像六臂的戰技凝為臂甲，出手快如修羅。臂甲（裝於副手，可與雙手武器並用）。" },
+        "relic_sr_kyuubi_wand":  { n: "九尾妖狐的怒火",     type: "wpn", isWand: true, relic: true, noEnhance: true, ignHardSkin: true, wearerEle: "fire", procSkill: "sk_fireball", procRateBase: 15, procRatePerEn: 0, procSkill2: { skId: "sk_fire_storm", rate: 5 }, mdmg: 4, mpR: 6, dmgS: 2, dmgL: 2, hit: 16, dmgBonus: 16, req: "mage,illusion", p: 10000, gachaWeight: 0, d: "【遺物】九尾妖狐的怒火凝成的妖杖，狐火隨揮舞飛散燎原。" },
+        "relic_sr_ushioni_horn": { n: "牛鬼的斷角",         type: "wpn", w2h: true, noBleed: true, relic: true, noEnhance: true, eff: "pierce", pierceChance: 100, ignHardSkin: true, procStatusSkill: { skId: "sk_disease", rate: 15 }, heavyBonusDmg: 20, dmgS: 25, dmgL: 25, hit: 17, dmgBonus: 18, req: "royal,knight", p: 10000, gachaWeight: 0, d: "【遺物】牛鬼折斷的巨角削成的長矛，帶著瘴癘之氣貫穿一切。" },
+        "relic_sr_child_ring":   { n: "牛鬼之子的黑戒",     type: "acc", slot: "ring", relic: true, noEnhance: true, ac: 0, statusHealHp: 50, req: "all", p: 10000, gachaWeight: 0, d: "【遺物】牛鬼之子甲殼磨成的黑戒，受到異常狀態侵襲時反而激發生機，恢復 50 點 HP。" },
+        "relic_sr_gasha_skull":  { n: "巨大骷髏的頭骨",     type: "arm", slot: "armor", relic: true, noEnhance: true, ac: 20, mr: 10, resNone: 10, req: "royal,knight,dragon,warrior", p: 10000, gachaWeight: 0, d: "【遺物】巨大骷髏的頭骨鑿成的胸鎧，怨念的殘響替穿戴者擋下詛咒。" },
         "clk_elf": { n: "精靈斗篷", type: "arm", slot: "cloak", ac: 1, req: "all", safe: 6, p: 900, gachaWeight: 100 },
         "clk_oasis": { n: "歐西斯斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 15, gachaWeight: 100 },
         "arm_86": { n: "侏儒斗篷", type: "arm", slot: "cloak", ac: 0, req: "all", safe: 4, p: 18, gachaWeight: 100 },
@@ -1487,6 +1509,11 @@ const DB = {
         "amr_old_scale": { n: "古老的鱗甲", type: "arm", slot: "armor", ac: 14, hpR: 8, mpR: 4, req: "knight,elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代工匠以層層鱗片疊織的鎧甲，輕巧卻不失堅韌。" },
         "amr_old_leather": { n: "古老的皮盔甲", type: "arm", slot: "armor", ac: 14, hpR: 4, mpR: 8, req: "elf,dark", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代遊俠所穿的皮製戰甲，柔軟貼身，行動無拘。" },
         "amr_old_robe": { n: "古老的長袍", type: "arm", slot: "armor", ac: 12, mpR: 12, req: "mage", safe: 0, p: 10000, gachaWeight: 0, noEnhance: true, d: "古代術士披掛的長袍，織線間仍縈繞著淡淡的魔力餘韻。" },
+        // 🔥 滅魔系列（威頓村・宙斯之熔岩高崙製作＝古老的盔甲＋+7以上抗魔法鏈甲＋金幣1000萬·依《滅魔裝備.md》）：高魔防盔甲·每強化+1魔防額外+1
+        "amr_slayer_plate": { n: "滅魔的 金屬盔甲", type: "arm", slot: "armor", ac: 15, mhp: 20, hpR: 1, mr: 7, mrPerEn: 1, req: "knight,warrior", safe: 0, p: 500000, gachaWeight: 0, d: "熔岩爐火重鑄的滅魔戰甲，甲面銀紋流轉，令邪法無從近身。" },
+        "amr_slayer_shawl": { n: "滅魔的 披肩", type: "arm", slot: "armor", ac: 11, mhp: 20, mpR: 12, mr: 7, mrPerEn: 1, req: "mage,illusion", safe: 0, p: 500000, gachaWeight: 0, d: "織入滅魔銀線的術士披肩，輕若無物，卻能撥開襲來的咒殺。" },
+        "amr_slayer_scale": { n: "滅魔的 鱗甲", type: "arm", slot: "armor", ac: 14, mhp: 20, hpR: 8, mpR: 4, mr: 7, mrPerEn: 1, req: "royal,dragon", safe: 0, p: 500000, gachaWeight: 0, d: "以滅魔之力淬鍊的層鱗鎧甲，每一片鱗都映著驅魔的冷光。" },
+        "amr_slayer_vine": { n: "滅魔的 小藤甲", type: "arm", slot: "armor", ac: 13, mhp: 20, hpR: 4, mpR: 8, mr: 7, mrPerEn: 1, req: "elf,dark,dragon,illusion", safe: 0, p: 500000, gachaWeight: 0, d: "滅魔藤蔓編成的輕甲，柔韌貼身，妖邪之氣無法滲入。" },
         // ===== 法師魔法書 =====
         "bk_heal1": { type: "skillbk", n: "魔法書(初級治癒術)", p: 100, sk: "sk_heal1", gachaWeight: 0 },
         "bk_sunlight": { type: "skillbk", n: "魔法書(日光術)", p: 100, sk: "sk_sunlight", gachaWeight: 0 },
@@ -2026,6 +2053,28 @@ const DB = {
         "tikal_teo_y":    { n: "提卡爾薩德提歐(黃)", lv: 60, s: "L", beh: "主動", race: "提卡爾", e: "none", hp: 1800, ac: -36, mr: 35, exp: 3601, goldMin: 0, goldMax: 0, atkSpd: 3, dmg: [2, 97], db: 49, hit: 69, mag: { skn: "彩虹雷電", cd: 90, chance: 0.5, dmg: [2, 80], db: 40, ele: "wind", alwaysHit: true } },
         "tikal_boss_m":   { hard: true, n: "提卡爾杰弗雷庫(雄)", lv: 70, s: "L", beh: "主動", race: "提卡爾", boss: true, e: "earth", hp: 25000, ac: -140, mr: 80, exp: 4901, goldMin: 0, goldMax: 0, atkSpd: 3, dmg: [4, 92], db: 93, hit: 107, mag: { skn: "雷霆風暴", cd: 110, dmg: [8, 80], db: 240, ele: "wind", alwaysHit: true }, mag2: { skn: "寒冰吐息", cd: 130, type: "frost_breath", pbase: 250, dur: 8 }, mag3: { skn: "沙塵暴", cd: 90, chance: 0.15, type: "silence", pbase: 300 } },
         "tikal_boss_f":   { hard: true, n: "提卡爾杰弗雷庫(雌)", lv: 70, s: "L", beh: "主動", race: "提卡爾", boss: true, e: "none", hp: 20000, ac: -140, mr: 80, exp: 4901, goldMin: 0, goldMax: 0, atkSpd: 2, dmg: [4, 92], db: 93, hit: 107, mag: { skn: "毒氣風暴", cd: 120, type: "poison", pbase: 300, d: 100, tick: 3, dur: 12 }, mag2: { skn: "震裂重擊", cd: 90, chance: 0.15, dmg: [8, 100], db: 120, ele: "none", alwaysHit: true, sec: { type: "stun", pbase: 200, dur: 3 } }, mag3: { skn: "冰雪颶風", cd: 30, dmg: [2, 100], db: 0, ele: "water", alwaysHit: true } },
+        // ===== 🌅 日出之國（依《日出之國.md》·時空裂痕第三區）：13 一般怪＋5 頭目 =====
+        //  ・一般攻擊 dmg/db/hit＝tools/mob-designer.js 曲線值（同裂痕層級平衡）；HP/AC/MR/exp/gold/atkSpd/技能＝照 MD 原文
+        //  ・三段變身頭目：transformTo/transformHpPct＝HP 低於門檻（或被打到 0）不死、原槽位強制變身為下一階並回滿血（js/03 tick 門檻偵測＋js/05 killMob 頂端攔截）
+        //  ・onHitPoison＝一般攻擊命中附加中毒（(pbase-玩家MR)/2 %·js/04 enemyPhysicalAttack）；恐怖的面貌 type:'terror_visage'＝隨機免疫 近/遠/魔 其一 10 秒（重用血壁 _reflectWall 結構·block:true）
+        "sr_narikama":    { hard: true, n: "嗚釜", lv: 65, s: "S", beh: "主動", race: "妖怪", e: "fire", hp: 1800, ac: -60, mr: 100, exp: 8451, goldMin: 300, goldMax: 600, atkSpd: 2, dmg: [3, 66], db: 50, hit: 84, mag: { skn: "火焰散落", cd: 70, chance: 0.5, dmg: [2, 60], db: 100, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 200, d: 30, tick: 5, dur: 20 } } },
+        "sr_kamaitachi":  { n: "鎌鼬", lv: 65, s: "S", beh: "主動", race: "妖怪", e: "wind", hp: 1750, ac: -70, mr: 80, exp: 8451, goldMin: 300, goldMax: 600, atkSpd: 0.5, dmg: [1, 55], db: 6, hit: 91, mag: { skn: "鎌鼬旋風", cd: 70, chance: 0.5, dmg: [2, 80], db: 120, ele: "wind", alwaysHit: true } },
+        "sr_rokurokubi":  { n: "轆轤首", lv: 68, s: "S", beh: "主動", race: "妖怪", e: "fire", hp: 2800, ac: -63, mr: 120, exp: 9249, goldMin: 300, goldMax: 600, atkSpd: 2, dmg: [3, 69], db: 53, hit: 87, mag: { skn: "弱化術", cd: 50, chance: 0.2, type: "weaken", pbase: 250, dur: 15 } },
+        "sr_karakasa":    { n: "唐傘小僧", lv: 68, s: "S", beh: "主動", race: "妖怪", e: "water", hp: 2950, ac: -60, mr: 100, exp: 9249, goldMin: 400, goldMax: 600, atkSpd: 1, dmg: [1, 89], db: 9, hit: 95, mag: { skn: "疾病術", cd: 50, chance: 0.2, type: "disease", pbase: 250, dur: 20 } },
+        "sr_narikama_rage": { hard: true, n: "憤怒的嗚釜", lv: 70, s: "S", beh: "主動", race: "妖怪", e: "fire", hp: 2200, ac: -65, mr: 80, exp: 9801, goldMin: 300, goldMax: 600, atkSpd: 2, dmg: [3, 66], db: 50, hit: 90, mag: { skn: "火焰散落", cd: 70, chance: 0.5, dmg: [2, 60], db: 140, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 200, d: 30, tick: 5, dur: 20 } } },
+        "sr_kamaitachi_elder": { n: "鎌鼬長兄", lv: 70, s: "S", beh: "主動", race: "妖怪", e: "wind", hp: 2150, ac: -80, mr: 120, exp: 9801, goldMin: 300, goldMax: 600, atkSpd: 0.5, dmg: [1, 55], db: 6, hit: 97, mag: { skn: "鎌鼬旋風", cd: 70, chance: 0.5, dmg: [2, 80], db: 160, ele: "wind", alwaysHit: true } },
+        "sr_kappa":       { hard: true, n: "河童", lv: 70, s: "S", beh: "主動", race: "妖怪", e: "water", hp: 2500, ac: -65, mr: 140, exp: 9801, goldMin: 300, goldMax: 600, atkSpd: 3, dmg: [3, 74], db: 56, hit: 91, mag: { skn: "寒冰氣息", cd: 70, chance: 0.5, dmg: [3, 80], db: 100, ele: "water", alwaysHit: true } },
+        "sr_akaoni":      { n: "赤鬼", lv: 70, s: "S", beh: "主動", race: "妖怪", e: "fire", hp: 3500, ac: -66, mr: 100, exp: 9801, goldMin: 400, goldMax: 600, atkSpd: 2, dmg: [3, 66], db: 50, hit: 90 },
+        "sr_aooni":       { n: "青鬼", lv: 70, s: "S", beh: "主動", race: "妖怪", e: "water", hp: 3500, ac: -66, mr: 100, exp: 9801, goldMin: 400, goldMax: 600, atkSpd: 2, dmg: [3, 66], db: 50, hit: 90 },
+        "sr_nue":         { n: "鵺", lv: 72, s: "S", beh: "主動", race: "妖怪", e: "earth", hp: 3350, ac: -69, mr: 100, exp: 10083, goldMin: 400, goldMax: 600, atkSpd: 1, dmg: [1, 95], db: 10, hit: 99, mag: { skn: "夢咒", cd: 70, chance: 0.5, dmg: [2, 100], db: 100, ele: "none", alwaysHit: true, sec: { type: "blind", pbase: 200, dur: 15 } } },
+        "sr_tengu":       { n: "天狗", lv: 72, s: "S", beh: "主動", race: "妖怪", e: "wind", hp: 3800, ac: -65, mr: 160, exp: 10083, goldMin: 400, goldMax: 600, atkSpd: 2, dmg: [3, 68], db: 52, hit: 92, mag: { skn: "風刃", cd: 50, dmg: [2, 100], db: 60, ele: "wind", alwaysHit: true } },
+        "sr_asura":       { hard: true, n: "阿修羅像", lv: 72, s: "S", beh: "主動", race: "妖怪", e: "none", hp: 4500, ac: -66, mr: 120, exp: 10083, goldMin: 400, goldMax: 600, atkSpd: 1, dmg: [1, 95], db: 10, hit: 99, dr: 10 },
+        "sr_ushioni_child": { n: "牛鬼之子", lv: 50, s: "S", beh: "主動", race: "妖怪", e: "earth", hp: 1000, ac: -60, mr: 110, exp: 2501, goldMin: 0, goldMax: 0, atkSpd: 1, dmg: [1, 78], db: 8, hit: 63, onHitPoison: { skn: "毒素", pbase: 200, d: 50, tick: 5, dur: 20 } },
+        "sr_tamamo": { hard: true, n: "白面金毛九尾狐・玉藻", lv: 75, s: "L", beh: "主動", race: "妖怪", boss: true, noDmgCurve: true, noHpCurve: true, e: "water", hp: 18000, ac: -80, mr: 130, exp: 11251, goldMin: 400, goldMax: 600, atkSpd: 1, dmg: [3, 85], db: 26, hit: 113, transformTo: "sr_kyuubi", transformHpPct: 0.5, transformFxText: "妖狐展現真面目", mag: { skn: "妖狐之火", cd: 50, chance: 0.5, dmg: [4, 60], db: 200, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 300, d: 50, tick: 5, dur: 20 } } },
+        "sr_kyuubi": { hard: true, n: "白面金毛九尾狐・九尾", lv: 75, s: "L", beh: "主動", race: "妖怪", boss: true, noDmgCurve: true, noHpCurve: true, e: "fire", hp: 25000, ac: -80, mr: 180, exp: 11251, goldMin: 14000, goldMax: 36000, atkSpd: 1, dmg: [3, 85], db: 26, hit: 113, transformTo: "sr_sessyoseki", transformHpPct: 0.3, transformFxText: "妖狐露出真身", mag: { skn: "妖狐之火", cd: 50, chance: 0.5, dmg: [4, 60], db: 300, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 300, d: 100, tick: 5, dur: 20 } } },
+        "sr_sessyoseki": { hard: true, n: "白面金毛九尾狐・殺生石", lv: 80, s: "L", beh: "主動", race: "妖怪", boss: true, noDmgCurve: true, noHpCurve: true, e: "none", hp: 10000, ac: -99, mr: 200, exp: 13251, goldMin: 14000, goldMax: 36000, atkSpd: 1, dmg: [3, 86], db: 26, hit: 118, mag: { skn: "妖狐之火", cd: 50, chance: 0.5, dmg: [4, 100], db: 300, ele: "fire", alwaysHit: true, sec: { type: "burn", pbase: 300, d: 150, tick: 5, dur: 20 } } },
+        "sr_ushioni": { hard: true, n: "牛鬼", lv: 90, s: "L", beh: "主動", race: "妖怪", boss: true, noDmgCurve: true, e: "earth", hp: 120000, ac: -100, mr: 200, exp: 16201, goldMin: 15400, goldMax: 47000, atkSpd: 2, dmg: [5, 79], db: 101, hit: 128, onHitPoison: { skn: "猛毒", pbase: 300, d: 100, tick: 3, dur: 18 }, mag: { skn: "牛鬼突進", cd: 70, chance: 0.3, dmg: [4, 100], db: 400, ele: "none", alwaysHit: true, sec: { type: "stun", pbase: 300, dur: 3 } }, mag2: { skn: "大地崩裂", cd: 110, dmg: [4, 200], db: 300, ele: "earth", alwaysHit: true } },
+        "sr_gashadokuro": { hard: true, n: "巨大骷髏", lv: 99, s: "L", beh: "主動", race: "妖怪", boss: true, noDmgCurve: true, noHpCurve: true, e: "none", hp: 99999, ac: -99, mr: 300, exp: 20000, goldMin: 40000, goldMax: 80000, atkSpd: 3, dmg: [6, 83], db: 126, hit: 128, mag: { skn: "槌擊", cd: 90, type: "stun", pbase: 250 }, mag2: { skn: "幽魂怨念", cd: 70, chance: 0.5, dmg: [5, 150], db: 200, ele: "none", alwaysHit: true, sec: { type: "sleep", pbase: 300 } }, mag3: { skn: "枯竭詛咒", cd: 110, chance: 0.2, type: "potionfrost", pbase: 300, dur: 8 }, mag4: { skn: "恐怖的面貌", cd: 100, type: "terror_visage", dur: 10 } },
         // ===== 拉斯塔巴德地下洞穴：歐姆族 =====
         "ohm": { n: "歐姆", lv: 19, s: "S", beh: "被動", race: "歐姆", e: "earth", hp: 152, ac: -10, mr: 19, exp: 362, goldMin: 20, goldMax: 300, atkSpd: 2, dmg: [2, 9], db: 5, hit: 0 },
         "ohm_rage": { n: "狂暴的歐姆", lv: 21, s: "S", beh: "被動", race: "歐姆", e: "earth", hp: 168, ac: -11, mr: 21, exp: 442, goldMin: 20, goldMax: 300, atkSpd: 2, dmg: [2, 18], db: 9, hit: 0 },
@@ -2482,7 +2531,7 @@ const DB = {
                 { id: "npc_masha", n: "馬沙", title: "試煉", type: "quest", d: "沉默寡言的試煉者馬沙，靜候挑戰者前來。主持騎士、妖精與王族的 45 級試煉：達等級後接取任務，一次完成領取全部獎勵。" },
                 { id: "npc_han", n: "漢", title: "精通", type: "mastery", classicHide: true, d: "威頓村的傳奇人物漢，早已超越凡人的極限。等級 50 以上的強者，可在此接受超越自我的精通任務。" },   // 🏅
                 { id: "npc_keluya", n: "客盧亞", title: "製作", type: "craft", d: "客盧亞傳承著上古鍛造的失落技藝。以古代材料打造古代臂甲與傳說武器（古代神之槍／古代神之斧）。" },
-                { id: "npc_zeus_golem", n: "宙斯之熔岩高崙", title: "製作", type: "craft", d: "由熔岩鑄成的宙斯之熔岩高崙，爐心燃著遠古之火，專為戰士鍛兵。以惡魔斧頭與黑色米索莉金屬板為戰士鍛造「魔物的斧頭」。" },
+                { id: "npc_zeus_golem", n: "宙斯之熔岩高崙", title: "製作", type: "craft", d: "由熔岩鑄成的宙斯之熔岩高崙，爐心燃著遠古之火，專為戰士鍛兵。以惡魔斧頭與黑色米索莉金屬板為戰士鍛造「魔物的斧頭」；亦能以古老的盔甲融合 +7 以上的抗魔法鏈甲，鍛造出驅邪避魔的「滅魔」系列裝備。" },
                 { id: "npc_doll_merchant", n: "魔法娃娃商人", title: "卡片合成", type: "synth", d: "蒐羅怪物卡片的魔法娃娃商人。能將你身上重複的卡片合成為更高階的卡片——10 張同名普卡換 1 張銀卡，10 張同名銀卡換 1 張金卡。" },
                 { id: "npc_wh_witon", n: "艾斯倫", title: "倉庫", type: "warehouse", d: "艾斯倫在威頓村的庫房裡替旅人看管行囊，存放物品與金幣，四個存檔角色共用。" }
             ]
@@ -2903,6 +2952,11 @@ const DB = {
         "tikal_area": ["tikal_azt", "tikal_azt_y", "tikal_yuka_b", "tikal_yuka_w", "tikal_kaira_b", "tikal_kaira_y", "tikal_bara", "tikal_bara_r", "tikal_eto", "tikal_eto_dry"],
         "tikal_deep": ["tikal_eto", "tikal_eto_dry", "tikal_mud", "tikal_mud_k", "tikal_ska_p", "tikal_ska_r", "tikal_teo_b", "tikal_teo_y"],
         "tikal_altar": ["tikal_boss_m", "tikal_boss_f"],
+        // ===== 🌅 日出之國（時空裂痕·暫用既有怪物；待日出之國專屬怪物完成後替換） =====
+        "sunrise_castle": ["sr_narikama", "sr_kamaitachi", "sr_rokurokubi", "sr_karakasa", "sr_ushioni_child", "sr_narikama_rage", "sr_kamaitachi_elder"],
+        "sunrise_east": ["sr_rokurokubi", "sr_karakasa", "sr_ushioni_child", "sr_narikama_rage", "sr_kamaitachi_elder", "sr_kappa", "sr_akaoni", "sr_aooni", "sr_tamamo"],
+        "sunrise_west": ["sr_kappa", "sr_akaoni", "sr_aooni", "sr_nue", "sr_tengu", "sr_asura", "sr_ushioni_child", "sr_ushioni"],
+        "sunrise_north": ["sr_akaoni", "sr_aooni", "sr_nue", "sr_tengu", "sr_asura", "sr_narikama_rage", "sr_kamaitachi_elder", "sr_gashadokuro"],
         "dark_magic_lab": ["de_lab_earth", "de_lab_water", "de_lab_wind", "de_lab_fire", "de_lab_mage", "de_lab_blackmage", "de_train_gatekeeper"],
         "necro_training": ["de_necro_avenger", "de_necro_warlock", "de_necro_omwarrior", "de_necro_darklord", "de_necro_bloodknight", "de_necro_omheavy", "de_train_gatekeeper"],
         "elder_room": ["de_elder_guard", "de_elder_captain", "de_elder_follower", "de_lab_blackmage", "de_train_soulknight", "de_necro_bloodknight", "dark_spirit_king", "darkdweller", "de_lab_earth", "de_lab_water", "de_lab_fire", "de_lab_wind", "dark_spirit_caller", "de_elder_kina", "de_elder_andis", "de_elder_batas", "de_elder_balos", "de_elder_balud", "de_elder_ramas", "de_elder_taimas", "de_elder_adiel"],   // 🏛️ 格蘭肯神殿．長老之室：3 新一般怪 + 既有出沒怪物 + 8 長老 BOSS（BOSS 出場由 spawnMob 節流：場上最多 2 隻、第 1 隻存活滿 3 分鐘才出第 2 隻）
@@ -3053,7 +3107,7 @@ const DB = {
     }
     Object.keys(DB.mobs).forEach(id => {
         let mob = DB.mobs[id];
-        if (!mob || !mob.boss || (mob.lv || 0) < 51 || mob.n === '卡瑞' || mob.race === '建築') return;
+        if (!mob || !mob.boss || (mob.lv || 0) < 51 || mob.n === '卡瑞' || mob.race === '建築' || mob.noHpCurve) return;   // 🌅 noHpCurve：日出之國三段變身鏈/巨大骷髏＝HP 照 MD 手填（變身鏈難度弧線刻意遞減·比照卡瑞豁免）
         mob.hp = Math.max(mob.hp || 1, hpFloor(mob.lv));
     });
 })();
@@ -3074,7 +3128,8 @@ const DB = {
         '火焰爆發', '迴旋斬', '龍的一擊', '地獄火', '黑魔法力場', '鐮刀劍氣斬', '腐蝕之血',
         '冰錐流星雨', '水氣爆裂', '集體衝暈', '巨石爆裂', '地面障礙', '邪靈之氣',
         '血夜月彎刀', '夜魔飛襲', '幻象光線', '集體相消', '劇毒龍捲風', '麻痺蜘蛛網',
-        '雷霆風暴', '沙塵暴', '震裂重擊', '冰雪颶風'
+        '雷霆風暴', '沙塵暴', '震裂重擊', '冰雪颶風',
+        '火焰散落', '鎌鼬旋風', '寒冰氣息', '妖狐之火', '牛鬼突進', '大地崩裂', '幽魂怨念'   // 🌅 日出之國全體技（與 js/01 MOB_PARTY_AOE_SKILLS 同步）
     ]);
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -3341,51 +3396,21 @@ function _origAuthorizedHost() {
 function _origEnforce() {
   try {
     if (_origAuthorizedHost()) return;
-    if (!document.body) return;
-    // 🏠 加掛版客製(2026-07-16/17 使用者明訂):橫幅只在「首頁」(#main-menu:開始遊戲/設定那個最初畫面)顯示,
-    //   選角(#load-select-panel)、創角(#slot-select-panel 等)、進入遊戲後都要自動隱藏——不是整個 #creation-screen 都算首頁。
-    var mainMenu = document.getElementById('main-menu');
-    var onHome = !!mainMenu && !mainMenu.classList.contains('hidden');
-    var existing = document.getElementById('_orig_pbar');
-    var stage = document.getElementById('login-art-stage');
-    var titleLayer = document.getElementById('login-title-layer');
-    if (!onHome) {
-      if (existing) existing.remove();
-      if (titleLayer) titleLayer.style.top = '';   // 還原標題層位置(離開首頁時)
-      return;
-    }
-    if (existing) return;
-    if (!stage) return;   // 找不到藝術舞台容器就不硬掛回 body,避免又變回覆蓋式
+    if (!document.body || document.getElementById('_orig_pbar')) return;
     var url = 'https://shines871.github.io/idle-lineage-class/';
     var bar = document.createElement('div');
     bar.id = '_orig_pbar';
-    // 🎨(2026-07-17 使用者明訂)改成「跟背景圖同一層、置頂位置」:掛在 #login-art-stage 內部、
-    //   position:relative(不再是 position:fixed 蓋住整個瀏覽器視窗),寬度跟著 4:3 舞台走,不再橫跨全螢幕。
-    //   z-index 跟標題層同層級(3),比 main-menu(4)低,不會蓋到按鈕。
-    //   ⚠️ 用 relative(佔真實版面空間)而非 absolute:手機版(afk-mobile.js)把 #login-art-stage 改成
-    //   flex 直排、標題/選單改 position:relative 參與排版(!important,JS 改不動)——橫幅要用同一種
-    //   「佔位」方式插在最前面,手機才會自然把下面內容擠下去,不用另外量高度去推(見下方桌機分支)。
-    bar.style.cssText = 'position:relative;z-index:3;'
-      + 'background:linear-gradient(90deg,rgba(36,31,56,.88),rgba(58,47,92,.88),rgba(36,31,56,.88));color:#eee9f7;'
-      + 'font:bold 13px/1.4 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
-      + 'padding:6px 10px;text-align:center;letter-spacing:.2px;'
-      + 'box-shadow:0 2px 10px rgba(0,0,0,.4);border-bottom:1px solid #7fd9c4;';
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;'
+      + 'background:linear-gradient(90deg,#0d1f3a,#17408a,#0d1f3a);color:#eef4ff;'
+      + 'font:bold 15px/1.5 "Microsoft JhengHei","Segoe UI",Arial,sans-serif;'
+      + 'padding:11px 16px;text-align:center;letter-spacing:.3px;'
+      + 'box-shadow:0 2px 14px rgba(0,0,0,.45);border-bottom:2px solid #ffcf5a;';
     // ⚠️中性措辭·勿加「盜版/未授權/廣告/惡意」等指控（授權允許非商業轉載→指控合法轉載者有毀謗風險）
-    // 🎨 加掛版客製文字/配色(2026-07-17 使用者明訂):標明原作者(秋玥)與加掛版維護者(Chaos),
-    //    請支持原作、勿販售;配色故意跟其他轉載版本區隔(灰紫+青綠,非原作的深藍+金黃)。
-    //    ⚠️ 這段是直接改本體(非外掛疊加),下次同步覆蓋本體時這段客製文字/配色會被原作者版本洗掉,要記得重新套用。
-    bar.innerHTML = 'ℹ️ 本版本為非官方加掛版本，原作：秋玥；加掛版：Chaos。僅供個人交流使用，'
-      + '請支持原作者，勿販售本作品或其衍生版本。 '
-      + '<a href="' + url + '" style="color:#7fd9c4;font-weight:bold;text-decoration:underline">前往原作者最新版</a>';
-    stage.insertBefore(bar, stage.firstChild);   // 插最前面:手機 flex 直排會自然把標題/選單擠下去
-    // 🔧(2026-07-17 使用者回報)橫幅文字變長,手機直向常會換成兩行、蓋住下方標題:
-    //   桌機的標題層仍是 position:absolute(top:14%,不參與版面排擠),要另外用量出來的橫幅高度
-    //   手動往下推;手機已經靠上面的 flex 排版自然擠開,不需要、也推不動(afk-mobile.js 用
-    //   !important 把 top 鎖死 auto)。用 computed position 分辨走哪條路。
-    if (titleLayer && getComputedStyle(titleLayer).position === 'absolute') {
-      var baseTop = parseFloat(getComputedStyle(titleLayer).top) || 0;
-      titleLayer.style.top = (baseTop + bar.offsetHeight) + 'px';
-    }
+    bar.innerHTML = '📢 這是<span style="color:#ffcf5a">非官方轉載版本</span>，內容可能不是最新。'
+      + '本遊戲<span style="color:#ffcf5a">永久免費</span>，前往<span style="color:#ffcf5a">官方最新版</span>：'
+      + '<a href="' + url + '" style="color:#ffcf5a;font-weight:bold;text-decoration:underline">'
+      + 'shines871.github.io/idle-lineage-class</a>';
+    document.body.appendChild(bar);
   } catch (_) {}
 }
 
@@ -3393,7 +3418,3 @@ try {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _origEnforce);
   else _origEnforce();
 } catch (_) {}
-// 🏠 加掛版客製(2026-07-17):原作者只在 gameLoop(戰鬥中)重掛,但選角/創角畫面切換時遊戲還沒開始跑、
-//   gameLoop 不會執行,單靠那個掛點抓不到「首頁→選角畫面」這種切換,橫幅會卡在畫面上一直不消失。
-//   改用低成本的輪詢(每 600ms)確保各畫面切換都能即時反映首頁顯示/隱藏狀態。
-try { setInterval(_origEnforce, 600); } catch (_) {}

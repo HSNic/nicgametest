@@ -64,6 +64,8 @@ const CRAFT_RECIPES = {
     // 🔮 巴特爾（希培利亞村莊）：龜裂之核＝時空裂痕碎片×100；黑曜石奇古獸＝四種高品質寶石×10＋龜裂之核×2＋原石碎片×30＋精靈粉末×30＋金幣 100 萬
     npc_bartel: [
         { result: 'mat_crack_core', req: [{ id: 'mat_rift_shard', cnt: 100 }] },
+        { result: 'mat_gasha_soul', req: [{ id: 'mat_youkai_soul', cnt: 100 }] },   // 🌅 日出之國：巨大骷髏的妖魂（使用+100萬經驗·可批量）
+
         { result: 'item_osiris_box_basic', req: [{ id: 'mat_osiris_basic_up', cnt: 1 }, { id: 'mat_osiris_basic_down', cnt: 1 }] },
         { result: 'item_osiris_box_high', req: [{ id: 'mat_osiris_high_up', cnt: 1 }, { id: 'mat_osiris_high_down', cnt: 1 }] },
         { result: 'item_kukulkan_box_basic', req: [{ id: 'mat_kukulkan_basic_up', cnt: 1 }, { id: 'mat_kukulkan_basic_down', cnt: 1 }] },   // 🐍 提卡爾 初級寶箱
@@ -466,6 +468,7 @@ function renderUniversalCraft(div, npcId) {
     if (npcId === 'npc_flame_shadow') div.innerHTML += buildDemonKingCraftHTML();   // 👑 炎魔之影：在通用配方下方附加惡魔王武器客製製作區
     if (npcId === 'npc_lumiel') div.innerHTML += buildLumielCraftHTML();   // ⚔️ 琉米埃爾：在通用配方下方附加神聖執行團裝備客製製作區
     if (npcId === 'npc_mystic_mage') div.innerHTML += buildMysticWandCraftHTML();   // 🔷🔶 神秘的魔法師：鋼鐵瑪那魔杖客製製作區（該 NPC 無通用配方）
+    if (npcId === 'npc_zeus_golem') div.innerHTML += buildSlayerCraftHTML();   // 🔥 宙斯之熔岩高崙：在通用配方下方附加滅魔裝備客製製作區
 }
 
 // ===== 👑 惡魔王武器客製製作（炎魔之影）：消耗 +11 以上「指定」惡魔武器，繼承其強化值／詞綴／席琳套裝效果；不支援席琳製作 =====
@@ -660,6 +663,63 @@ function doMysticWandCraft(idx) {
     logSys(`<span class="text-amber-200 font-bold">神秘的魔法師</span> 製作完成：<span class="${getItemColor({ id: r.result })} font-bold">${DB.items[r.result].n}</span>`);
     updateUI(); renderTabs(true); saveGame();
     renderUniversalCraft(document.getElementById('interaction-content'), 'npc_mystic_mage');
+}
+
+// ===== 🔥 滅魔裝備客製製作（威頓村・宙斯之熔岩高崙·依《滅魔裝備.md》）：消耗 +7 以上抗魔法鏈甲，成品恆為 +0（不繼承強化值／詞綴）=====
+//   來源鏈甲的挑選重用 findMysticWandSource（背包＋倉庫·+7 以上·未鎖定·挑最不值錢那件）。
+const SLAYER_SRC_ID = 'arm_69', SLAYER_SRC_NAME = '抗魔法鏈甲';
+const SLAYER_RECIPES = [
+    { result: 'amr_slayer_plate', mats: [{ id: 'amr_old_plate',   cnt: 1 }, { id: 'gold', cnt: 10000000 }] },
+    { result: 'amr_slayer_scale', mats: [{ id: 'amr_old_scale',   cnt: 1 }, { id: 'gold', cnt: 10000000 }] },
+    { result: 'amr_slayer_vine',  mats: [{ id: 'amr_old_leather', cnt: 1 }, { id: 'gold', cnt: 10000000 }] },
+    { result: 'amr_slayer_shawl', mats: [{ id: 'amr_old_robe',    cnt: 1 }, { id: 'gold', cnt: 10000000 }] },
+];
+function buildSlayerCraftHTML() {
+    let html = `<div class="text-amber-300 font-bold text-sm mt-4 mb-2 px-1 border-t border-slate-700 pt-3">🔥 滅魔裝備（消耗 +7 以上的抗魔法鏈甲；成品為 +0）</div>`;
+    SLAYER_RECIPES.forEach((r, idx) => {
+        let resItem = DB.items[r.result];
+        let imgUrl = getIconUrl(resItem);
+        let matsOk = r.mats.every(m => materialObtainable(m.id, m.cnt));
+        let src = findMysticWandSource(SLAYER_SRC_ID);
+        let canMake = matsOk && !!src;
+        let srcColor = src ? 'text-green-400' : 'text-red-400';
+        let srcExtra = src ? `（將消耗 +${src.en || 0}）` : '';
+        let reqHtml = craftReqHtml(r.mats)
+            + `<span class="text-slate-500 mx-2 leading-none">+</span><span class="text-sm font-bold leading-none ${srcColor}">+7以上 ${SLAYER_SRC_NAME} ×1</span><span class="text-amber-300 text-xs ml-0.5">${srcExtra}</span>`;
+        html += `
+        <div class="list-item bg-slate-800 rounded mb-2 border border-slate-700 p-3" style="display:flex !important; justify-content:space-between !important; align-items:center !important; width:100% !important; box-sizing:border-box !important;">
+            <div class="flex items-center gap-4 min-w-0 flex-1">
+                <div class="w-12 h-12 bg-slate-900 rounded border border-slate-600 flex items-center justify-center shrink-0 tip-host">
+                    <img src="${imgUrl}" onerror="this.style.display='none';" class="w-10 h-10 object-contain pointer-events-none">
+                </div>
+                <div class="flex flex-col items-start gap-1.5">
+                    <span class="${getItemColor({ id: r.result })} font-bold text-lg leading-none truncate">${resItem.n}</span>
+                    <div class="flex items-center gap-2 flex-wrap"><span class="text-slate-400 text-sm">需求：</span>${reqHtml}</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button class="btn ${canMake ? 'bg-blue-700 hover:bg-blue-600 border-blue-500' : 'bg-slate-700 border-slate-600 opacity-60'} py-2 px-6 font-bold shadow" ${canMake ? '' : 'disabled'} onclick="doSlayerCraft(${idx})">製作</button>
+            </div>
+        </div>`;
+    });
+    return html;
+}
+function doSlayerCraft(idx) {
+    let r = SLAYER_RECIPES[idx];
+    if (!r) return;
+    if (!RECIPE_BY_RESULT) buildRecipeIndex();
+    let lack = r.mats.filter(m => !materialObtainable(m.id, m.cnt)).map(m => m.id === 'gold' ? `金幣 ${Math.max(0, m.cnt - player.gold).toLocaleString()}` : `${DB.items[m.id].n} ${Math.max(0, m.cnt - invCountId(m.id))}`);
+    let src = findMysticWandSource(SLAYER_SRC_ID);
+    if (!src) lack.push(`+7以上 ${SLAYER_SRC_NAME} ×1`);
+    if (lack.length) { logSys(`<span class="text-red-400 font-bold">材料不足，無法製作。</span><span class="text-red-300">（尚缺：${lack.join('、')}）</span>`); return; }
+    r.mats.forEach(m => ensureMaterial(m.id, m.cnt, 0));   // 🔧 先自動補製可合成的中間物（古老的盔甲可由迪泰特配方遞迴合成）
+    r.mats.forEach(m => consumeMaterialById(m.id, m.cnt));
+    if (src._whSource) { whRemoveStackByUid(src.uid, 1); }   // 來源鏈甲在倉庫：自倉庫精準消耗該實例
+    else if ((src.cnt || 1) > 1) src.cnt -= 1; else player.inv = player.inv.filter(i => i.uid !== src.uid);   // 消耗 1 件來源鏈甲（背包）
+    gainItem(r.result, 1, true, false);   // 成品恆 +0（不繼承來源的強化值／詞綴）；走 gainItem → 自動登錄裝備收集冊＋1% 祝福擲骰
+    logSys(`<span class="text-amber-200 font-bold">宙斯之熔岩高崙</span> 製作完成：<span class="${getItemColor({ id: r.result })} font-bold">${DB.items[r.result].n}</span>`);
+    updateUI(); renderTabs(true); saveGame();
+    renderUniversalCraft(document.getElementById('interaction-content'), 'npc_zeus_golem');
 }
 
 // 2. 渲染茉莉的製作介面
@@ -1788,6 +1848,10 @@ window.onload = () => {
                 let _rateText = `${d.procRateBase || 1}%${d.procRatePerEn ? `＋每強化${d.procRatePerEn}%` : ''}`;
                 _eff.push(`攻擊施法 ${_rateText}（觸發${_procName}）`);
             }
+            if(d.procSkill2 && d.procSkill2.skId) _eff.push(`攻擊施法 ${d.procSkill2.rate || 5}%（觸發${(DB.skills[d.procSkill2.skId] && DB.skills[d.procSkill2.skId].n) || '技能'}）`);   // 🌅 九尾妖狐的怒火：第二觸發槽
+            if(d.procPoisonPct) _eff.push(`附毒（命中附加每秒該次傷害${d.procPoisonPct.pct || 50}%的中毒，最多1層，持續${d.procPoisonPct.dur || 6}秒）`);   // 🌅 毒鵺的黑尾
+            if(d.iaiCrit) _eff.push('居合必定爆擊');   // 🌅 鐮鼬的尾刃
+            if(d.heavyBonusDmg) _eff.push(`重擊時額外傷害+${d.heavyBonusDmg}`);   // 🌅 牛鬼的斷角
             if(d.procStatusSkill) {
                 let _statusName = (DB.skills[d.procStatusSkill.skId] && DB.skills[d.procStatusSkill.skId].n) || '異常狀態';
                 _eff.push(`異常攻擊 ${d.procStatusSkill.rate || 0}%（命中時造成${_statusName}）`);
