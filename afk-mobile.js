@@ -1514,12 +1514,18 @@
          加 :not(.hidden) 後有 .hidden 時本規則不命中,交還作者的隱藏。 */
       'body.m-mobile #creation-screen:not(.hidden){position:fixed !important;inset:0 !important;display:block !important;overflow-y:auto !important;padding:0 !important;}',
       'body.m-mobile #login-art-stage{position:relative !important;width:100vw !important;max-width:100vw !important;aspect-ratio:auto !important;min-height:var(--app-h,100dvh) !important;display:flex !important;flex-direction:column !important;justify-content:center !important;overflow:visible !important;padding:32px 22px 40px !important;box-shadow:none !important;}',
+      /* 🎨(2026-07-17 使用者回報)首頁公告橫幅(#_orig_pbar,js/00-data.js 動態插入的 stage 第一個子層)
+         手機版原本會被上面這條 padding:32px 22px 40px 往下、往內推,變成「浮在背景圖中間偏上」的一塊,
+         跟桌機版「緊貼畫面最上緣、與背景同寬」的觀感不一致。用負邊距把它拉出 padding、貼齊真正的頂端與左右邊緣。 */
+      'body.m-mobile #_orig_pbar{margin:-32px -22px 14px !important;}',
       'body.m-mobile #login-bg-image{position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;object-fit:cover !important;opacity:.35 !important;}',
       'body.m-mobile #login-anim-image{display:none !important;}',
       /* 🎨 2026-07-11 首頁 V17 改版新增 #login-copy-panel(左資訊卡包住 title-layer/meta-layer),
          手機版解除桌機的絕對定位卡片框,改回一般直向堆疊(卡片背景/邊框保留,只是不再絕對定位)。 */
       'body.m-mobile #login-copy-panel{position:relative !important;left:auto !important;top:auto !important;width:100% !important;max-width:330px !important;height:auto !important;margin:0 auto !important;}',
-      'body.m-mobile #login-title-layer{position:relative !important;left:auto !important;top:auto !important;width:100% !important;text-align:center !important;margin:0 0 6vh !important;z-index:3 !important;}',
+      /* 🎨(2026-07-17)afk-brand-badge(標題下方「(加掛版)」+版本號)字級放大成兩行後變高,原本 6vh
+         留白裝不下、會蓋到下面的「開始遊戲」按鈕,多留 14px 給它(見 afk-skin.js #afk-brand-badge)。 */
+      'body.m-mobile #login-title-layer{position:relative !important;left:auto !important;top:auto !important;width:100% !important;text-align:center !important;margin:0 0 calc(6vh + 14px) !important;z-index:3 !important;}',
       'body.m-mobile #login-title-layer h1{font-size:26px !important;margin:0 0 8px !important;}',
       'body.m-mobile #login-title-layer p{font-size:14px !important;}',
       'body.m-mobile #main-menu{position:relative !important;left:auto !important;top:auto !important;width:100% !important;max-width:330px !important;margin:0 auto !important;gap:12px !important;z-index:4 !important;}',

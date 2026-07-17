@@ -54,8 +54,11 @@
   var CSS = [
     /* 標題下方兩行副標:「(加掛版)」+ 加掛版版本號(A2 移除舊的雲朵 icon、A3 改成純文字兩行,同字體同色) */
     /* 浮在標題區下方、置中、絕對定位(不佔版面、不把按鈕往下推) */
-    /* ⚠️(2026-07-17)字級放大後兩行變高,bottom 的負值也要跟著加大,不然會蓋到標題下面那行「創造您的角色並開始冒險」 */
-    '#afk-brand-badge{position:absolute;left:50%;bottom:-58px;transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;}',
+    /* ⚠️(2026-07-17)字級放大後兩行變高,bottom 的負值也要跟著加大,不然會蓋到標題下面那行「創造您的角色並開始冒險」;
+       這個值只有手機生效(桌機被下面 body:not(.m-mobile) 那條覆寫成 position:static),手機標題層下方
+       只有 6vh 的預留間距(afk-mobile.js #login-title-layer margin-bottom:6vh),徽章推太多反而會蓋到
+       下面的「開始遊戲」按鈕,故不能無限加大,只能抓在「兩行文字都露出」跟「不蓋到按鈕」中間的平衡值。 */
+    '#afk-brand-badge{position:absolute;left:50%;bottom:-55px;transform:translateX(-50%);z-index:6;pointer-events:none;text-align:center;}',
     '#afk-brand-badge .afk-brand-line{font-size:19px;font-weight:800;letter-spacing:1.5px;color:#fde68a;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 6px rgba(0,0,0,.4);white-space:nowrap;line-height:1.6;}',
     /* 🎨(2026-07-17 使用者明訂)版本號那行跟「(加掛版)」字樣分開上色,不要同色混在一起難分辨 */
     '#afk-brand-badge .afk-brand-ver{color:#7fd9c4;}',

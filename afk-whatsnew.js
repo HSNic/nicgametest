@@ -21,8 +21,12 @@
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  // 🔧 手動維護:最近幾次更新的白話摘要(只留最近幾筆,太舊的可以拿掉)。
+  // 🔧 手動維護:更新的白話摘要,新的寫最上面。彈窗一次只顯示前 PAGE_SIZE 筆,
+  //   其餘靠「載入更多」按鈕每次多顯示 PAGE_SIZE 筆,陣列本身不用管顯示幾筆——
+  //   之後補寫玩家版變更紀錄時,把最新一筆的白話摘要複製一份精簡版加進這裡最上面即可,
+  //   累積太多再視情況拿掉陣列尾端太舊的紀錄。
   //   wiki: {tab, cls} 可選——有填的話該條目會多一顆「查看小百科」連結。
+  var PAGE_SIZE = 3;
   var CHANGELOG = [
     {
       date: '2026-07-17', title: '小百科補完寵物系統與新機制說明',
@@ -49,32 +53,77 @@
         { text: '小百科內文重要名詞(NPC/道具/頭目/技能/裝備/地點/異常狀態)加上顏色標示,閱讀更清楚。' },
         { text: '爆擊特效改成更絢麗的金白閃爍光暈。' }
       ]
+    },
+    {
+      date: '2026-07-16', title: '同步原作者本體最新版v3.4.86,含大量系統與數值調整',
+      items: [
+        { text: '跟進原作者本體 62 個版本更新:法師系一到十階魔法傷害全面拉高、寵物系統修正、傭兵新增可攻擊的召喚物、經典模式高等級經驗需求重新計算、新武器「冥皇執行劍」與大量新遺物。' },
+        { text: '幾個技能的團隊/個人效果範圍互換了:鋼鐵防護從「全隊減傷」改成「只有自己防禦提升」(削弱),灼熱武器、閃亮之盾則從「只有自己」變成「全隊都吃得到」。' },
+        { text: '頁面頂端新增一條提示橫幅,告知這是加掛外掛版本並提供官方連結。' }
+      ]
+    },
+    {
+      date: '2026-07-16', title: '小百科/掉落查詢搜尋效能優化+畫面小整理',
+      items: [
+        { text: '掉落查詢/小百科搜尋現在打字後會立刻顯示「搜尋中…」,不會感覺沒反應。' },
+        { text: '掉落查詢以前「符合太多只顯示前面幾十筆」的問題已修正,往下捲動會自動接著載入,所有符合結果都能看到。' }
+      ]
+    },
+    {
+      date: '2026-07-16', title: '同步原作者新遺物/技能+遺物顯示優化+新NPC',
+      items: [
+        { text: '跟進原作者新版:新增24件遺物、2把新武器(倫得雙刀、冥皇執行劍解咒版)、2本新技能書,連同對應的怪物掉落資料。' },
+        { text: '掉落查詢跟小百科裡的「遺物」現在都會加上「[遺物]」標籤,一眼就能看出哪些是遺物。', wiki: { tab: 'relic' } },
+        { text: '新增NPC「聖使阿卡塔」(亞丁城鎮,經典模式限定):可以花金幣買回死亡時損失的部分經驗值。', wiki: { tab: 'mode' } }
+      ]
+    },
+    {
+      date: '2026-07-15', title: '批次結算修正+雲端同步略過修正+設定調整',
+      items: [
+        { text: '修正批次結算偶爾出現「無收益」、之後單獨登入該角色離線時間還在、甚至跑回村莊的問題。' },
+        { text: '雲端同步跳出的選單,按「略過」或「全部略過」現在是真的略過,不會再照樣把資料送上雲端或蓋掉本機內容。' }
+      ]
     }
   ];
 
   var MODAL_ID = 'm-wn-modal';
   var _layer = null;
+  var _shown = PAGE_SIZE;   // 目前顯示到第幾筆(每次「載入更多」+PAGE_SIZE)
+
+  function renderGroup(grp) {
+    var items = grp.items.map(function (it) {
+      var link = it.wiki
+        ? ' <span role="button" tabindex="0" class="m-wn-link" data-tab="' + esc(it.wiki.tab) + '" data-cls="' + esc(it.wiki.cls || '') + '">📖 查看小百科</span>'
+        : '';
+      return '<li>' + esc(it.text) + link + '</li>';
+    }).join('');
+    return '<div class="m-wn-grp">'
+      + '<div class="m-wn-grp-title"><span class="m-wn-date">' + esc(grp.date) + '</span> ' + esc(grp.title) + '</div>'
+      + '<ul class="m-wn-list">' + items + '</ul>'
+      + '</div>';
+  }
+
+  // 只重繪清單本體+載入更多鈕(不重建整個 modal),讓「載入更多」點擊後捲動位置不會跳掉
+  function renderBody() {
+    var bodyEl = document.getElementById('m-wn-body'); if (!bodyEl) return;
+    var visible = CHANGELOG.slice(0, _shown);
+    var html = visible.map(renderGroup).join('');
+    if (_shown < CHANGELOG.length) {
+      html += '<button id="m-wn-more" type="button">載入更多(還有 ' + (CHANGELOG.length - _shown) + ' 筆)</button>';
+    }
+    bodyEl.innerHTML = html;
+    var moreBtn = document.getElementById('m-wn-more');
+    if (moreBtn) moreBtn.addEventListener('click', function () { _shown += PAGE_SIZE; renderBody(); });
+  }
 
   function buildModal() {
     if (document.getElementById(MODAL_ID)) return;
     var m = document.createElement('div');
     m.id = MODAL_ID;
-    var body = CHANGELOG.map(function (grp) {
-      var items = grp.items.map(function (it) {
-        var link = it.wiki
-          ? ' <span role="button" tabindex="0" class="m-wn-link" data-tab="' + esc(it.wiki.tab) + '" data-cls="' + esc(it.wiki.cls || '') + '">📖 查看小百科</span>'
-          : '';
-        return '<li>' + esc(it.text) + link + '</li>';
-      }).join('');
-      return '<div class="m-wn-grp">'
-        + '<div class="m-wn-grp-title"><span class="m-wn-date">' + esc(grp.date) + '</span> ' + esc(grp.title) + '</div>'
-        + '<ul class="m-wn-list">' + items + '</ul>'
-        + '</div>';
-    }).join('');
     m.innerHTML =
       '<div id="m-wn-card">' +
         '<div id="m-wn-head"><span>📢 最新公告</span><button id="m-wn-close" type="button" title="關閉">✕</button></div>' +
-        '<div id="m-wn-body">' + body + '</div>' +
+        '<div id="m-wn-body"></div>' +
       '</div>';
     document.body.appendChild(m);
     document.getElementById('m-wn-close').addEventListener('click', closeModal);
@@ -94,6 +143,8 @@
 
   function openModal() {
     buildModal();
+    _shown = PAGE_SIZE;   // 每次重新打開都從前 PAGE_SIZE 筆看起,不記上次展開到哪
+    renderBody();
     document.getElementById(MODAL_ID).classList.add('open');
     _layer = window.AFK_UI ? AFK_UI.openLayer(closeModal) : null;
   }
@@ -118,7 +169,9 @@
       '.m-wn-list{margin:0;padding:0;color:#eee9f7;font-size:14px;line-height:1.7;}',
       '.m-wn-list li{display:list-item;list-style:none;margin-bottom:6px;padding-left:16px;position:relative;}',
       '.m-wn-list li:before{content:"\\2022";position:absolute;left:2px;color:#7fd9c4;}',
-      '.m-wn-link{color:#7fd9c4;text-decoration:underline;margin-left:4px;white-space:nowrap;}'
+      '.m-wn-link{color:#7fd9c4;text-decoration:underline;margin-left:4px;white-space:nowrap;}',
+      '#m-wn-more{display:block;width:100%;margin-top:4px;padding:10px;border:1px solid #4a3f66;border-radius:8px;background:#241f38;color:#7fd9c4;font-size:14px;font-weight:bold;cursor:pointer;}',
+      '#m-wn-more:active{background:#3a2f5c;}'
     ].join('\n');
     var s = document.createElement('style'); s.id = 'm-wn-style'; s.textContent = css;
     document.head.appendChild(s);
