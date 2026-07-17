@@ -28,7 +28,7 @@ disable-model-invocation: true
 
 - 對照 `index.html` 的 DOM id/class、原作者全域函式名稱,有沒有被改名/移除、是不是 `afk-*.js` 依賴的東西。
 - 跑 `node scripts/check-hook-points.mjs` 與 `node scripts/smoke-hooks.mjs` 當輔助佐證(不能取代人工讀 diff 判斷,這兩支只驗「掛點字串還在」,不驗「邏輯上會不會衝突」)。
-- 對照 `Lineage/加掛版/docs/風險與外掛/外掛依賴矩陣_20260706.csv`,確認這次改動有沒有碰到高風險外掛(`afk-offline.js`/`afk-mobile.js`/`afk-dex.js`/`afk-wiki.js`/`afk-fixes.js`/`afk-training.js` 等)依賴的資料結構。
+- 對照 `Lineage/加掛版/docs/風險與外掛/外掛依賴矩陣.csv`,確認這次改動有沒有碰到高風險外掛(`afk-offline.js`/`afk-mobile.js`/`afk-dex.js`/`afk-wiki.js`/`afk-fixes.js`/`afk-training.js` 等)依賴的資料結構。
 - 評估結果寫進同一份記錄檔。
 
 ## 第 4 步:回報使用者、等同意
