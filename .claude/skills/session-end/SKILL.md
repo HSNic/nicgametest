@@ -1,6 +1,6 @@
 ---
 name: session-end
-description: 換 session 前的收尾檢查 — 確認commit/測試都完成、視情況補版本異動紀錄與tag/Release、更新交接紀錄、同步 docs README 索引。當使用者說「交接」「換session前」「結束前處理一下」「收尾」或 /session-end 時使用。
+description: 換 session 前的收尾檢查 — 確認commit/測試都完成、視情況補版本異動紀錄與tag/Release、更新交接紀錄、同步 docs INDEX 索引。當使用者說「交接」「換session前」「結束前處理一下」「收尾」或 /session-end 時使用。
 disable-model-invocation: true
 ---
 
@@ -41,7 +41,7 @@ disable-model-invocation: true
      - 有沒有這次新學到、值得讓下個 session 知道的規則/教訓
 
 6. **如果第 5 步開了新的交接紀錄檔案**:
-   - 回頭更新 `Lineage/加掛版/docs/README.md` 的「目前文件清單」表格:把新檔案標為「**最新**」,原本標最新的那份改標「較早的現況快照(歷史參考)」。
+   - 回頭更新 `Lineage/加掛版/docs/INDEX.md`「交接與接手」那一類的表格:把新檔案標為「**最新**」,原本標最新的那份改標「較早的現況快照(歷史參考)」(`README.md` 已不再列文件清單,以 `INDEX.md` 為唯一索引)。
 
 7. **如果這次對話中踩到新坑、或使用者糾正/確認了某個非顯而易見的做法**:
    - 照 `CLAUDE.md` 既有慣例,找最貼近的章節補一條(標題一句話講結論、內文寫「為什麼會漏/錯 + 怎麼偵測或避免 + 判準」,附案例)。
@@ -52,4 +52,4 @@ disable-model-invocation: true
 ## 判準
 
 - 不是每次小改動都要走完整套(尤其第 4 步打 tag)——只有使用者明確收尾/準備結束對話,或改動已是一個完整段落時才需要。改到一半就被要求「先收尾」時,如實記錄「這輪未完成、卡在哪」,不要為了收尾硬把半成品寫成「已完成」。
-- 第 5-6 步的交接紀錄/README 更新**每次收尾都要做**,這是讓下一個 session 能接手的最低限度,不可省略。
+- 第 5-6 步的交接紀錄/INDEX.md 更新**每次收尾都要做**,這是讓下一個 session 能接手的最低限度,不可省略。

@@ -333,7 +333,7 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
    <script src="afk-syncinfo.js?v=YYYYMMDDx"></script>
    <script src="afk-pwa.js?v=YYYYMMDDx"></script>
    ```
-   - 新增外掛時,**務必同時**加上對應的 `<script>` 行(並同步加進 `scripts/sync-upstream.mjs` 的 `PLUGINS`;**有 DOM 掛點的**再加進 `scripts/smoke-hooks.mjs` 的 `need`——像 `afk-sw.js` 這種純註冊、無 DOM 掛點的就不必),否則功能不會生效、或下次自動同步會被原版覆蓋掉。
+   - 新增外掛時,**務必同時**加上對應的 `<script>` 行(並同步加進 `scripts/sync-upstream.mjs` 的 `PLUGINS`;**有 DOM 掛點的**再加進 `scripts/smoke-hooks.mjs` 的 `need`——像 `afk-sw.js` 這種純註冊、無 DOM 掛點的就不必;**並補一行進 `Lineage/加掛版/docs/風險與外掛/外掛依賴矩陣.csv`**,寫清楚這支外掛的功能/依賴/存檔風險/更新風險),否則功能不會生效、或下次自動同步會被原版覆蓋掉。**依賴矩陣這項先前一直沒被列進這份清單,導致每次新增外掛都容易漏補(2026-07-17 補進來)——之後改動任何外掛(不只新增,行為/依賴有實質變化時)都要順手核對這份 csv 是否還準確。**
    - 原作者更新覆蓋 `index.html` 後,**第一件事就是把上面這幾行補回去**。
    - **⚠️ 改「外掛 init 觸發條件」(尤其只在特定裝置/尺寸才執行的)→ 想清楚 smoke 那輪驗不驗得到它。踩過(2026-07-01):`afk-mobile` 改成「桌機零接觸」(commit 4558a7c,只有手機尺寸/裝置才 `init` 並印 `[AFK-mobile] hooks OK`)後,smoke 是用桌機視窗跑的 → afk-mobile 永遠印不出 hooks OK。而 smoke 只在自動同步 workflow 裡跑、手動 commit 不會觸發,所以這個假性失效當下沒被抓到,直到隔天作者出新版、自動同步跑 smoke 才爆成「⚠️ 掛點失效」issue 擋下同步(玩家端表現=「沒更新到作者最新版」)。修法:smoke 對「只在手機才 init 的外掛」改用 `devices['iPhone 13']` 開第二輪 context 專驗(`needMobileOnly=['[AFK-mobile]']`),桌機那輪不列入。判準:任何「掛點只在某條件下才建立」的外掛,smoke 必須在該條件下(手機模擬/特定狀態)驗它,否則就是假性失效在等下次同步爆。**
 
