@@ -1513,7 +1513,11 @@
          會壓過 .hidden、讓載入/創角後「登入畫面關不掉、蓋在遊戲上」→ 玩家卡在選角畫面(踩過 2026-07-06)。
          加 :not(.hidden) 後有 .hidden 時本規則不命中,交還作者的隱藏。 */
       'body.m-mobile #creation-screen:not(.hidden){position:fixed !important;inset:0 !important;display:block !important;overflow-y:auto !important;padding:0 !important;}',
-      'body.m-mobile #login-art-stage{position:relative !important;width:100vw !important;max-width:100vw !important;aspect-ratio:auto !important;min-height:var(--app-h,100dvh) !important;display:flex !important;flex-direction:column !important;justify-content:center !important;overflow:visible !important;padding:32px 22px 40px !important;box-shadow:none !important;}',
+      /* 🎨(2026-07-18 使用者回報,iPhone 實機瀏海遮住公告橫幅)justify-content 改 center→flex-start:
+         原本置中排版在「內容(橫幅+標題+選單)比螢幕高」時,會把上面多出來的部分頂到螢幕外(被瀏海/狀態列蓋住)。
+         改成靠上對齊後內容一律從頂端往下疊,變高就自然往下延伸;父層 #creation-screen 本身已經是
+         overflow-y:auto(見上一條規則),所以最下面的內容變多時可以直接捲動看到,不會被螢幕邊界卡住看不到。 */
+      'body.m-mobile #login-art-stage{position:relative !important;width:100vw !important;max-width:100vw !important;aspect-ratio:auto !important;min-height:var(--app-h,100dvh) !important;display:flex !important;flex-direction:column !important;justify-content:flex-start !important;overflow:visible !important;padding:32px 22px 40px !important;box-shadow:none !important;}',
       /* 🎨(2026-07-17 使用者回報)首頁公告橫幅(#_orig_pbar,js/00-data.js 動態插入的 stage 第一個子層)
          手機版原本會被上面這條 padding:32px 22px 40px 往下、往內推,變成「浮在背景圖中間偏上」的一塊,
          跟桌機版「緊貼畫面最上緣、與背景同寬」的觀感不一致。用負邊距把它拉出 padding、貼齊真正的頂端與左右邊緣。
