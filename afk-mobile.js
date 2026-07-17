@@ -1516,8 +1516,12 @@
       'body.m-mobile #login-art-stage{position:relative !important;width:100vw !important;max-width:100vw !important;aspect-ratio:auto !important;min-height:var(--app-h,100dvh) !important;display:flex !important;flex-direction:column !important;justify-content:center !important;overflow:visible !important;padding:32px 22px 40px !important;box-shadow:none !important;}',
       /* 🎨(2026-07-17 使用者回報)首頁公告橫幅(#_orig_pbar,js/00-data.js 動態插入的 stage 第一個子層)
          手機版原本會被上面這條 padding:32px 22px 40px 往下、往內推,變成「浮在背景圖中間偏上」的一塊,
-         跟桌機版「緊貼畫面最上緣、與背景同寬」的觀感不一致。用負邊距把它拉出 padding、貼齊真正的頂端與左右邊緣。 */
-      'body.m-mobile #_orig_pbar{margin:-32px -22px 14px !important;}',
+         跟桌機版「緊貼畫面最上緣、與背景同寬」的觀感不一致。用負邊距把它拉出 padding、貼齊真正的頂端與左右邊緣。
+         ⚠️(2026-07-17 iPhone 14 Pro 實機回報)貼齊真正頂端後,第一行文字被瀏海/動態島狀態列擋住裁掉——
+         因為 <head> 的 viewport 有 viewport-fit=cover,網頁內容本來就會延伸到瀏海底下,貼齊頂端的橫幅
+         沒扣掉安全區域自然會被蓋到。用 env(safe-area-inset-top) 幫橫幅頂端多留出瀏海高度的內距
+         (一般手機沒有瀏海這個值是 0,不會多留白;僅影響 padding-top,不影響已經算好的貼齊寬度)。 */
+      'body.m-mobile #_orig_pbar{margin:-32px -22px 14px !important;padding-top:calc(6px + env(safe-area-inset-top)) !important;}',
       'body.m-mobile #login-bg-image{position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;object-fit:cover !important;opacity:.35 !important;}',
       'body.m-mobile #login-anim-image{display:none !important;}',
       /* 🎨 2026-07-11 首頁 V17 改版新增 #login-copy-panel(左資訊卡包住 title-layer/meta-layer),

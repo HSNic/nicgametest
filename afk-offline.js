@@ -1080,13 +1080,28 @@
   // 載入後決定要不要結算離線。preMap/preTs 由 loadGame wrapper 在「原 loadGame 執行前」擷取——
   // 因為原 loadGame 會在村莊甦醒(內部呼叫 changeMap),而 changeMap 已被攔截會 stamp(),會把
   // afk_map/afk_ts 覆寫成現在(村莊),晚讀就拿不到真正的離線狀態。
+  // 後援:舊資料沒有 afk_map 時,退回讀存檔 blob 本身的 ms.current。
+  // ⚠️(2026-07-17 使用者回報「批次結算後角色全部回村莊」踩過,兩層坑疊在一起):
+  //   ①存檔在 localStorage 裡是 LZ 壓縮過的(_lzSet 存進去)、外層還包一層 SIG1 簽章(_saveWrap)——
+  //     直接對 localStorage.getItem() 的原始字串做 JSON.parse() 一定丟例外,要先 _lzGet 解壓、
+  //     再用 _saveUnwrap 拆簽章才能拿到真正的 JSON payload。
+  //   ②更關鍵:這個後援讀取「必須跟 preMap/preTs 一樣,在原 loadGame() 執行之前就讀」——原 loadGame()
+  //     本身會「在村莊甦醒」(內部呼叫 changeMap→saveGame),一旦晚讀,存檔早被原 loadGame 蓋成村莊,
+  //     讀到的 ms.current 已經是「甦醒後的村莊」而不是「關閉前真正所在的狩獵地圖」。原本這段寫在
+  //     maybeCatchup() 內部(該函式在原 loadGame() 之後才被呼叫)正是踩到這個時序坑,故搬到這裡、
+  //     由 loadGame wrapper 在呼叫原 loadGame 之前先讀好、當參數傳進 maybeCatchup。
+  function readSavedMapFallback() {
+    try {
+      var raw = _lzGet('lineage_idle_save_' + currentSlot);
+      var u = _saveUnwrap(raw);
+      var d = JSON.parse(u.payload);
+      return (d && d.ms && d.ms.current) || '';
+    } catch (e) { return ''; }
+  }
   function maybeCatchup(preMap, preTs, prePride, preObl) {
     if (!validSlot() || !state || !state.running) return;
     var last = preTs;
     var savedMap = preMap;
-    if (!savedMap) {   // 後援:舊資料沒有 afk_map,退回讀存檔 blob
-      try { var raw = JSON.parse(localStorage.getItem('lineage_idle_save_' + currentSlot)); savedMap = (raw && raw.ms && raw.ms.current) || ''; } catch (e) {}
-    }
     var isClimb = !!(prePride && prePride.climb && !prePride.ranked);   // 排名挑戰不自動續(防重載刷分/閃死),只續一般攀登
     var isObl = !!(preObl && preObl.phase && typeof enterOblivionMap === 'function');   // 🏝️ 上次在遺忘之島旅程中(島/途中):同攀登,還原旅程並接回島上續掛
     if (isObl && !savedMap) savedMap = (preObl.phase === 'island') ? 'oblivion_island' : 'oblivion_travel';   // afk_map 缺值時用旅程階段推地圖
@@ -1153,8 +1168,10 @@
 
   var _load = window.loadGame;
   window.loadGame = function () {
-    // 必須在原 loadGame 之前擷取:它會「在村莊甦醒」呼叫 changeMap → 被攔截 stamp() 覆寫 afk_map/afk_ts/afk_pride
-    var preMap = readMap();
+    // 必須在原 loadGame 之前擷取:它會「在村莊甦醒」呼叫 changeMap → 被攔截 stamp() 覆寫 afk_map/afk_ts/afk_pride;
+    // 同理,afk_map 缺值時的後援(讀存檔 blob 的 ms.current)也必須在這裡先讀,不能留到 maybeCatchup 內部
+    // (那時原 loadGame 已經跑完、存檔早被覆寫成村莊,見 readSavedMapFallback 上方註解)。
+    var preMap = readMap() || readSavedMapFallback();
     var preTs = readTs();
     var prePride = readPride();
     var preObl = readObl();

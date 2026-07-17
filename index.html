@@ -31,7 +31,7 @@
     <title>放置天堂 - 吉爾塔斯降臨</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=b4764c954c">
+    <link rel="stylesheet" href="css/style.css?v=8cd4f216a7">
     <link rel="stylesheet" href="css/floating-ui.css?v=4f1d5ac98e">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -105,18 +105,18 @@
           </div>
         </div>
 
-                <div id="creation-panel" class="hidden" aria-label="創建角色">
+                <div id="creation-panel" class="hidden creation-layout-v2" aria-label="創建角色">
             <img id="creation-bg-image" src="public/assets/login/824.png" alt="創角背景" draggable="false">
 
-            <section id="creation-class-desc-frame" aria-live="polite">
+            <section id="creation-class-desc-frame" class="creation-zone creation-zone-desc" aria-live="polite">
                 <h2 id="creation-class-title">王子</h2>
                 <div id="class-desc"></div>
             </section>
 
-            <div id="creation-avatar-stage" aria-hidden="true">
-                <img id="class-preview-img" src="assets/start/prince/714.png" alt="職業預覽" draggable="false">
+            <div id="creation-avatar-stage" class="creation-zone creation-zone-preview" aria-hidden="true">
+                <img id="class-preview-img" src="assets/start-transparent/prince/714.png" alt="職業預覽" draggable="false">
             </div>
-            <nav id="creation-class-list" aria-label="職業選擇">
+            <nav id="creation-class-list" class="creation-zone creation-zone-class" aria-label="職業選擇">
                 <button onclick="selectClassBase('royal')" id="btn-class-base-royal" class="creation-class-btn class-left class-pos-1" type="button" title="王族"><img src="assets/logo/王族logo.png" alt="王族"></button>
                 <button onclick="selectClassBase('knight')" id="btn-class-base-knight" class="creation-class-btn class-left class-pos-2" type="button" title="騎士"><img src="assets/logo/騎士logo.png" alt="騎士"></button>
                 <button onclick="selectClassBase('mage')" id="btn-class-base-mage" class="creation-class-btn class-left class-pos-3" type="button" title="法師"><img src="assets/logo/法師logo.png" alt="法師"></button>
@@ -127,11 +127,11 @@
                 <button onclick="selectClassBase('warrior')" id="btn-class-base-warrior" class="creation-class-btn class-right class-pos-4" type="button" title="戰士"><img src="assets/logo/戰士logo.png" alt="戰士"></button>
             </nav>
 
-            <div id="creation-gender-panel" aria-label="性別選擇">
+            <div id="creation-gender-panel" class="creation-zone creation-zone-gender" aria-label="性別選擇">
                 <button onclick="selectGender('m')" id="btn-gender-m" class="creation-gender-btn" type="button" title="男性">♂</button>
                 <button onclick="selectGender('f')" id="btn-gender-f" class="creation-gender-btn" type="button" title="女性">♀</button>
             </div>
-<div id="stat-allocation" aria-label="能力配點">
+<div id="stat-allocation" class="creation-zone creation-zone-stats" aria-label="能力配點">
                 <div id="creation-pts">0</div>
                 <div class="creation-stat-control stat-str"><span id="c-str" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('str', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('str', 1)">+</button></div>
                 <div class="creation-stat-control stat-dex"><span id="c-dex" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('dex', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('dex', 1)">+</button></div>
@@ -141,12 +141,14 @@
                 <div class="creation-stat-control stat-int"><span id="c-int" class="creation-stat-value"></span><button class="creation-stat-btn" onclick="adjStat('int', -1)">-</button><button class="creation-stat-btn" onclick="adjStat('int', 1)">+</button></div>
             </div>
 
-            <label id="classic-mode-control" title="開啟後此角色永久套用經典規則，無法事後關閉">
+            <label id="classic-mode-control" class="creation-zone creation-zone-classic" title="開啟後此角色永久套用經典規則，無法事後關閉">
                 <input type="checkbox" id="create-classic-toggle" onchange="onToggleClassic(this)">
                 <span>經典模式</span>
             </label>
-            <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
-            <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始遊戲</button>
+            <div id="creation-action-panel" class="creation-zone creation-zone-actions">
+                <button onclick="startGame()" id="btn-start" class="creation-start-button" type="button" disabled>開始遊戲</button>
+                <button onclick="backToMenu()" id="creation-back-button" type="button">返回</button>
+            </div>
         </div>
     </div>
 
@@ -549,7 +551,7 @@
 <script src="js/10-ui-tabs.js?v=b341c44919"></script>
 <script src="js/11-world-map.js?v=1600f9bfbd"></script>
 <script src="js/12-npc-quests.js?v=311918837e"></script>
-<script src="js/13-shop-save.js?v=2217a57b50"></script>
+<script src="js/13-shop-save.js?v=0fbc7ac131"></script>
 <script src="js/14-craft-pandora.js?v=97958810b2"></script>
 <script src="js/15-cards.js?v=20cf88749b"></script>
 <script src="js/16-equip-book.js?v=45290f2d29"></script>
@@ -563,11 +565,11 @@
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-offline.js?v=20260715c"></script>
+<script src="afk-offline.js?v=20260717a"></script>
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260717a"></script>
+<script src="afk-mobile.js?v=20260717b"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-backnav.js?v=20260712a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -645,7 +647,7 @@
 <!-- 首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-asset-manager.js?v=20260710b"></script>
 <!-- 首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可 -->
-<script src="afk-batch-settle.js?v=20260717b"></script>
+<script src="afk-batch-settle.js?v=20260717c"></script>
 <!-- 版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-uilayout.js?v=20260714a"></script>
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->

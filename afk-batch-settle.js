@@ -307,14 +307,25 @@
     }
     function hideModal() {
       var m = document.getElementById('m-bs-modal'); if (m) m.classList.remove('open'); _layer = null;
+      // 手機實體返回鍵/手勢(popstate 直接呼叫 layer.close,不會走 closeModal→closeLayer 那條有 history.back()
+      // 競速風險的路徑,見 closeModal 註解)在這裡補一份同樣的 reload,涵蓋「不是按 X 關閉」的收尾路徑。
+      if (!_originLive) { try { location.reload(); } catch (e) {} }
+    }
+    function closeModal() {
+      if (_running) return;
       // 🔧 批次結算若是從首頁/選存檔位觸發(_originLive=false):迴圈逐格 loadGame() 跑到最後一格時,
       //   畫面會停在「最後一個存檔位」的遊戲主畫面(#game-screen 顯示、#creation-screen 仍 .hidden),
       //   而 #main-menu 本身從沒被加回 .hidden,導致首頁公告橫幅的顯示判斷誤判成「在首頁」而冒出來
       //   (踩過 2026-07-17)。比照既有「登出回首頁」的做法整頁重新整理回乾淨首頁,不用 DOM patch
       //   (只切 class 沒清掉 tick/計時器等狀態,不夠乾淨)。
-      if (!_originLive) { try { location.reload(); } catch (e) {} }
+      //   ⚠️ 一定要在呼叫 AFK_UI.closeLayer()「之前」就 reload,不能放進 hideModal() 裡讓 closeLayer 接手觸發
+      //   ——closeLayer 關閉後會呼叫 history.back() 退掉開啟時押的那格歷史,若這時 reload() 才剛排入、
+      //   還沒真的換頁,history.back() 會搶先生效(手機 Safari 上甚至可能直接從 bfcache 復原成「跑到一半的
+      //   同一份頁面」),導致 reload 形同沒發生、畫面照樣卡在批次跑到最後一格的遊戲畫面(踩過,實機回報)。
+      //   直接在這裡先 reload、完全不呼叫 closeLayer/history.back,新頁面本來就會蓋掉整個歷史堆疊,不需要退。
+      if (!_originLive) { try { location.reload(); } catch (e) {} return; }
+      if (_layer && window.AFK_UI) AFK_UI.closeLayer(_layer); else hideModal();
     }
-    function closeModal() { if (!_running) { if (_layer && window.AFK_UI) AFK_UI.closeLayer(_layer); else hideModal(); } }
 
     async function start() {
       if (_running) return;
