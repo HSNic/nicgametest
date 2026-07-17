@@ -83,7 +83,7 @@ const PLUGINS = [
   { file: 'afk-batch-sell.js', comment: '物品欄批次販賣(道具分頁新增批次勾選賣出;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-junk-to-rule.js', comment: '標記廢品同步進「自動販賣規則」個別例外清單,兩套機制不再各自獨立(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-lachesis-refresh.js', comment: '席琳神殿菈克希絲遺骸拆分面板:換裝後即時刷新(可獨立維護,原作者更新後重新加回此行即可)' },
-  { file: 'afk-crit-fx.js', comment: '爆擊特效仿天堂W:被動監看飄傷害數字,爆擊時追加衝擊環/全螢幕閃光/戰場震動(可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-crit-heavy-fx-v2.js', comment: '爆擊/重擊全新特效(取代舊版afk-crit-fx.js):被動監看飄傷害數字,以命中座標為錨點動態播放閃光/光束/漸層大字/光環/火花/光芒(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-ally-buffs.js', comment: '協力傭兵隊伍面板顯示 buff 圖示(讀 ally.buffs,共用玩家狀態圖示資源;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-panacea-batch.js', comment: '萬能藥一次選數量批量服用(物品詳情視窗多加批量鈕,外面迴圈呼叫既有單瓶服用邏輯;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-warehouse-scroll-anchor.js', comment: '倉庫存取物品捲動錨定(包 renderWarehouseNPC,修正存/取後畫面跳動;可獨立維護,原作者更新後重新加回此行即可)' },
