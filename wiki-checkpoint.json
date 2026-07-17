@@ -1,6 +1,6 @@
 {
-  "reconciledIndexCommit": "13a06cd5",
-  "reconciledIndexBlob": "131c6af39ac645177ef5a54a1636947870882d69",
-  "reconciledAt": "2026-07-06 18:40 (UTC+8)",
-  "note": "逐檔對過 5f80bcb→13a06cd5 的 js/ css/ 全段（作者 v2.7.9→v3.0.65；三個 subagent 平行分析 data/drops、stats/combat、status/cards/equip 三組 diff，逐項對照）。動到的頁：①【新機制】職業硬直 HITSTUN_TICKS＋施法冷卻下限 CAST_TICKS→戰鬥機制頁新增動態表（讀兩張表自動跟上：法師/幻術士施法 1.0s 最快、黑妖/王族/戰士 1.4s 最慢；硬直 0.5~0.6s，騎士/龍騎士男女不同）②【機制反轉】變身系統改速度型：POLY_TIERS 隨機型態現在只帶速度（atk/wlk/cast/stun）不再給屬性加成→重寫 polyEff 讀新欄位算 攻擊間隔/施法冷卻/被擊硬直/怪物重生（公式同遊戲 polyFormDesc），修好隨機型態表原本全顯示「—」的 bug；SET_POLY_FORMS 套裝變身改速度覆蓋+保留傷害加成→SETS 四套（死亡騎士/克特/惡魔/黑暗妖精）文案由「攻速+35/33/30%」改「採用變身自身攻速取代原本職業/武器攻速」，變形頁 intro/敘述、combat 攻速 note 一併改（不再是+X%乘基礎）③【數值】經典模式死亡懲罰 10%→5%（COMBAT_SECTIONS 與 renderMode 兩處都改）④【日光術】出怪等待由「設為約1秒」改「減1秒」（作者重生公式改 delay=round(50×wlk/16×移動加速)後日光只−10tick）→ extradata skillNote。已 Playwright 無頭實測 combat/poly/set/mode 四頁：硬直表、變形速度表、套裝變身、死亡懲罰全部正確、無 JS error、無 raw key/漏英文。免改（已自動跟上或已涵蓋）：ATK_APM 攻速表重平衡（能力值頁 data-driven）、巴風特盔甲龍騎士可穿（equipOk）、精準目標傭兵（已寫）、傭兵自動 buff 跟隨勾選/王族10%免MP/傷害魔法AI（傭兵可用技能頁已涵蓋）、魔女5/5冰雪暴（已寫）。略（parity 細節/未文件化）：傭兵暗隱術100%迴避、幻術士傭兵立方+30抗、自動鎖定改最早出生序（wiki 未描述鎖定順序，無過時可改）。"
+  "reconciledIndexCommit": "8b26e8344",
+  "reconciledIndexBlob": "e1b735786ad13b162eb9a8775fe3806835b1e0f3",
+  "reconciledAt": "2026-07-17 18:04 (UTC+8)",
+  "note": "此檔案先前(2026-07-06後)未持續更新,期間已有多次小百科維護(黑暗妖精聖地、遺忘之島、軍王之室等,見版本異動紀錄與各commit訊息)但checkpoint沒有跟著推進,導致這次要用時發現reconciledIndexCommit已在歷史中查不到(可能因分支操作而失效)。這次改用Cowork已完成的差異分析(docs/同步/同步差異分析_20260717.md,v3.4.86→v3.5.4)當diff素材,逐項對照:①【新內容】日出之國怪物區(13小怪+5頭目)→自動讀DB,dex/wiki裝備·職業魔法·地圖分頁不用改;②【新機制】三段變身頭目(transformTo/transformHpPct,玉藻→九尾→殺生石)+terror_visage(巨大骷髏免疫)+onHitPoison(牛鬼系反向下毒)→COMBAT_SECTIONS新增專節說明(中間階不算擊殺、卡片只從最終階隨機掉一張);③【新製作線】宙斯之熔岩高崙滅魔裝備(SLAYER_RECIPES,不在CRAFT_RECIPES,仿DEMONKING_RECIPES/LUMIEL_RECIPES模式)→補進afk-dex.js buildCraftIndex與afk-wiki.js renderCraft;④【全域】怪物金幣掉落公式monsterGoldRange重寫→不影响小百科/掉落查詢顯示,免改。已Playwright無頭實測戰鬥機制頁與製作頁:新段落正確顯示、無漏翻英文、無JS error;掉落查詢搜「牛鬼」「滅魔的金屬盔甲」皆正確定位到來源。同步套用時一併補回被整批覆蓋沖掉的創角UI(creation-layout-v2)與能力分頁舊版表格樣式(#tab-stats)兩項客製。"
 }
