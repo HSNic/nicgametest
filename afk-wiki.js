@@ -951,6 +951,7 @@
     // 順序=使用頻率優先(使用者指定收藏三項+職業魔法在前;其餘按「查閱頻率+相關分組」:
     // 職業成長→裝備養成(裝備/強化/套裝/製作)→日常查找(任務/武器特性/傭兵/娃娃/地圖/席琳)→機制知識→端遊戲區域→一次性閱讀)
     { k: 'equipbook', n: '收藏-裝備' },
+    { k: 'relicbook', n: '收藏-遺物' },
     { k: 'miscbook', n: '收藏-道具' },
     { k: 'card', n: '收藏-怪物' },
     { k: 'magic', n: '職業魔法' },
@@ -979,16 +980,17 @@
     { k: 'darkelf_sanct', n: '黑暗妖精聖地' },
     { k: 'pledge', n: '血盟' },
     { k: 'mode', n: '遊戲模式' },
+    { k: 'pandora', n: '潘朵拉黑市' },
     { k: 'npc', n: 'NPC總覽' }
   ];
   // 🗂️ 分頁分類(2026-07-17 使用者明訂):30 個分頁單排靠左右滑動越來越難找,改成「大類→子分頁」兩層——
   //   先選 7 個大類其中一個,底下才顯示該類的子分頁(最多 7 個,桌機手機都一排放得下,不用捲動)。
   var TAB_CATS = [
-    { k: 'collection', n: '收藏', tabs: ['equipbook', 'miscbook', 'card'] },
+    { k: 'collection', n: '收藏', tabs: ['equipbook', 'relicbook', 'miscbook', 'card'] },
     { k: 'growth', n: '角色養成', tabs: ['magic', 'mastery', 'stats', 'load', 'poly'] },
     { k: 'gear', n: '裝備與製作', tabs: ['equip', 'relic', 'enhance', 'set', 'craft'] },
     { k: 'ally', n: '夥伴系統', tabs: ['ally', 'mercskill', 'pets', 'doll'] },
-    { k: 'mechanic', n: '玩法與機制', tabs: ['combat', 'quest', 'weapon', 'mode'] },
+    { k: 'mechanic', n: '玩法與機制', tabs: ['combat', 'quest', 'weapon', 'mode', 'pandora'] },
     { k: 'zone', n: '地圖與特殊地城', tabs: ['map', 'sherine', 'tower', 'oblivion', 'rift', 'kingroom', 'darkelf_sanct'] },
     { k: 'other', n: '其他', tabs: ['pledge', 'npc'] }
   ];
@@ -1001,6 +1003,30 @@
     return TAB_CATS[0].tabs;
   }
   var state = { tab: 'equipbook', cat: 'collection', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
+
+  // 🆕 分頁「有更新」提示:每個分頁若有實質內容更新,在這裡登記日期(YYYY-MM-DD);沒登記的分頁不會顯示提示。
+  //   跟內文自己寫的「最後更新:...」小字是同一份日期,兩處要保持一致——之後補內文日期時記得順手也補這裡一筆。
+  var TAB_UPDATED = {
+    pets: '2026-07-17',
+    poly: '2026-07-18',
+    mode: '2026-07-17',
+    pandora: '2026-07-18'
+  };
+  var WIKI_SEEN_KEY = 'lineage_idle_wiki_seen_v1';
+  function _wikiSeenMap() {
+    try { var s = localStorage.getItem(WIKI_SEEN_KEY); if (s) { var o = JSON.parse(s); if (o && typeof o === 'object') return o; } } catch (e) {}
+    return {};
+  }
+  function _wikiMarkSeen(k) {
+    if (!TAB_UPDATED[k]) return;
+    try { var m = _wikiSeenMap(); m[k] = TAB_UPDATED[k]; localStorage.setItem(WIKI_SEEN_KEY, JSON.stringify(m)); } catch (e) {}
+  }
+  function tabHasUpdateBadge(k) {
+    var upd = TAB_UPDATED[k]; if (!upd) return false;
+    var seen = _wikiSeenMap()[k];
+    return !seen || seen < upd;
+  }
+  function catHasUpdateBadge(catKey) { return tabsOfCat(catKey).some(tabHasUpdateBadge); }
   // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
   // 故 standalone 下拉長防抖,減少同步渲染的頻率。
   var _isStandalone = (function () {
@@ -1053,7 +1079,17 @@
       if (!t) return;
       var b = document.createElement('button');
       b.className = 'm-wiki-tab'; b.setAttribute('data-tab', t.k); b.textContent = t.n;
-      b.addEventListener('click', function () { state.tab = t.k; render(); });
+      if (tabHasUpdateBadge(t.k)) b.appendChild(Object.assign(document.createElement('span'), { className: 'm-wiki-newdot', title: '有新內容' }));
+      b.addEventListener('click', function () {
+        state.tab = t.k;
+        if (tabHasUpdateBadge(t.k)) {
+          _wikiMarkSeen(t.k);
+          var dot = b.querySelector('.m-wiki-newdot'); if (dot) dot.remove();
+          var opt = document.querySelector('#m-wiki-catsel option[value="' + state.cat + '"]');
+          if (opt && !catHasUpdateBadge(state.cat)) opt.textContent = opt.textContent.replace(/ 🔴$/, '');
+        }
+        render();
+      });
       tabsEl.appendChild(b);
     });
     _subtabRowCat = state.cat;
@@ -1080,7 +1116,7 @@
     var catSel = document.createElement('select');
     catSel.id = 'm-wiki-catsel';
     TAB_CATS.forEach(function (c) {
-      var o = document.createElement('option'); o.value = c.k; o.textContent = c.n; catSel.appendChild(o);
+      var o = document.createElement('option'); o.value = c.k; o.textContent = c.n + (catHasUpdateBadge(c.k) ? ' 🔴' : ''); catSel.appendChild(o);
     });
     catSel.addEventListener('change', function () { state.cat = catSel.value; state.tab = tabsOfCat(catSel.value)[0]; render(); });
     cats.appendChild(catSel);
@@ -1210,7 +1246,9 @@
     if (key === 'card') return renderCard();
     if (key === 'doll') return renderDoll();
     if (key === 'equipbook') return renderEquipBook();
+    if (key === 'relicbook') return renderRelicDex();
     if (key === 'miscbook') return renderMiscBook();
+    if (key === 'pandora') return renderPandora();
     if (key === 'equip') return renderEquip();
     if (key === 'relic') return renderRelic();
     if (key === 'enhance') return renderEnhance();
@@ -1251,6 +1289,7 @@
   // 搜尋來源:職業相關分頁(cls:true)逐職業各搜一次,其餘整頁搜一次
   var SEARCH_SOURCES = [
     { key: 'equipbook', cls: false, label: '收藏-裝備' },
+    { key: 'relicbook', cls: false, label: '收藏-遺物' },
     { key: 'miscbook', cls: false, label: '收藏-道具' },
     { key: 'card', cls: false, label: '收藏-怪物' },
     { key: 'magic', cls: false, label: '職業魔法' },
@@ -1278,6 +1317,7 @@
     { key: 'darkelf_sanct', cls: false, label: '黑暗妖精聖地' },
     { key: 'pledge', cls: false, label: '血盟' },
     { key: 'mode', cls: false, label: '遊戲模式' },
+    { key: 'pandora', cls: false, label: '潘朵拉黑市' },
     { key: 'npc', cls: false, label: 'NPC總覽' }
   ];
   // 統一搜尋:跨「所有分頁 + 所有職業」收集符合的小區塊,依來源分組列出。
@@ -1859,6 +1899,36 @@
     return out;
   }
 
+  // 遺物收集冊(js/21-relic-book.js):分類沿用裝備收集冊(EQUIP_CATEGORIES/equipCatKey),只收 isRelic 物品;
+  //   跟裝備/道具收集冊不同的地方:「沒有全收集加成」,純粹收藏用,故不列加成欄位。
+  function renderRelicDex() {
+    if (typeof RELIC_CAT_ITEMS === 'undefined' || typeof EQUIP_CATEGORIES === 'undefined') return '<div class="m-wiki-note">讀不到遺物收集冊資料。</div>';
+    var cats = EQUIP_CATEGORIES.filter(function (c) { return (RELIC_CAT_ITEMS[c.key] || []).length > 0; });
+    var totalCount = cats.reduce(function (s, c) { return s + (RELIC_CAT_ITEMS[c.key] || []).length; }, 0);
+    var out = '<div class="m-wiki-note">「遺物收集冊」：<b>獲得任何遺物就自動登錄</b>（只增不減，賣掉／丟掉也保留紀錄），分類沿用裝備收集冊（依部位）。<b>沒有全收集加成</b>——純粹收藏用，跟裝備／道具收集冊不同。收集冊本體從畫面上的「<b>收藏</b>」面板翻開。目前全遊戲共 <b>' + totalCount + '</b> 件遺物收錄在冊。</div>';
+    out += collModeRow();
+    if (state.collMode !== null) {
+      var b = collBuckets();
+      var rows = [], detail = '';
+      cats.forEach(function (c) {
+        var arr = RELIC_CAT_ITEMS[c.key] || [];
+        var missing = arr.filter(function (id) { return !b.relic[id]; });
+        rows.push([esc(c.name), (arr.length - missing.length) + '／' + arr.length,
+          missing.length ? '<b style="color:#f87171">缺 ' + missing.length + '</b>' : '<b style="color:#22c55e">✓ 完成</b>']);
+        if (missing.length) {
+          detail += wCard('📍 ' + esc(c.name) + '（缺 ' + missing.length + ' 件）',
+            '<div class="m-wiki-desc">' + missing.map(function (id) { var d = DB.items[id]; return wDexLink((d && d.n) || id); }).join('、') + '</div>');
+        }
+      });
+      out += wCard('🏺 遺物收集進度（' + esc(b.mode) + '模式）',
+        wTbl(['類別', '已收集', '狀態'], rows) + wDesc('點下面缺的名字可跳「掉落查詢」看怎麼取得。')) + detail;
+    } else {
+      out += wCard('🏺 各部位遺物數量', wTbl(['部位', '該部位遺物總數'],
+        cats.map(function (c) { return [esc(c.name), String((RELIC_CAT_ITEMS[c.key] || []).length)]; })));
+    }
+    return out;
+  }
+
   // 裝備總覽:直接讀遊戲 DB.items 依部位分組。數值用遊戲自己的 buildItemDescHTML(永遠與遊戲一致、作者新增自動跟上),
   // 取得方式接掉落查詢的 AFK_DEX_API.acquireHTML。每件「詳情」常駐 DOM(display:none)→ 連完整數值/特效都進統一搜尋;
   // 詳情與整頁 HTML 都建一次就快取(_equipDetail/_equipHtml)→ 搜尋每次重渲染 441 件也不卡。
@@ -2068,13 +2138,41 @@
         return '<div class="m-wiki-kv"><b>' + esc(itemName(r.result)) + '</b>在 ' + zgWhere + ' 製作　材料：' + esc(mats) + '（成品恆為 +0，不繼承來源鏈甲的強化值／詞綴）</div>';
       }).join('');
     }
-    // 💎 潘朵拉遺物布告欄＋玩家收購系統(2026-07-18 新增；js/24-pandora-relic-market.js，最後更新:2026-07-18)
-    html += '<div class="m-wiki-sub">💎 潘朵拉黑市・龍之鑽石與遺物布告欄</div>';
-    html += wDesc('點首頁戰鬥列的「黑市」鈕(或找潘朵拉對話)開啟；用一種新貨幣<b>龍之鑽石</b>兌換遺物，跟金幣制的潘朵拉黑市(上面的收購單)是各自獨立的系統，但兩者的「收購單」互通。');
-    html += wDesc('<b>怎麼賺龍之鑽石</b>：在安全區(拉斯塔巴德、沉默洞穴系、傲慢之塔、時空裂痕、席琳神殿<b>除外</b>)會隨機出現「玩家收購 NPC」(其實是本機亂數生成的假玩家，不是真人)，交出他指定的裝備/道具即可換取龍之鑽石(數量依委託而定)。');
-    html += wDesc('<b>遺物布告欄</b>：花 <b>100</b> 龍之鑽石搜尋一次，會產生一組「武器／防具／飾品遺物」的材料需求(3 項，稀有度分層)，集滿材料即可兌換該遺物；總共 3 欄可同時進行。完成兌換或取消後，該欄要<b>冷卻 24 小時</b>才能再搜尋。');
-    html += '<div class="m-wiki-desc" style="color:#64748b;font-size:11px;">最後更新:2026-07-18(原作v3.5.36新增)</div>';
+    // 💎 潘朵拉黑市(商品架／收購單／遺物布告欄)已獨立成專屬分頁,這裡只留一句指路(避免內容重複兩處要各自維護)
+    html += '<div class="m-wiki-desc" style="margin-top:6px;">・潘朵拉黑市(金幣商品架／收購單／龍之鑽石遺物布告欄)內容已搬到獨立的「潘朵拉黑市」分頁,詳細玩法見那邊。</div>';
     return html;
+  }
+
+  // 潘朵拉黑市(js/14-craft-pandora.js 金幣商品架＋收購單、js/24-pandora-relic-market.js 龍之鑽石遺物布告欄):
+  //   三個子系統共用同一個「黑市」入口但各自獨立運作,故整理成獨立分頁,避免塞進「製作」頁越來越長。
+  function renderPandora() {
+    var out = '<div class="m-wiki-note">「潘朵拉黑市」是潘朵拉在各村莊／安全區開的攤子，包含金幣商品架、玩家可自訂的收購單，以及用「龍之鑽石」兌換遺物的布告欄——三個子系統共用同一個「黑市」入口，但彼此獨立運作。點首頁戰鬥列的「黑市」鈕，或在安全區找潘朵拉對話即可開啟。</div>';
+
+    out += wCard('🛒 商品架（金幣購買）',
+      wDesc('一次陳列 <b>24</b> 件商品（桌面 3×8），每 <b>10 分鐘</b>輪替 1 格，整組 <b>240 分鐘</b>（4 小時）才會全部輪過一輪。商品即所見、不附詞綴。')
+    );
+
+    out += wCard('📌 收購單（自己指定要買的東西）',
+      wDesc('可以在黑市面板輸入<b>完整物品名稱</b>與你願意出的<b>最高收購價</b>，登記一張收購單（同時只能有 1 張）。') +
+      wDesc('每次該物品輪到刷新格位時，系統會擲一次<b>隨機市場價</b>；只要系統擲出的價格<b>不高於</b>你出的價，就會以<b>你出的價格</b>上架該商品（命中後收購單自動清除、不再重複上架；沒命中不影響，照常隨機上架其他商品）。') +
+      wDesc('收購單只能登記「本來就會出現在潘朵拉黑市的商品」（權重池內的量產／商店物品），<b>遺物不能用這種方式收購</b>，要用下面的「遺物布告欄」。')
+    );
+
+    out += wCard('💎 龍之鑽石怎麼賺（玩家收購 NPC）',
+      wDesc('在安全區（<b>拉斯塔巴德、沉默洞穴系、傲慢之塔、時空裂痕、席琳神殿除外</b>）會隨機出現「玩家收購 NPC」（其實是本機亂數生成的假玩家，不是真人），交出他指定的裝備／道具即可換取<b>龍之鑽石</b>（數量依委託而定）。指定物品可以從<b>道具欄或倉庫</b>任一處扣除，已穿戴的裝備不會被消耗。') +
+      wDesc('這個 NPC 出現後每 3 分鐘會在頻道喊一次收購廣播，持續最多 <b>2 小時</b>後自動離開。點擊他可以選：<b>「吵死了」</b>——讓他當場閉嘴、不再廣播（人還留在原地，一樣要等滿 2 小時才會消失）；或<b>「馬上到」</b>——直接傳送過去他所在的安全區（會自動幫你結束攀塔排名賽／時空裂痕／遺忘之島等特殊旅程狀態，並自動讓他閉嘴）。跟他對話互動過，也會自動停止他的廣播。')
+    );
+
+    out += wCard('🏺 遺物布告欄（用龍之鑽石兌換遺物）',
+      wDesc('花 <b>100</b> 龍之鑽石搜尋一次，會產生一組「武器／防具／飾品遺物」的材料需求（3 項，稀有度分層），集滿材料即可兌換該遺物；材料一樣可以從<b>道具欄或倉庫</b>任一處扣除。總共 <b>3 欄</b>可以同時進行，<b>沒有時間限制</b>，一路放著直到你兌換完成或自己取消為止。完成兌換或取消後，該欄要<b>冷卻 24 小時</b>才能再搜尋（每欄獨立計算冷卻）。')
+    );
+
+    out += wCard('🔗 共用範圍要注意',
+      wDesc('龍之鑽石、玩家收購 NPC、3 個遺物布告欄——這些資料都是<b>全遊戲共用</b>，不只是同帳號的所有角色共用，連<b>一般／經典模式</b>都共用同一份（跟卡片／裝備／道具收集冊那種「只在同模式內共用」不一樣，容易搞混，要特別注意）。')
+    );
+
+    out += '<div class="m-wiki-desc" style="color:#64748b;font-size:11px;">最後更新:' + TAB_UPDATED.pandora + '(原作v3.5.36新增遺物布告欄與玩家收購 NPC/收購單機制)</div>';
+    return out;
   }
 
   // 小百科共用:表格 / 卡片 / 說明 產生器(席琳・血盟頁用)
@@ -2840,7 +2938,7 @@
     var modeName = COLL_MODE_CN[suf];
     if (typeof player !== 'undefined' && player && player.cls && typeof modeSuffix === 'function' &&
         modeSuffix(!!player.classicMode, !!player.traditionalMode) === suf) {
-      return { card: player.cardDex || {}, equip: player.equipDex || {}, misc: player.miscDex || {}, mode: modeName };
+      return { card: player.cardDex || {}, equip: player.equipDex || {}, misc: player.miscDex || {}, relic: player.relicDex || {}, mode: modeName };
     }
     function rd(base) { try { var s = _lzGet(base + suf); if (s) { var o = JSON.parse(s); if (o && typeof o === 'object') return o; } } catch (e) {} return {}; }
     var card = rd(typeof CARDDEX_KEY !== 'undefined' ? CARDDEX_KEY : 'lineage_idle_carddex');
@@ -2853,6 +2951,7 @@
       card: card,
       equip: rd(typeof EQUIPDEX_KEY !== 'undefined' ? EQUIPDEX_KEY : 'lineage_idle_equipdex'),
       misc: rd(typeof MISCDEX_KEY !== 'undefined' ? MISCDEX_KEY : 'lineage_idle_miscdex'),
+      relic: rd(typeof RELICDEX_KEY !== 'undefined' ? RELICDEX_KEY : 'lineage_idle_relicdex'),
       mode: modeName
     };
   }
@@ -3253,6 +3352,7 @@
       '.m-wiki-tab{flex:0 0 auto;padding:8px 14px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;font-family:inherit;white-space:nowrap;transition:border-color .15s ease,background-color .15s ease,box-shadow .15s ease;}',
       '.m-wiki-tab:hover{border-color:#6366f1;background-color:#243047;}',
       '.m-wiki-tab.on{background:linear-gradient(135deg,#4338ca,#5b45d6);border-color:#818cf8;color:#fff;box-shadow:0 0 0 1px rgba(129,140,248,.3),0 2px 9px rgba(67,56,202,.5);}',
+      '.m-wiki-newdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;margin-left:5px;vertical-align:middle;box-shadow:0 0 0 2px rgba(239,68,68,.25);}',
       '#m-wiki-cls{display:flex;gap:6px;padding:8px 12px;flex:0 0 auto;border-bottom:1px solid #1e293b;flex-wrap:wrap;}',
       '.m-wiki-clsbtn{flex:1 1 auto;padding:7px 4px;border:1px solid #334155;background:#111c30;color:#cbd5e1;border-radius:7px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit;}',
       '.m-wiki-clsbtn.on{background:#0e7490;border-color:#22d3ee;color:#fff;}',

@@ -31,10 +31,18 @@
     {
       date: '2026-07-18', title: '同步原作v3.5.36:潘朵拉黑市新系統+真夏納+新遺物',
       items: [
-        { text: '新增潘朵拉黑市「黑市」快捷鈕,可用龍之鑽石搜尋兌換遺物。' },
+        { text: '新增潘朵拉黑市「黑市」快捷鈕,可用龍之鑽石搜尋兌換遺物。', wiki: { tab: 'pandora' } },
         { text: '新增真夏納變身(Lv85,變形控制戒指指定)。' },
         { text: '新增6件遺物裝備,吉爾塔斯魔杖擊殺增益提升。' },
         { text: '修正手機版按鈕排版對齊、修正舊存檔轉換技冷卻bug。' }
+      ]
+    },
+    {
+      date: '2026-07-18', title: '小百科新增潘朵拉黑市/遺物收藏冊分頁',
+      items: [
+        { text: '新增「潘朵拉黑市」分頁,完整說明商品架、收購單、龍之鑽石遺物布告欄怎麼玩。', wiki: { tab: 'pandora' } },
+        { text: '新增「收藏-遺物」分頁,可查看遺物收集冊進度與缺件。', wiki: { tab: 'relicbook' } },
+        { text: '小百科分頁列現在會標紅點提醒「這頁有新內容」,點開看過後就會消失。' }
       ]
     },
     {
@@ -194,12 +202,22 @@
     injectStyle();
   }
 
+  // 🔴 首頁按鈕「有新公告」紅點:比對 CHANGELOG 最新一筆的日期與玩家上次打開公告的日期(localStorage),
+  //   點開公告視窗即算已讀、紅點消失(跟小百科分頁的紅點提示同一套邏輯,見 afk-wiki.js TAB_UPDATED)。
+  var WN_SEEN_KEY = 'lineage_idle_whatsnew_seen_v1';
+  function _latestDate() { return (CHANGELOG[0] && CHANGELOG[0].date) || ''; }
+  function _wnSeenDate() { try { return localStorage.getItem(WN_SEEN_KEY) || ''; } catch (e) { return ''; } }
+  function hasUnread() { var latest = _latestDate(); return !!latest && latest > _wnSeenDate(); }
+  function markSeen() { try { localStorage.setItem(WN_SEEN_KEY, _latestDate()); } catch (e) {} }
+
   function openModal() {
     buildModal();
     _shown = PAGE_SIZE;   // 每次重新打開都從前 PAGE_SIZE 筆看起,不記上次展開到哪
     renderBody();
     document.getElementById(MODAL_ID).classList.add('open');
     _layer = window.AFK_UI ? AFK_UI.openLayer(closeModal) : null;
+    markSeen();
+    var dot = document.getElementById('m-wn-newdot'); if (dot) dot.remove();
   }
   function closeModal() {
     var m = document.getElementById(MODAL_ID); if (m) m.classList.remove('open');
@@ -224,7 +242,9 @@
       '.m-wn-list li:before{content:"\\2022";position:absolute;left:2px;color:#7fd9c4;}',
       '.m-wn-link{color:#7fd9c4;text-decoration:underline;margin-left:4px;white-space:nowrap;}',
       '#m-wn-more{display:block;width:100%;margin-top:4px;padding:10px;border:1px solid #4a3f66;border-radius:8px;background:#241f38;color:#7fd9c4;font-size:14px;font-weight:bold;cursor:pointer;}',
-      '#m-wn-more:active{background:#3a2f5c;}'
+      '#m-wn-more:active{background:#3a2f5c;}',
+      '#btn-whatsnew{position:relative;}',
+      '#m-wn-newdot{position:absolute;top:6px;right:10px;width:9px;height:9px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.3);}'
     ].join('\n');
     var s = document.createElement('style'); s.id = 'm-wn-style'; s.textContent = css;
     document.head.appendChild(s);
@@ -241,6 +261,11 @@
     btn.textContent = '📢 最新公告';
     btn.addEventListener('click', openModal);
     startBtn.insertAdjacentElement('afterend', btn);
+    injectStyle();   // 紅點跟按鈕一起出現在首頁,不用等玩家點開過一次公告視窗才有樣式
+    if (hasUnread()) {
+      var dot = document.createElement('span'); dot.id = 'm-wn-newdot'; dot.title = '有新公告';
+      btn.appendChild(dot);
+    }
     console.log('[AFK-whatsnew] hooks OK');
   }
 
