@@ -90,7 +90,15 @@
         subOk = !!(invItem && window.AFK_SUBFILTER.matches(cat, invItem, subState));
       }
       rowIdx++;
-      var visible = kwOk && subOk;
+      // 2026-07-18(修正倉庫「狀態(可用/不可用)」篩選在領物品後看起來被重置):
+      // 倉庫清單的列本身就帶 data-tip-uid/data-tip-src,若 afk-warehouse-skill.js 已對這個
+      // uid 判定要隱藏(狀態篩選/只看席琳套裝命中),這裡也要交集進去,不能無條件清空 display。
+      var whOk = true;
+      var whUid = el.getAttribute && el.getAttribute('data-tip-uid');
+      if (whUid && window.AFK_WH_SKILL_API) {
+        whOk = !window.AFK_WH_SKILL_API.isFilteredOut(whUid, el.getAttribute('data-tip-src'));
+      }
+      var visible = kwOk && subOk && whOk;
       if (visible) el.style.removeProperty('display'); else el.style.setProperty('display', 'none', 'important');
     }
   }

@@ -244,6 +244,7 @@ function killMob(idx) {
     //   傷害於呼叫端已結算）。finally 還原原來源，避免污染呼叫端後續（如寵物/召喚 tick 的 _dps 歸屬）。
     let _svKillSrc = _combatSrc; _combatSrc = 'player';
     try {
+    if (typeof pvpOnKillMob === 'function') pvpOnKillMob(mob);
     if(typeof auditTrackKill === 'function') auditTrackKill(mob);   // 統計：累計經驗/擊殺
     // 🔧 轉場建築（往上層的樓梯 / 遺忘之島傳送門）：擊敗即進入下一層/島，不顯示「擊敗了…」戰鬥訊息（race 建築且 noAutoTeleport，排除攻城塔/城門）
     let _hideKillMsg = (mob.race === '建築' && mob.noAutoTeleport);
@@ -294,13 +295,13 @@ function killMob(idx) {
     // 🐾 v3.2.17 誘捕捕捉：身上有對應誘捕狀態且擊殺對應動物 → 寵物保管獲得基本等級寵物並失去該狀態
     //   （舊「肉→taming→項圈」與「屬性怪掉舊進化果實」已隨項圈系統移除；新進化果實改由亞丁諾斯製作）
     if (typeof petCaptureOnKill === 'function') petCaptureOnKill(mob);
-    // 🗡️ 吉爾塔斯之劍：任意擊殺後獲得額外傷害+10，持續10秒（刷新制·持劍者各自計時；傷害端＝js/03 getPhysicalDmg／js/06 傭兵普攻）
+    // 🗡️ 吉爾塔斯之劍：任意擊殺後 10 秒內依主玩家邪惡值取得額外傷害（滿邪惡 +10；傷害端＝js/03 getPhysicalDmg／js/06 傭兵普攻）
     if (player.eq && player.eq.wpn && player.eq.wpn.id === 'wpn_giltas_sword') player._giltasFuryUntil = state.ticks + 100;
     if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && !a._downed && a.eq && a.eq.wpn && a.eq.wpn.id === 'wpn_giltas_sword') a._giltasFuryUntil = state.ticks + 100; });
     // 🏺 v3.5.27 食屍鬼的啃食面容：擊殺敵人時恢復 30 HP（玩家與傭兵各自看自己的頭盔·比照吉爾塔斯之劍擊殺掛點）
     if (player.eq && player.eq.helm && (DB.items[player.eq.helm.id] || {}).killHealHp && !player.dead && player.hp > 0) player.hp = Math.min(player.mhp, player.hp + DB.items[player.eq.helm.id].killHealHp);
     if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && !a._downed && a.eq && a.eq.helm && (DB.items[a.eq.helm.id] || {}).killHealHp) a.curHp = Math.min(a.mhp || 1, (a.curHp || 0) + DB.items[a.eq.helm.id].killHealHp); });
-    // 🪄 吉爾塔斯魔杖：任意擊殺後額外魔法點數+20，持續10秒；再次擊殺刷新時間。
+    // 🪄 吉爾塔斯魔杖：任意擊殺後 10 秒內依主玩家邪惡值取得額外魔法點數（滿邪惡 +20）；再次擊殺刷新時間。
     let _giltasWandTriggered = [];
     if (player.eq && player.eq.wpn && player.eq.wpn.id === 'wpn_giltas_wand') { player._giltasWandFuryUntil = state.ticks + 100; _giltasWandTriggered.push(player); }
     if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && !a._downed && a.eq && a.eq.wpn && a.eq.wpn.id === 'wpn_giltas_wand') { a._giltasWandFuryUntil = state.ticks + 100; _giltasWandTriggered.push(a); } });
@@ -347,6 +348,11 @@ function killMob(idx) {
 
     // === 野外＋血盟敵人：1% 機率額外掉落一件「攜帶物」（抽法同潘朵拉，裝備可能已強化）===
     if ((mob.wild && mob.race === '血盟') || mob.siegeEnemy) pledgeBonusDrop(mob);   // 野外血盟 或 攻城敵人：擊殺特殊掉寶
+    if (mob.trollPlayer) {   // 😤 v3.5.59 白目玩家：擊殺→仇恨解除；10% 裝備掉落（同血盟掉寶池·王族搜索狀 gachaWeight 0 不會出·經驗/金幣 0）
+        if (player.trollPlayers) player.trollPlayers = player.trollPlayers.filter(t => t && t.n !== mob.n);
+        logSys(`<span class="text-amber-300 font-bold">你擊敗了白目玩家 ${mob.n}，對方悻悻然地下線了。</span>`);
+        pledgeBonusDrop(mob, 0.10);
+    }
 
     // === 🐉 三大龍：擊敗必得「頑皮幼龍蛋」（身上已有一枚則不再掉落，100%・不受經典掉率影響）===
     if (['安塔瑞斯', '法利昂', '巴拉卡斯'].includes(mob.n) && !player.inv.some(i => i.id === 'item_dragon_egg')) {
@@ -367,7 +373,10 @@ function killMob(idx) {
         let _clMult = (mob.n === '卡瑞' && itemId === 'wpn_dragonslayer') ? 1 : trialItemDropMult(itemId);   // 🔧 v2.6.75 卡瑞·屠龍劍：經典模式仍維持 100%（獎勵已綁「擊殺消耗四任務道具」的成本·不受 ×1/10）
         let _relicX2 = 1;   // 🏺 v3.2.17 幸運暴走兔腳（遺物·需裝備）：遺物掉落機率 ×2
         if (DB.items[itemId].relic) { try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].relicDropX2) { _relicX2 = 2; break; } } } catch (e) {} }
-        if(Math.random() < (ratePct * _dropBase * _clMult * _relicX2) / 100) gainItem(itemId, 1);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
+        // 🔒 2026-07-18 使用者拍板：經典模式下「遺物」品質道具掉落機率固定鎖死 0.0001%，不吃怪物原始機率／席琳倍率／兔腳 ×2（其餘掉落物不受影響）
+        if (player.classicMode && DB.items[itemId].relic) {
+            if (Math.random() < 0.000001) gainItem(itemId, 1);
+        } else if(Math.random() < (ratePct * _dropBase * _clMult * _relicX2) / 100) gainItem(itemId, 1);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
     });
 
     // === 🔧 萬能藥稀有掉落：等級 40 以上、非血盟。一般敵人 0.01%；頭目 1%（排除夢幻之島頭目），擊殺後隨機掉落 6 種萬能藥之一 ===

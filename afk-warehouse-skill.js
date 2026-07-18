@@ -51,6 +51,12 @@
  *     渲染完後對已經產生的按鈕額外篩選(在防具主分類下才有意義,其他主分類勾選只會全部
  *     隱藏,不算錯誤,只是沒有遺骸可看)。經典模式(player.classicMode)沒有席琳系統,
  *     此勾選框整個隱藏。
+ *
+ * 判定 7(2026-07-19 使用者要求追加):「只看遺物」快速篩選
+ *   - 跟判定6同一個理由跟同一套做法(不動本體 whSubCatOptions/whMatchFilter/_whFilter/
+ *     _whSubFilter,獨立一顆勾選框、渲染完後對已產生的按鈕額外篩選),判斷依據沿用既有的
+ *     `DB.items[id].relic` 欄位。只在武器/防具主分類下顯示(遺物只會是武器/防具),不受
+ *     經典模式影響(遺物跟席琳系統無關,經典模式一樣打得到遺物)。
  * ========================================================================== */
 (function () {
   'use strict';
@@ -62,6 +68,7 @@
   var USABLE_SELECT_ID = 'afk-wh-usable-filter';
   var USABLE_ROW_ID = 'afk-wh-usable-row';
   var SHERINE_CHK_ID = 'afk-wh-sherine-filter';
+  var RELIC_CHK_ID = 'afk-wh-relic-filter';
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -180,6 +187,7 @@
   // 不會每次操作後篩選狀態就跳回「全部」。
   var _usableFilterState = '';
   var _sherineOnlyState = false;
+  var _relicOnlyState = false;
 
   function markItemList(listId, srcAttr, items) {
     var list = document.getElementById(listId);
@@ -192,6 +200,7 @@
 
     var usableFilter = _usableFilterState;
     var sherineOnly = _sherineOnlyState;
+    var relicOnly = _relicOnlyState;
 
     var buttons = list.querySelectorAll('button[data-tip-src="' + srcAttr + '"][data-tip-uid]');
     for (var b = 0; b < buttons.length; b++) {
@@ -227,6 +236,9 @@
 
       // 判定 6:只看席琳套裝(遺骸)
       if (sherineOnly && !(d && d.remains)) btn.style.display = 'none';
+
+      // 判定 7:只看遺物
+      if (relicOnly && !(d && d.relic)) btn.style.display = 'none';
     }
   }
 
@@ -245,7 +257,10 @@
       existing.value = _usableFilterState;
       var existingChk = document.getElementById(SHERINE_CHK_ID);
       if (existingChk) existingChk.checked = _sherineOnlyState;
+      var existingRelicChk = document.getElementById(RELIC_CHK_ID);
+      if (existingRelicChk) existingRelicChk.checked = _relicOnlyState;
       updateSherineVisibility();
+      updateRelicVisibility();
       var stateRow = document.getElementById(USABLE_ROW_ID);
       if (stateRow) stateRow.style.display = usableFilterApplicable() ? '' : 'none';
       return;
@@ -268,16 +283,23 @@
       '</span>' +
       '<label id="afk-wh-sherine-wrap" style="display:flex;align-items:center;gap:4px;margin-left:8px;">' +
         '<input type="checkbox" id="' + SHERINE_CHK_ID + '"><span>只看席琳套裝</span>' +
+      '</label>' +
+      '<label id="afk-wh-relic-wrap" style="display:flex;align-items:center;gap:4px;margin-left:8px;">' +
+        '<input type="checkbox" id="' + RELIC_CHK_ID + '"><span>只看遺物</span>' +
       '</label>';
     subSelect.insertAdjacentElement('afterend', wrap);
 
     var usableSel = wrap.querySelector('#' + USABLE_SELECT_ID);
     var sherineChk = wrap.querySelector('#' + SHERINE_CHK_ID);
+    var relicChk = wrap.querySelector('#' + RELIC_CHK_ID);
     usableSel.value = _usableFilterState;
     sherineChk.checked = _sherineOnlyState;
+    relicChk.checked = _relicOnlyState;
     usableSel.addEventListener('change', function () { _usableFilterState = usableSel.value; markWarehouseSkillBooks(); });
     sherineChk.addEventListener('change', function () { _sherineOnlyState = sherineChk.checked; markWarehouseSkillBooks(); });
+    relicChk.addEventListener('change', function () { _relicOnlyState = relicChk.checked; markWarehouseSkillBooks(); });
     updateSherineVisibility();
+    updateRelicVisibility();
     var newStateRow = wrap.querySelector('#' + USABLE_ROW_ID);
     if (newStateRow) newStateRow.style.display = usableFilterApplicable() ? 'flex' : 'none';
   }
@@ -306,12 +328,48 @@
     }
   }
 
+  // 遺物只會是武器/防具,道具主分類下顯示這顆勾選框沒有意義(永遠篩不到東西),直接隱藏。
+  // 不受經典模式影響(遺物跟席琳系統無關)。
+  function updateRelicVisibility() {
+    var elWrap = document.getElementById('afk-wh-relic-wrap');
+    if (!elWrap) return;
+    var applicable = (typeof _whFilter === 'undefined') || _whFilter === 'weapon' || _whFilter === 'armor';
+    elWrap.style.display = applicable ? '' : 'none';
+    if (!applicable && _relicOnlyState) {
+      _relicOnlyState = false;
+      var chk = document.getElementById(RELIC_CHK_ID);
+      if (chk) chk.checked = false;
+    }
+  }
+
   function markWarehouseSkillBooks() {
     injectStyle();
     ensureExtraFilters();
     markItemList('wh-store-list', 'wh', getWarehouseItems());
     markItemList('wh-inv-list', 'inv', getInvItems());
   }
+
+  // 🔗 2026-07-18 對外曝光「這個uid目前是否被狀態/席琳套裝篩選隱藏」的判斷,供 afk-itemsearch.js
+  // 的搜尋過濾在重繪收尾時取交集用——否則搜尋框為空時,afk-itemsearch.js 會把這裡設定的
+  // display:none 整個清空,造成「領物品後篩選看起來被重置」的假象(篩選值其實沒變,只是顯示效果
+  // 被另一支外掛的重繪收尾蓋掉)。
+  window.AFK_WH_SKILL_API = {
+    isFilteredOut: function (uid, src) {
+      if (!uid) return false;
+      var items = src === 'wh' ? getWarehouseItems() : getInvItems();
+      var item = null;
+      for (var i = 0; i < items.length; i++) { if (items[i] && items[i].uid === uid) { item = items[i]; break; } }
+      if (!item) return false;
+      var d = (typeof DB !== 'undefined' && DB.items) ? DB.items[item.id] : null;
+      if (usableFilterApplicable()) {
+        if (_usableFilterState === 'usable' && !isUsable(item)) return true;
+        if (_usableFilterState === 'unusable' && isUsable(item)) return true;
+      }
+      if (_sherineOnlyState && !(d && d.remains)) return true;
+      if (_relicOnlyState && !(d && d.relic)) return true;
+      return false;
+    }
+  };
 
   function install() {
     if (typeof window.renderWarehouseNPC !== 'function') return false;

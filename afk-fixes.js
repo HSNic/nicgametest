@@ -328,6 +328,30 @@
   })();
 
   /* --------------------------------------------------------------------------
+   * 修正#13(2026-07-19 使用者回報):戰鬥中 buff/debuff 圖示列疊太多時,下面的看不到
+   *
+   * 問題:`#status-icon-bar`(js/08-items-equip.js 的 renderStatusIconBar())疊圖示會自動
+   *   flex-wrap 換行,但它是絕對定位疊在 `#battle-view.area-fit`(16:9 固定比例框、
+   *   overflow:hidden)裡的子元素——圖示疊到超出這個框的高度時,直接被父框裁掉,不是被
+   *   捲動關掉。手機因為框本身縮得更小,更容易疊沒幾個就裁到。
+   * 解法:給圖示列自己一個高度上限(相對於戰鬥框的百分比)+ 允許內部捲動,超出時可以滑
+   *   看到被裁的圖示,而不是整個看不到。桌機手機共用同一套(與裝置判定無關)。
+   * 何時可移除:原作者如果把這個圖示列改成自己有捲動或不會裁切,這段選擇器不命中即無害。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    try {
+      var st = document.createElement('style');
+      st.id = 'afk-fix-status-icon-overflow';
+      st.textContent =
+        '#battle-view.area-fit #status-icon-bar{max-height:55% !important;overflow-y:auto !important;overflow-x:hidden !important;pointer-events:auto !important;}\n' +
+        '#battle-view.area-fit #status-icon-bar::-webkit-scrollbar{width:4px;}\n' +
+        '#battle-view.area-fit #status-icon-bar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.3);border-radius:2px;}';
+      (document.head || document.documentElement).appendChild(st);
+      console.log('[AFK-fixes] 戰鬥狀態圖示列溢出裁切修正已套用');
+    } catch (e) {}
+  })();
+
+  /* --------------------------------------------------------------------------
    * 修正#8:快轉(離線 / 背景補跑)時靜音音效 + 不跳戰鬥特效(省效能、不洗畫面 / 耳朵)
    *
    * 問題:作者 .49 起的音效(js/17-audio.js)與戰鬥特效(js/09-vfx-render.js)從戰鬥 / 擊殺碼

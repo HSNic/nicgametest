@@ -41,14 +41,17 @@
       return main + (opt ? ('－' + opt.name) : '');
     }
 
-    window.whOneClickDeposit = function () {
+    // 2026-07-19(使用者要求新增「全部存入」):把核心存入邏輯抽成帶「篩選函式」參數的內部函式,
+    // 「一鍵存入」傳 whMatchFilter(目前分類)、「全部存入」傳一個永遠 true 的函式(不分武器/防具/
+    // 道具)。除了篩選範圍不同,其餘規則(鎖定保護/倉庫現有相同物品才存/倉庫滿了就停)完全相同。
+    function doDeposit(matchFn, label) {
       var w = loadWarehouse();
       var whSigs = new Set(w.items.map(whSig));
       var deposited = 0, full = false;
       var snapshot = player.inv.slice();
       for (var i = 0; i < snapshot.length; i++) {
         var it = snapshot[i];
-        if (!whMatchFilter(it.id)) continue;              // 只處理目前主分類+子分類篩選命中的物品
+        if (!matchFn(it.id)) continue;                     // 篩選範圍(目前分類 或 全部)
         if (WH_NO_STORE.indexOf(it.id) >= 0) continue;    // 不可存入
         if (it.lock) continue;                             // 鎖定物品保護
         if (!whSigs.has(whSig(it))) continue;               // 倉庫沒有完全相同的 → 跳過
@@ -70,7 +73,6 @@
       if (el && typeof renderWarehouseNPC === 'function') renderWarehouseNPC(el);
 
       if (typeof logSys !== 'function') return;
-      var label = filterLabel();
       if (deposited > 0) {
         logSys('<span class="text-cyan-300 font-bold">一鍵存入（' + label + '）：已存入 ' + deposited +
           ' 項與倉庫現有物品相同的物品' + (full ? '（倉庫已滿，部分未存入）' : '') + '。</span>');
@@ -78,7 +80,36 @@
         logSys(full ? '<span class="text-red-400">倉庫已滿，無法存入。</span>'
           : '背包中沒有符合「' + label + '」篩選、且與倉庫現有物品完全相同的可存入物品。');
       }
-    };
+    }
+
+    window.whOneClickDeposit = function () { doDeposit(whMatchFilter, filterLabel()); };
+    window.whOneClickDepositAll = function () { doDeposit(function () { return true; }, '全部'); };
+
+    // 在既有「一鍵存入」按鈕旁邊補插「全部存入」按鈕(不分武器/防具/道具);renderWarehouseNPC 每次
+    // 整段 innerHTML 重建,按鈕跟著被砍掉重生,故每次重繪後都要檢查並補插(找不到就靜默跳過)。
+    function ensureDepositAllButton() {
+      var oneClickBtn = document.querySelector('button[onclick="whOneClickDeposit()"]');
+      if (!oneClickBtn || document.getElementById('afk-wh-deposit-all-btn')) return;
+      var btn = document.createElement('button');
+      btn.id = 'afk-wh-deposit-all-btn';
+      btn.className = oneClickBtn.className.replace(/\bms-auto\b/, '').trim();
+      btn.title = '不分武器/防具/道具,把背包中與倉庫現有物品(詞綴+名字+強化值完全相同)的物品全部自動存入;鎖定物品不動';
+      btn.textContent = '全部存入';
+      btn.addEventListener('click', function () { window.whOneClickDepositAll(); });
+      oneClickBtn.insertAdjacentElement('afterend', btn);
+    }
+
+    if (typeof window.renderWarehouseNPC === 'function' && !window.renderWarehouseNPC.__afkDepositAllWrapped) {
+      var _origRenderWh = window.renderWarehouseNPC;
+      var wrappedRenderWh = function () {
+        var r = _origRenderWh.apply(this, arguments);
+        try { ensureDepositAllButton(); } catch (e) {}
+        return r;
+      };
+      wrappedRenderWh.__afkDepositAllWrapped = true;
+      window.renderWarehouseNPC = wrappedRenderWh;
+    }
+    try { ensureDepositAllButton(); } catch (e) {}
 
     console.log('[AFK-whdeposit-bycat] hooks OK');
   }

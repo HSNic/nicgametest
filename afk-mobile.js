@@ -56,6 +56,105 @@
     window.applyDollCursor = wrapped;
   })();
 
+  // 🐾 2026-07-19(包武寵物保管介面手機版優化第二輪,使用者要求):把「出戰中」「已鎖定」的寵物各自
+  //   歸類成一個可摺疊區塊、排在清單最前面(出戰中 > 已鎖定 > 其他),摺疊只是隱藏該區塊內容、省畫面
+  //   空間,不影響任何寵物資料/操作邏輯——純粹重排 renderPetStorageNPC(js/22-pets.js)產生的既有
+  //   DOM 節點(不重新產生 HTML,只搬動節點順序+包一層可點擊收合的外框)。收合狀態存在模組層變數,
+  //   換頁/重繪(存/取/出戰等操作都會觸發整段重繪)後記得住,不會每次操作都跳回展開。
+  //   只在手機(body.m-mobile)套用,桌機版面完全不受影響、也不重排。
+  var _petGroupCollapsed = { out: false, locked: false };
+
+  function buildPetCollapsibleGroup(key, label, colorClass, rows) {
+    if (!rows.length) return null;
+    var wrap = document.createElement('div');
+    wrap.className = 'flex flex-col gap-1';
+    var collapsed = !!_petGroupCollapsed[key];
+    var hdr = document.createElement('div');
+    hdr.className = 'afk-pet-group-hdr flex items-center justify-between bg-slate-800/60 border border-slate-600 rounded px-2 py-1.5 text-sm';
+    hdr.innerHTML = '<span class="font-bold ' + colorClass + '">' + label + '（' + rows.length + '）</span><span class="afk-pet-arrow">' + (collapsed ? '▶' : '▼') + '</span>';
+    var body = document.createElement('div');
+    body.className = 'flex flex-col gap-1';
+    body.style.display = collapsed ? 'none' : '';
+    rows.forEach(function (r) { body.appendChild(r); });
+    hdr.addEventListener('click', function () {
+      _petGroupCollapsed[key] = !_petGroupCollapsed[key];
+      body.style.display = _petGroupCollapsed[key] ? 'none' : '';
+      var arrow = hdr.querySelector('.afk-pet-arrow');
+      if (arrow) arrow.textContent = _petGroupCollapsed[key] ? '▶' : '▼';
+    });
+    wrap.appendChild(hdr);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function reorganizePetStorageUI(container) {
+    if (!document.body.classList.contains('m-mobile')) return;   // 只在手機重排,桌機版面維持原樣
+    if (!container) return;
+    var petUi = container.querySelector ? container.querySelector('[data-petui="1"]') : null;
+    if (!petUi) return;
+    var listWrap = null;
+    for (var i = 0; i < petUi.children.length; i++) {
+      if (petUi.children[i].classList && petUi.children[i].classList.contains('overflow-y-auto')) { listWrap = petUi.children[i]; break; }
+    }
+    if (!listWrap) return;
+    // 放生二次確認的那一列(bg-red-950)是暫時性 UI,不參與重排,避免弄丟這一列導致確認按鈕消失。
+    var hasConfirmRow = false;
+    for (var j = 0; j < listWrap.children.length; j++) {
+      var cls = listWrap.children[j].className || '';
+      if (cls.indexOf('bg-red-950') >= 0) { hasConfirmRow = true; break; }
+    }
+    if (hasConfirmRow) return;
+    var rows = Array.from(listWrap.children).filter(function (el) { return el.tagName === 'DIV' && el.querySelector('img'); });
+    if (!rows.length) return;   // 保管箱是空的(只有提示文字),不用重排
+    var outRows = [], lockedRows = [], restRows = [];
+    rows.forEach(function (row) {
+      var isOut = row.classList.contains('border-emerald-600');
+      var lockBtn = row.querySelector('button');
+      var isLocked = !!(lockBtn && lockBtn.textContent.trim() === '🔒');
+      if (isOut) outRows.push(row);
+      else if (isLocked) lockedRows.push(row);
+      else restRows.push(row);
+    });
+    // 2026-07-19(使用者第三輪要求):其餘寵物依名字分組,同名字有2隻(以上)才用可摺疊區塊包起來
+    // (只有1隻的名字不用多包一層標題,省版面);出戰中/已鎖定分組維持不變。
+    var nameMap = {}, nameOrder = [];
+    restRows.forEach(function (row) {
+      var nameEl = row.querySelector('.font-bold');
+      var name = (nameEl && nameEl.textContent.trim()) || '其他';
+      if (!nameMap[name]) { nameMap[name] = []; nameOrder.push(name); }
+      nameMap[name].push(row);
+    });
+    var hasNameGroup = nameOrder.some(function (n) { return nameMap[n].length > 1; });
+    if (!outRows.length && !lockedRows.length && !hasNameGroup) return;   // 沒有任何分組情況,維持原順序
+    listWrap.innerHTML = '';
+    var outGroup = buildPetCollapsibleGroup('out', '⚔️ 出戰中', 'text-emerald-300', outRows);
+    var lockedGroup = buildPetCollapsibleGroup('locked', '🔒 已鎖定', 'text-amber-300', lockedRows);
+    if (outGroup) listWrap.appendChild(outGroup);
+    if (lockedGroup) listWrap.appendChild(lockedGroup);
+    nameOrder.forEach(function (name) {
+      var groupRows = nameMap[name];
+      if (groupRows.length > 1) {
+        var nameGroup = buildPetCollapsibleGroup('name:' + name, name, 'text-slate-200', groupRows);
+        if (nameGroup) listWrap.appendChild(nameGroup);
+      } else {
+        listWrap.appendChild(groupRows[0]);
+      }
+    });
+  }
+
+  (function wrapRenderPetStorageForMobile() {
+    if (typeof window.renderPetStorageNPC !== 'function') return;   // 該NPC互動函式不存在,優雅降級不掛
+    if (window.renderPetStorageNPC.__afkMobileWrapped) return;
+    var orig = window.renderPetStorageNPC;
+    var wrapped = function (div) {
+      var r = orig.apply(this, arguments);
+      try { reorganizePetStorageUI(div || document.getElementById('interaction-content')); } catch (e) {}
+      return r;
+    };
+    wrapped.__afkMobileWrapped = true;
+    window.renderPetStorageNPC = wrapped;
+  })();
+
   function init() {
     var gs = document.getElementById('game-screen');
     if (!gs) { console.warn('[AFK-mobile] 找不到 #game-screen,手機版停用。'); return; }
@@ -1379,6 +1478,12 @@
       // 從外面就被切斷)。只在原作已上線地圖式 NPC(#town-npc-map 存在)時解除裁切、交給
       // #game-screen 本來就有的 overflow-y:auto 一起捲動；其餘畫面(戰鬥/背包/隊伍)不受影響。
       'body.m-mobile:has(#town-npc-map) .m-col-center{overflow:visible !important;}',
+      // 2026-07-19 使用者實機回報:戰鬥畫面最下方「狀態:」文字列(#m-battle-buffs,見上面該規則,
+      //   本身已有 max-height:22vh+overflow-y:auto)在 buff 疊很多時仍會被切斷、也捲不動——跟上面
+      //   城鎮NPC清單同一個根因:.m-col-center 本身 overflow:hidden 會在內容到達 #game-screen 的
+      //   捲動之前就先裁掉多出來的部分,#m-battle-buffs 自己的捲動永遠碰不到。只在戰鬥畫面解除裁切,
+      //   交給 #game-screen 本來就有的 overflow-y:auto 一起捲,背包/隊伍/設定畫面不受影響。
+      'body.m-mobile.mview-battle .m-col-center{overflow:visible !important;}',
       /* 2026-07-08(待辦#8):背包分頁按鈕列(.tab-bar)跟下方內容(快速強化/快速廢品/物品清單)之間的間隙縮小,
          只調 .m-col-right(背包欄)、不動戰鬥/設定欄的間距(避免波及沒被抱怨的畫面)。 */
       'body.m-mobile .m-col-right{gap:4px !important;}',
@@ -1447,7 +1552,11 @@
          每個按鈕/下拉都撐滿所在格子寬度，同一欄永遠等寬對齊。單獨的 #map-select 落單時(奇數個可見項)用
          grid-column:1/-1 撐滿整行，不留空格。以 :has(> #map-select) 精準命中那個容器(不誤中標題 span)。
          作者哪天不再包這層 inner div 即自動失效。 */
-      'body.m-mobile .m-maphdr div:has(> #map-select){display:grid !important;grid-template-columns:1fr 1fr !important;gap:8px !important;}',
+      /* 2026-07-19 使用者要求改「三個一排」,比照背包分頁(index.html #col-right>.tab-bar)的
+         grid-template-columns:repeat(3,minmax(0,1fr)) 寫法,同樣每格等寬。#map-select(子地圖
+         下拉)維持撐滿整行(grid-column:1/-1),不管三欄下最後一列滿不滿都獨立一整行,不跟其他
+         按鈕搶格子。 */
+      'body.m-mobile .m-maphdr div:has(> #map-select){display:grid !important;grid-template-columns:repeat(3, minmax(0,1fr)) !important;gap:8px !important;}',
       'body.m-mobile .m-maphdr div:has(> #map-select) > *{width:100% !important;min-width:0 !important;max-width:100% !important;box-sizing:border-box !important;}',
       'body.m-mobile .m-maphdr #map-select{grid-column:1 / -1 !important;}',
       /* 🔧 作者大改版新增 #log-row(戰鬥/系統日誌並排,固定 flex:0 0 340px)夾在 #map-view-panel 下方。手機已把兩個
@@ -1761,7 +1870,26 @@
          這個缺口(不只這三顆),故全站套用:關掉 tap-highlight、拿掉 transition(讓瞬間誤觸的 hover
          狀態不被動畫放大),改用 filter:brightness() 給按下回饋(不需知道每顆按鈕各自的底色)。 */
       'body.m-mobile .btn{-webkit-tap-highlight-color:transparent;transition:none !important;}',
-      'body.m-mobile .btn:active:not(:disabled){filter:brightness(.82);}'
+      'body.m-mobile .btn:active:not(:disabled){filter:brightness(.82);}',
+      /* 2026-07-18(包武寵物保管介面手機版優化,使用者要求):每隻寵物列原本「鎖定/縮圖/數值文字/最多5顆操作
+         按鈕」擠在同一行,操作按鈕被壓進 max-width:210px 的窄框,手機上擠成2~3行小按鈕不好點。改成:
+         整列 flex-wrap,讓 renderPetStorageNPC(js/22-pets.js) 產生的操作按鈕群(該行最後一個 span)強制
+         100%寬、自動換到下一行;按鈕群本身也 flex-wrap+每顆等寬(flex:1 1 30%),觸控尺寸加大。
+         用 [data-petui="1"] 這個既有 hook 屬性精準鎖定包武介面,不影響其他寵物相關UI(隊伍面板等)。
+         2026-07-19 再優化(使用者第二輪要求):①頂部說明文字獨立捲動+高度減半,把空間讓給下面清單
+         (清單容器 max-height 對應加大);②按鈕高度再小一點;③寵物縮圖放大。分組/收合邏輯(出戰中/
+         已鎖定置頂)屬DOM重排,寫在 JS 段(見 reorganizePetStorageUI),這裡只管純樣式。 */
+      /* 2026-07-19 第三輪:①清單空間再往下延伸到接近畫面邊緣(改用 calc(100vh - Npx) 動態撐滿,
+         不用寫死的固定px);②縮圖再放大一輪(60x54→88x80)。 */
+      'body.m-mobile [data-petui="1"] > div:first-child{max-height:70px !important;overflow-y:auto !important;}',
+      'body.m-mobile [data-petui="1"] > div.overflow-y-auto{max-height:calc(100vh - 260px) !important;}',
+      'body.m-mobile [data-petui="1"] .bg-slate-800.border.rounded.px-2.py-1\\.5{flex-wrap:wrap !important;row-gap:8px !important;}',
+      'body.m-mobile [data-petui="1"] .bg-slate-800.border.rounded.px-2.py-1\\.5 > span:nth-child(2){width:88px !important;height:80px !important;}',
+      'body.m-mobile [data-petui="1"] .bg-slate-800.border.rounded.px-2.py-1\\.5 > span:nth-child(2) img{max-width:88px !important;max-height:80px !important;}',
+      'body.m-mobile [data-petui="1"] .bg-slate-800.border.rounded.px-2.py-1\\.5 > span:last-child{width:100% !important;max-width:100% !important;display:flex !important;flex-wrap:wrap !important;gap:6px !important;justify-content:flex-start !important;}',
+      'body.m-mobile [data-petui="1"] .bg-slate-800.border.rounded.px-2.py-1\\.5 > span:last-child > button{flex:1 1 30% !important;min-width:64px !important;min-height:28px !important;padding:5px 4px !important;font-size:12px !important;}',
+      'body.m-mobile .afk-pet-group-hdr{cursor:pointer;user-select:none;}',
+      'body.m-mobile .afk-pet-group-hdr:active{filter:brightness(.85);}'
     ].join('\n');
     var s = document.createElement('style');
     s.id = 'm-style';
