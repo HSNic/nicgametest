@@ -28,7 +28,7 @@ const PET_BOOK = {
     '柯利':     { kind:'phys', tier:0, lv0:5, hp0:40, mp0:5,  hpUp:[8,11], mpUp:[3,4], hpReg:5, mpReg:0, apm:60,    capm:0,     stun:0.54, cha:6,  evo:'高等柯利', sk:[] },
     '虎男':     { kind:'spec', tier:0, lv0:5, hp0:40, mp0:5,  hpUp:[8,14], mpUp:[3,5], hpReg:5, mpReg:0, apm:72,    capm:0,     stun:0.58, cha:12, evo:'真‧虎男', sk:[] },
     '高麗幼犬': { kind:'spec', tier:0, lv0:5, hp0:30, mp0:30, hpUp:[3,6],  mpUp:[3,5], hpReg:5, mpReg:5, apm:45,    capm:51.43, stun:0.58, cha:12, evo:'高麗犬', sk:[{ n:'瘋狂咬擊', mp:10, kind:'magic', d:[2,10], ele:'none' }] },
-    '袋鼠':     { kind:'spec', tier:0, lv0:5, hp0:25, mp0:5,  hpUp:[3,8],  mpUp:[2,5], hpReg:2, mpReg:3, apm:90,    capm:72,    stun:0.58, cha:12, evo:'高等袋鼠', sk:[{ n:'袋鼠火焰拳', mp:6, kind:'magic', d:[1,18], ele:'fire' }] },
+    '袋鼠':     { kind:'spec', tier:0, lv0:5, hp0:25, mp0:5,  hpUp:[3,8],  mpUp:[2,5], hpReg:2, mpReg:3, apm:90,    capm:72,    stun:0.58, cha:12, drPierce:0.35, evo:'高等袋鼠', sk:[{ n:'袋鼠火焰拳', mp:6, kind:'magic', d:[1,18], ele:'fire' }] },
     '熊貓':     { kind:'spec', tier:0, lv0:5, hp0:30, mp0:10, hpUp:[8,11], mpUp:[2,4], hpReg:2, mpReg:3, apm:60,    capm:68.57, stun:0.58, cha:12, evo:'高等熊貓', sk:[{ n:'熊貓爆擊', mp:9, kind:'extra', crit:true, add:0 }] },
     '猴子':     { kind:'spec', tier:0, lv0:5, hp0:30, mp0:30, hpUp:[3,8],  mpUp:[3,5], hpReg:2, mpReg:3, apm:51.43, capm:51.43, stun:0.58, cha:12, evo:'超級猴子', sk:[{ n:'猴子氣功波', mp:8, kind:'magic', d:[1,20], ele:'none' }] },
     '頑皮龍':   { kind:'spec', tier:0, lv0:5, hp0:40, mp0:10, hpUp:[8,14], mpUp:[3,5], hpReg:5, mpReg:8, apm:53.33, capm:48,    stun:0.58, cha:15, evo:'高等頑皮龍', sk:[{ n:'頑皮龍火球', mp:10, kind:'magic', d:[2,10], ele:'fire' }] },
@@ -48,7 +48,7 @@ const PET_BOOK = {
     '高等柯利':     { kind:'phys', tier:1, lv0:1, hpUp:[10,14], mpUp:[3,4], hpReg:8,  mpReg:0,  apm:60,    capm:0,     stun:0.54, cha:6,  evo:null, sk:[] },
     '真‧虎男':     { kind:'spec', tier:1, lv0:1, hpUp:[10,15], mpUp:[3,5], hpReg:5,  mpReg:5,  apm:72,    capm:60,    stun:0.58, cha:12, evo:null, sk:[{ n:'爆裂勾爪', mp:5, kind:'extra', add:5 }] },
     '高麗犬':       { kind:'spec', tier:1, lv0:1, hpUp:[3,8],   mpUp:[3,5], hpReg:2,  mpReg:10, apm:60,    capm:51.43, stun:0.58, cha:12, evo:null, sk:[{ n:'瘋狂咬擊', mp:10, kind:'magic', d:[2,10], ele:'none', w:50 }, { n:'汪汪咬擊', mp:10, kind:'magic', d:[3,10], ele:'none', w:50 }] },
-    '高等袋鼠':     { kind:'spec', tier:1, lv0:1, hpUp:[3,8],   mpUp:[3,5], hpReg:2,  mpReg:5,  apm:90,    capm:72,    stun:0.58, cha:12, evo:null, sk:[{ n:'高等袋鼠火焰拳', mp:12, kind:'magic', d:[2,18], ele:'fire' }] },
+    '高等袋鼠':     { kind:'spec', tier:1, lv0:1, hpUp:[3,8],   mpUp:[3,5], hpReg:2,  mpReg:5,  apm:90,    capm:72,    stun:0.58, cha:12, drPierce:0.35, evo:null, sk:[{ n:'高等袋鼠火焰拳', mp:12, kind:'magic', d:[2,18], ele:'fire' }] },
     '高等熊貓':     { kind:'spec', tier:1, lv0:1, hpUp:[8,16],  mpUp:[2,4], hpReg:2,  mpReg:5,  apm:60,    capm:68.57, stun:0.58, cha:12, evo:null, sk:[{ n:'高等熊貓爆擊', mp:18, kind:'extra', crit:true, add:10 }] },
     '超級猴子':     { kind:'spec', tier:1, lv0:1, hpUp:[3,8],   mpUp:[3,5], hpReg:2,  mpReg:5,  apm:51.43, capm:51.43, stun:0.58, cha:12, evo:null, sk:[{ n:'超級猴子氣功波', mp:15, kind:'magic', d:[2,20], ele:'none' }] },
     '高等頑皮龍':   { kind:'spec', tier:1, lv0:1, hpUp:[10,15], mpUp:[3,5], hpReg:5,  mpReg:8,  apm:55.38, capm:51.43, stun:0.58, cha:15, evo:null, sk:[{ n:'頑皮龍火球', mp:10, kind:'magic', d:[2,10], ele:'fire', w:50 }, { n:'頑皮龍大火球', mp:12, kind:'magic', d:[2,12], ele:'fire', w:50 }] },
@@ -119,6 +119,7 @@ function petDerive(p) {
         kind: def.kind, tier: t,
         dice: dice,
         flat: flat,
+        drPierce: Math.max(0, Math.min(0.95, def.drPierce || 0)),
         damageMult: (t === 2 ? 1 : (PET_TIER_DMG_MULT[t] || 1) * survivalDmgMult) * petMasteryDmgMult(),   // 👑 夥伴精通 ×1.5 折於此＝普攻(petAttackOnce)／傷害技能(petCastSkill)／extra技(走普攻) 三路徑一次覆蓋
         hit: Math.floor((g.hit0 + Math.floor(lv * g.hitG) + speedHit + t * 3 + elite.hit + PET_HIT_TUNE) * petMasteryHitMult()),   // 👑 夥伴精通 ×1.5
         skillFlat: Math.floor(lv * g.skillG * castMul * skillTier * PET_DMG_TUNE.skill) + _gInt,
@@ -869,7 +870,7 @@ function _petStatusTick(p) {
     for (let x of dots) {
         if ((st[x[0]] || 0) > 0 && state.ticks % Math.max(1, st[x[2]] || 10) === 0) p.hp -= Math.max(1, st[x[1]] || 1);
     }
-    ['freeze','stun','stone','sleep','paralyze','silence','magicseal','slowAtk','poison','burn','scald','bleed','weaken','disease','blind','potionFrost'].forEach(k => { if ((st[k] || 0) > 0) st[k]--; });
+    ['freeze','stun','stone','sleep','paralyze','silence','magicseal','slowAtk','poison','burn','scald','bleed','weaken','disease','blind','potionFrost','foulWater'].forEach(k => { if ((st[k] || 0) > 0) st[k]--; });   // 🌊 v3.6.20 含汙濁之水
     if (p.hp <= 0) _petDown(p, '持續傷害');
 }
 function _petPickTarget(p) {
@@ -910,7 +911,8 @@ function petAttackOnce(p, d, target, forceCrit, addDmg, skName) {
         let r = roll(1, 20);
         let heavy = (r === 20) || !!forceCrit;
         if (heavy || (r !== 1 && hv >= r)) {
-            let dmg = (heavy ? d.dice : roll(1, d.dice)) + d.flat + cb.dmg + (addDmg || 0) + pg.dmg + (_ia ? _ia.ed : 0) - (target.dr || 0) - (_pst.weaken > 0 ? 5 : 0);
+            let targetDr = Math.floor((target.dr || 0) * (1 - (d.drPierce || 0)));
+            let dmg = (heavy ? d.dice : roll(1, d.dice)) + d.flat + cb.dmg + (addDmg || 0) + pg.dmg + (_ia ? _ia.ed : 0) - targetDr - (_pst.weaken > 0 ? 5 : 0);
             dmg = Math.max(1, Math.floor(dmg));
             dmg = Math.max(1, Math.floor(dmg * (d.damageMult || 1)));   // 🐾 型態增傷＋低血高傷取向（普攻／extra 技能共用）
             if (skName && typeof _relicPetSkillMult === 'function') dmg = Math.max(1, Math.floor(dmg * _relicPetSkillMult()));
@@ -1039,6 +1041,7 @@ function applyMobMagicToPet(mob, sk, p) {
     if (sk.type === 'weaken') { applyPure('weaken', (sk.dur || 15) * 10, '陷入弱化', 150); return; }
     if (sk.type === 'disease') { applyPure('disease', (sk.dur || 20) * 10, '陷入疾病', 150); return; }
     if (sk.type === 'potionfrost') { applyPure('potionFrost', (sk.dur || 8) * 10, '陷入藥水霜化', 150); return; }
+    if (sk.type === 'foulwater') { st.foulWater = Math.max(st.foulWater || 0, (sk.dur || 8) * 10); logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '汙濁之水'}，${nm} 陷入汙濁之水！（受到的治癒效果減半·持續 ${sk.dur || 8} 秒）`, 'enemy'); return; }   // 🌊 v3.6.20 必中（規格無機率項·不走 applyPure 的 pbase 判定）
     if (sk.type === 'frost_breath') { applyPure('slowAtk', (sk.dur || 8) * 10, '的攻擊速度大幅減慢', 200); return; }
     if (sk.type === 'scald') { if (chance(200)) { st.scald=(sk.dur||15)*10; st.scaldDmg=shMul*(sk.d||100); st.scaldTick=(sk.tick||3)*10; } return; }
     if (sk.type === 'poison') { if (chance(100)) { st.poison=(sk.dur||6)*10; st.poisonDmg=shMul*(sk.d||1); st.poisonTick=(sk.tick||1)*10; } return; }
@@ -1094,6 +1097,7 @@ function petTryPotion(p) {   // HP<X% 用治癒藥水（邏輯同傭兵 allyTryP
     stack.cnt--; if (stack.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== stack.uid);   // 🛡️ v3.2.42 稽核修：只移除喝空的那疊（原全背包 filter 會誤刪 cnt 為 undefined 的舊物品）
     let h = Math.max(1, Math.floor(potionHealBase(pdef) * (1 + getConPotionPct((player.d && player.d.con) || 0) / 100)));
     if (p._statuses && p._statuses.potionFrost > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌅 藥水霜化：寵物也以自己的 MR/狀態判定，不再借用主角色結果
+    if (p._statuses && p._statuses.foulWater > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌊 v3.6.20 汙濁之水：治癒藥水也減半
     p.hp = Math.min(p.mhp, p.hp + h);
     p._potCd = 10;
     logCombat(`寵物 <span class="text-emerald-300 font-bold">${p.form}</span> 飲用 ${pdef.n}，恢復 ${h} 點 HP。`, 'heal');
@@ -1105,6 +1109,23 @@ function _petReviveDone(p, via) {
     p._animAct = null; p._statuses = newMobStatus();
     logCombat(`<span class="text-green-300 font-bold">寵物 ${p.form} 復活了！</span>（${via}）`, 'heal');
     petMarkDirty();
+    try { renderSquadPanel(); } catch (e) {}
+}
+// 🐾 v3.6.29 回村/回城（js/11 changeMap 村莊分支呼叫·比照傭兵 reviveDownedMercsAtTown）：
+//    出戰寵物倒地者免費復活＋全體補滿 HP/MP（MP 含防具精神加成的有效上限·同 petsTick _mmpEff）＋清異常狀態。
+//    petsOutList 已依目前角色過濾——他角色出戰中的寵物不動（多分頁共用桶慣例）。
+function petsReviveAtTown() {
+    let outs = (typeof petsOutList === 'function') ? petsOutList() : [];
+    if (!outs.length) return;
+    let n = 0;
+    outs.forEach(p => {
+        if (p._downed) { p._downed = false; p._reviveCd = 0; p._animAct = null; n++; }
+        p.hp = p.mhp;
+        p.mp = (p.mmp || 0) + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);
+        p._statuses = newMobStatus();
+    });
+    petMarkDirty();
+    if (n) { try { logCombat(`<span class="text-green-300 font-bold">回到安全區，${n} 隻倒下的寵物已恢復。</span>`, 'heal'); } catch (e) {} }
     try { renderSquadPanel(); } catch (e) {}
 }
 function petRevive(uidv, method) {   // 隊伍面板按鈕：rez=返生術（立即·耗玩家MP）/ scroll=復活卷軸（需滿 5 秒·_petDown 設 _reviveCd=50 tick）

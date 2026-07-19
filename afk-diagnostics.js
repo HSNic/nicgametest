@@ -191,8 +191,10 @@
       env: envSnapshotSync(),
       gameState: gameStateSnapshot(),
       backgroundEvents: _visEvents.slice(),
-      recentConsole: _consoleErrors.slice()
+      recentConsole: _consoleErrors.slice(),
+      offlineProfile: offlineProfileJson()
     };
+    if (!report.offlineProfile) report.offlineProfileReason = 'no-last-report';
     var tasks = [
       batterySnapshot().then(function (b) { report.env.battery = b; }),
       swSnapshot().then(function (s) { report.serviceWorker = s; })

@@ -434,6 +434,7 @@ function useItem(u, silent = false) {
             if (hasMastery('k_dragonblood')) h = Math.floor(h * 1.15);   // 🐉 龍血精通：治癒藥水恢復 +15%
             if (player.hp < player.mhp * 0.2) { try { for (let _k in player.eq) { let _e = player.eq[_k]; if (_e && DB.items[_e.id] && DB.items[_e.id].lowHpPotionX2) { h = h * 2; break; } } } catch (e) {} }   // 🏺 v3.2.17 聖伯納的急救酒桶：HP<20% 時治癒藥水恢復量 ×2
             if (player.statuses && player.statuses.potionFrost > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌅 藥水霜化（巨大骷髏·枯竭詛咒）：治癒藥水恢復量 −50%
+            if (player.statuses && player.statuses.foulWater > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌊 v3.6.20 汙濁之水（玩家NPC二模板）：治癒藥水也減半
             player.hp = Math.min(player.mhp, player.hp + h);
             player.cds.pot = 1;
             if(!silent) logSys(`飲用 ${d.n}，恢復 ${h} HP。`);
@@ -1017,7 +1018,8 @@ const PLAYER_DEBUFF_NAME = {
     stun: '暈眩', freeze: '冰凍', stone: '石化', paralyze: '麻痺',
     silence: '沉默', magicseal: '魔法封印', poison: '中毒',
     burn: '灼燒', scald: '燙傷', evilAura: '邪靈之氣',
-    weaken: '弱化', disease: '疾病', blind: '目盲', potionFrost: '藥水霜化'   // 🌅 日出之國新異常
+    weaken: '弱化', disease: '疾病', blind: '目盲', potionFrost: '藥水霜化',   // 🌅 日出之國新異常
+    foulWater: '汙濁之水'   // 🌊 v3.6.20 玩家NPC二模板（妖精）：受到治癒效果減半
 };
 
 // 🌩️ v3.5.94 玩家減益的狀態圖示對照（值＝assets/state-icons/<值>.jpg 的檔名，供 renderStatusIconBar 使用）。
@@ -1187,7 +1189,8 @@ function renderStatusEffects() {
         weaken: 'text-amber-400',    // 🌅 弱化 (琥珀)
         disease: 'text-lime-400',    // 🌅 疾病 (病綠)
         blind: 'text-purple-300',    // 🌅 目盲 (霧紫)
-        potionFrost: 'text-sky-300'  // 🌅 藥水霜化 (霜藍)
+        potionFrost: 'text-sky-300', // 🌅 藥水霜化 (霜藍)
+        foulWater: 'text-cyan-300'   // 🌊 汙濁之水 (濁青·v3.6.20)
     };
 
     let debuffs = [];
@@ -1221,7 +1224,15 @@ function _updateUIImpl() {
       // 🌀 順移按鈕：固定顯示（含村莊/野外/狩獵/隱藏區域），不隨敵人或每幀重繪閃爍；僅在「傳送會破壞玩法」的鎖定模式隱藏（裂痕/傲慢之塔封鎖樓/遺忘之島/軍王之室）。
       // ⚠️ 用「狀態改變才寫 DOM」的守衛：避免每個 tick 重複 toggle class / 設 display 造成按鈕閃爍。
       { let tpb = document.getElementById('btn-teleport'); if (tpb) { let _hideTp = !!(KING_ROOMS[mapState.current] || (typeof prideTeleportBlocked === 'function' && prideTeleportBlocked()) || state.oblivion); if (tpb.classList.contains('hidden') !== _hideTp) { tpb.classList.toggle('hidden', _hideTp); tpb.style.display = _hideTp ? 'none' : ''; } } } }   // ⚠️ _hideTp 必須 !! 強轉布林：否則 (undefined||false||undefined)===undefined → 守衛 (boolean!==undefined) 恆真 → toggle('hidden', undefined) 變成「無參數 bare toggle」每幀翻轉 → 按鈕閃爍
-    { let vb = document.getElementById('victory-badge'); if (vb) { let _va = siegeVictoryActive(); vb.style.display = _va ? 'inline-flex' : 'none'; if (_va) vb.title = `血盟持有城堡：全商店8折、開放${victoryCityCfg().castleName}`; } }   // 血盟城堡淡金黃標記（同模式永久共用，換城時同步更新）
+    // 👑 v3.6.05 城主稱號；😤 v3.6.31 只有王族顯示「<持有城堡>主」（肯特城主…）·非王族只顯示「<持有城堡>」（肯特城…·用戶拍板·血盟福利不變）。
+    //    v3.6.34 徽章王冠改與戰鬥 sprite 同一顆動態 castle-crown.gif（#victory-badge-crown）·僅王族顯示（非王族純文字）。
+    //    ⚠️ 每 tick 都會跑到這裡 → 比對後才寫 DOM（比照上方按鈕的「狀態改變才寫」守衛），避免每幀重設 textContent/display。
+    { let vb = document.getElementById('victory-badge'); if (vb) { let _va = siegeVictoryActive(); vb.style.display = _va ? 'inline-flex' : 'none';
+        if (_va) { let _lordTitle = victoryCityCfg().castleName + (player.cls === 'royal' ? '主' : ''); let _lt = document.getElementById('victory-badge-text');
+            if (_lt && _lt.textContent !== _lordTitle) _lt.textContent = _lordTitle;
+            let _vc = document.getElementById('victory-badge-crown'), _vd = (player.cls === 'royal') ? '' : 'none';
+            if (_vc && _vc.style.display !== _vd) _vc.style.display = _vd;
+            vb.title = `${_lordTitle}：血盟持有${victoryCityCfg().castleName}，全商店 8 折、開放城堡`; } } }   // 血盟城堡淡金黃標記（同模式永久共用，換城時同步更新）
     { let cb = document.getElementById('classic-badge'); if (cb) cb.style.display = player.classicMode ? 'inline' : 'none'; }   // 🎮 經典模式標記（🏛️v3.0.83 傳統徽章已移除）
     applyAreaBackground();   // 區域背景：地監/攻城→戰鬥區、城堡→村莊畫面
     

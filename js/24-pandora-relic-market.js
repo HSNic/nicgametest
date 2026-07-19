@@ -41,6 +41,15 @@
     const NAME_SURNAME = ['南宮', '上官', '司徒', '慕容', '東方', '北辰', '長孫', '令狐', '歐陽', '夏侯'];
     const NAME_GIVEN = ['無月', '長歌', '聽雪', '清風', '流雲', '暮雨', '星河', '青鋒', '白夜', '未央', '若水', '凌霜'];
     const NAME_CASUAL = ['小隊長', '老玩家', '別打我', '路過', '掛機中', '求組隊', '練功中', '只收不賣', '佛系玩家'];
+    const NAME_SHORT = NAME_PREFIX.concat(NAME_TITLE).filter((name, index, list) => name.length === 2 && list.indexOf(name) === index);
+    const NAME_WRAPPERS = [
+        ['Oo', 'oO'], ['oO', 'Oo'], ['O0', '0O'], ['Xx', 'xX'], ['xX', 'Xx'], ['Xxx', 'xxX'],
+        ['卍', '卍'], ['乂', '乂'], ['一', '一'], ['丨', '丨'], ['灬', '灬'], ['丶', '丶'],
+        ['メ', 'メ'], ['ミ', 'ミ'], ['彡', '彡'], ['艸', '艸'], ['ㄨ', 'ㄨ'], ['★', '★'],
+        ['☆', '☆'], ['◆', '◆'], ['◇', '◇'], ['煞氣a', 'a煞氣'], ['可愛a', 'a可愛'],
+        ['霸氣a', 'a霸氣'], ['最愛a', 'a最愛'], ['闇夜a', 'a闇夜'], ['神之', '之神'],
+        ['惡魔a', 'a惡魔'], ['天使a', 'a天使'], ['戀愛a', 'a戀愛']
+    ];
     const SILENCE_COMPLAINTS = [
         '吵死了', '安靜一點', '別再喊了', '不要一直廣播', '別洗了', '可以停一下嗎', '別再洗頻了', '安靜啦',
         '不要重複喊', '我已經看到了', '別一直刷訊息', '可以閉嘴了', '讓頻道安靜一下', '不要再洗版', '停一下好嗎', '夠了喔',
@@ -90,7 +99,17 @@
             '{price} 金幣留著買紅水吧，別拿來侮辱 {item}。',
             '你的出價比掉寶率還難看，先去市場繞一圈。',
             '開這種破價還敢叫人密你，臉皮點幾的？',
-            '收不起 {item} 就直說，不用在這裡裝行情大師。'
+            '收不起 {item} 就直說，不用在這裡裝行情大師。',
+            '這價錢拿去買箭都嫌寒酸，別拿來喊 {item}。',
+            '{item} 被你喊到像清倉廢料，拜託尊重一下物品。',
+            '你這不是收購，是在公開示範什麼叫沒預算。',
+            '出 {price} 金幣還敢喊那麼大聲，勇氣藥水喝太多？',
+            '市場看到你這價格都想登出。',
+            '別侮辱 {item}，它再爛也不是這個價。',
+            '喊這種低價還裝老手，笑點比價格還低。',
+            '{price} 金幣收 {item}？你是不是把倉庫當慈善箱。',
+            '這價位連路過的新手都會搖頭。',
+            '省錢不是問題，問題是你省到沒尊嚴。'
         ],
         price: [
             '{price} 金幣的行情是你夢裡查到的嗎？',
@@ -98,7 +117,17 @@
             '你這價格很有自信，可惜看起來沒什麼常識。',
             '拿金幣砸頻道很帥嗎？先確定真的有人想賣。',
             '喊得像市場老大，結果價格一看就露餡。',
-            '價格開成這樣，你是收裝還是在收笑話？'
+            '價格開成這樣，你是收裝還是在收笑話？',
+            '你這價格像亂數骰出來的，還敢叫行情。',
+            '喊價前先醒醒，別把夢裡的市場搬出來。',
+            '{price} 金幣講得像很豪邁，實際看起來很外行。',
+            '這價格不是盤，就是想找盤。',
+            '你是不是把估價師點到負數了？',
+            '行情不是靠你嘴硬就會成立。',
+            '別用這種價格測大家智商。',
+            '你喊價的自信，比你的市場觀念還誇張。',
+            '價格開成這樣，我懷疑你連商店在哪都不知道。',
+            '先學會算錢，再來當收購大師。'
         ],
         item: [
             '連 {item} 都要靠洗頻收，你平常到底在打什麼？',
@@ -106,7 +135,17 @@
             '收個 {item} 也能這麼高調，你是怕沒人認識你？',
             '{item} 還沒收到，存在感倒是先刷滿了。',
             '你跟 {item} 哪一個比較難掉？我看是你的面子。',
-            '一直喊 {item}，不知道的還以為你在解新手任務。'
+            '一直喊 {item}，不知道的還以為你在解新手任務。',
+            '你連 {item} 都收不到，還敢在這裡擺架子。',
+            '為了 {item} 叫成這樣，場面真的很難看。',
+            '{item} 還沒到手，你的名聲先掉光了。',
+            '一直喊 {item}，是怕大家不知道你打不到嗎？',
+            '你跟 {item} 的距離，大概比你跟強者還遠。',
+            '收個 {item} 搞得像攻城宣戰，有必要嗎？',
+            '{item} 不難，難的是忍受你一直喊。',
+            '看你收 {item} 收成這樣，我都替你裝備難過。',
+            '缺 {item} 就去打，別在這裡演悲情頻道主。',
+            '{item} 聽到你喊價大概自己躲回倉庫。'
         ],
         spam: [
             '整個頻道都是你，收不到就安靜一點。',
@@ -114,7 +153,17 @@
             '別再刷存在感了，大家早就看到你要收什麼。',
             '{town}不是你家的廣播台，少洗幾次行不行？',
             '收東西靠行情，不是靠把別人的訊息洗掉。',
-            '你再喊下去，大家記住的只會是你很吵。'
+            '你再喊下去，大家記住的只會是你很吵。',
+            '{town} 的頻道快被你刷成個人頻道了。',
+            '你這廣播頻率比怪物重生還煩。',
+            '洗這麼久還沒人理，答案已經很明顯了。',
+            '大家不是沒看到，是懶得理你。',
+            '拜託把頻道還給正常人。',
+            '你再喊下去，NPC 都想把你封鎖。',
+            '收購不是靠音量，少刷一點。',
+            '你把 {town} 當自己血盟頻道喔？',
+            '刷到我都會背了，還是沒人賣你。',
+            '你的廣播存在感很高，價值感很低。'
         ],
         strength: [
             '嘴那麼大聲，戰力有跟上嗎？',
@@ -122,7 +171,17 @@
             '你是來收裝，還是來證明自己很缺存在感？',
             '有本事出安全區講，別只會躲著喊。',
             '看你喊得這麼有力，我還以為你能單吃頭目。',
-            '你這氣勢很強，可惜看起來只有頻道吃得到傷害。'
+            '你這氣勢很強，可惜看起來只有頻道吃得到傷害。',
+            '你這口氣很像會噴裝的人。',
+            '少裝大尾，出村三步就知道答案。',
+            '別只會嘴，武器拿穩再說。',
+            '你那氣勢拿去打怪，大概怪都覺得吵。',
+            '講得像王者，站姿像等救援。',
+            '你這程度還想壓場，先壓住自己的嘴。',
+            '別在頻道裝狠，傷害數字會說真話。',
+            '你看起來比較適合躲倉庫，不適合嗆人。',
+            '嘴巴點滿也不會加命中。',
+            '你如果真的很強，就不會需要一直刷存在感。'
         ]
     };
     const OFFLINE_NPC_CHAT = {
@@ -245,6 +304,8 @@
             w.dismissedAt = w.dismissed ? Math.max(0, Math.floor(Number(w.dismissedAt) || 0)) : 0;
             w.broadcastStopped = !!w.broadcastStopped || w.dismissed;
             w.quietAt = Math.max(0, Math.floor(Number(w.quietAt) || 0));
+            w.playerBlocked = !!w.playerBlocked;
+            w.playerBlockedAt = w.playerBlocked ? Math.max(0, Math.floor(Number(w.playerBlockedAt) || 0)) : 0;
             return true;
         });
         delete st.wanderer;
@@ -350,6 +411,50 @@
         let a = _normalizeAlignmentValue(v);
         let evilLine = (typeof PVP_ALIGN_EVIL !== 'undefined') ? PVP_ALIGN_EVIL : -1000;
         return a <= evilLine;
+    }
+
+    function _tauntChaseRate(alignmentValue) {
+        let alignment = _normalizeAlignmentValue(alignmentValue);
+        let evilLine = (typeof PVP_ALIGN_EVIL !== 'undefined') ? PVP_ALIGN_EVIL : -1000;
+        let justiceLine = (typeof PVP_ALIGN_JUSTICE !== 'undefined') ? PVP_ALIGN_JUSTICE : 1000;
+        if (alignment <= evilLine) return 1;
+        if (alignment >= justiceLine) return 0.2;
+        return 0.5;
+    }
+
+    function _logWandererBlocked(w) {
+        if (typeof logSys !== 'function') return;
+        logSys('<span class="text-slate-400">你已被對方封鎖</span>');
+    }
+
+    function _startWandererChase(w) {
+        if (!w || typeof player === 'undefined' || !player || !player.cls) return false;
+        if (!Array.isArray(player.trollPlayers)) player.trollPlayers = [];
+        let old = player.trollPlayers.find(t => t && t.n === w.name);
+        let chase = {
+            n: w.name,
+            avatar: w.avatar || '男戰士',
+            alignmentValue: _normalizeAlignmentValue(w.alignmentValue),
+            until: Date.now() + 2 * 60 * 60 * 1000
+        };
+        if (old && Number.isFinite(Number(old.levelOffset))) chase.levelOffset = old.levelOffset;
+        player.trollPlayers = player.trollPlayers.filter(t => t && t.n !== w.name);
+        player.trollPlayers.push(chase);
+        let quietResult = _stopWanderingBroadcast(w.id);
+        if (quietResult && !quietResult.gone) _lastBroadcastCycles[w.id] = 'quiet';
+        try { if (typeof saveGame === 'function') saveGame(); } catch (e) {}
+        return true;
+    }
+
+    function _blockPlayerForWanderer(wandererId) {
+        return _withStateLock(st => {
+            let w = _findWanderer(st, wandererId);
+            if (!_wandererPresent(w)) return { commit: false, gone: true };
+            if (w.playerBlocked) return { commit: false, already: true, name: w.name };
+            w.playerBlocked = true;
+            w.playerBlockedAt = Date.now();
+            return { name: w.name };
+        });
     }
 
     function _makeAlignmentValue(st) {
@@ -536,14 +641,20 @@
         let made = '';
         for (let tries = 0; tries < 12; tries++) {
             let mode = _rand(st, 'name-mode');
-            if (mode < 0.40) {
-                made = _pick(st, NAME_PREFIX, 'name-prefix') + _pick(st, NAME_IMAGE, 'name-image') + _pick(st, NAME_TITLE, 'name-title');
-            } else if (mode < 0.65) {
-                made = _pick(st, NAME_SURNAME, 'name-surname') + _pick(st, NAME_GIVEN, 'name-given');
+            if (mode < 0.45) {
+                made = _pick(st, NAME_SHORT, 'name-short');
+            } else if (mode < 0.70) {
+                made = _pick(st, NAME_CASUAL, 'name-casual');
             } else if (mode < 0.85) {
                 made = _pick(st, NAME_PREFIX, 'name-prefix2') + _pick(st, NAME_GIVEN, 'name-given2');
+            } else if (mode < 0.95) {
+                made = _pick(st, NAME_PREFIX, 'name-prefix') + _pick(st, NAME_IMAGE, 'name-image') + _pick(st, NAME_TITLE, 'name-title');
             } else {
-                made = _pick(st, NAME_CASUAL, 'name-casual');
+                made = _pick(st, NAME_SURNAME, 'name-surname') + _pick(st, NAME_GIVEN, 'name-given');
+            }
+            if (_rand(st, 'name-wrapper-chance') < 0.4) {
+                let wrapper = _pick(st, NAME_WRAPPERS, 'name-wrapper');
+                made = wrapper[0] + made + wrapper[1];
             }
             if (!history.has(made)) break;
         }
@@ -971,6 +1082,10 @@
             renderWanderBroadcastPins(st);
             return;
         }
+        if (w.playerBlocked) {
+            _logWandererBlocked(w);
+            return;
+        }
         let choices = _buildOfflineTauntChoices(w);
         _activeTauntChoices = { wandererId: w.id, choices: choices, createdAt: Date.now() };
         let menu = document.createElement('div');
@@ -997,6 +1112,10 @@
             renderWanderBroadcastPins(st);
             return;
         }
+        if (w.playerBlocked) {
+            _logWandererBlocked(w);
+            return;
+        }
         if (!choice) {
             if (typeof logSys === 'function') logSys('<span class="text-slate-400">嘲諷選項已失效，請重新點選這名玩家。</span>');
             return;
@@ -1011,6 +1130,21 @@
                 `<span class="wander-chat-in"><span class="wander-chat-speaker">[${_wandererNameHtml(w)}]</span> ` +
                 `${_esc(reply)}</span>`
             );
+        }
+        if (Math.random() < _tauntChaseRate(w.alignmentValue)) {
+            if (_startWandererChase(w) && typeof logSys === 'function') {
+                logSys(`<span class="text-rose-400 font-bold">[${_wandererNameHtml(w)}] 惡狠狠地記住了你……</span>`);
+            }
+            return;
+        }
+        if (Math.random() < 0.2) {
+            let blockResult = _blockPlayerForWanderer(w.id);
+            if (blockResult.ok || blockResult.already) {
+                w.playerBlocked = true;
+                _logWandererBlocked(w);
+            } else if (!blockResult.gone && typeof logSys === 'function') {
+                logSys(`<span class="text-slate-400">${_esc(blockResult.error || '共用資料暫時忙碌，封鎖狀態未能儲存。')}</span>`);
+            }
         }
     }
 
@@ -1035,6 +1169,11 @@
         let w = _findWanderer(st, wandererId);
         if (!_wandererPresent(w)) {
             _closeWanderingShoutMenu();
+            return;
+        }
+        if (w.playerBlocked) {
+            _closeWanderingShoutMenu();
+            _logWandererBlocked(w);
             return;
         }
         let forceSpicy = _isEvilAlignmentValue(w.alignmentValue);
@@ -1064,12 +1203,8 @@
             );
         }
         // 😤 白目玩家系統：NPC 嗆聲回覆→正式版 20% 記仇；若叫賣者是紅名，玩家選「吵死了」必定反嗆並追殺。
-        if (_reply.spicy && (forceSpicy || TEST_BUILD || Math.random() < 0.2) && typeof player !== "undefined" && player && player.cls) {   // 🧪 TEST版：回嗆必定記仇（正式版 20%；紅名 100%）
-            if (!player.trollPlayers) player.trollPlayers = [];
-            player.trollPlayers = player.trollPlayers.filter(t => t && t.n !== w.name);
-            player.trollPlayers.push({ n: w.name, avatar: w.avatar || "男戰士", alignmentValue: _normalizeAlignmentValue(w.alignmentValue), until: Date.now() + 2 * 60 * 60 * 1000 });
+        if (_reply.spicy && (forceSpicy || TEST_BUILD || Math.random() < 0.2) && _startWandererChase(w)) {   // 🧪 TEST版：回嗆必定記仇（正式版 20%；紅名 100%）
             if (typeof logSys === "function") logSys(`<span class="text-rose-400 font-bold">[${_wandererNameHtml(w)}] 惡狠狠地記住了你……</span>`);
-            try { if (typeof saveGame === "function") saveGame(); } catch (e) {}
         }
     }
 

@@ -2272,7 +2272,8 @@ function pvpRevenge(i) {
     if (player.trollPlayers && player.trollPlayers.some(t => t && t.n === r.n && (t.pvpRevenge || t.noExpire))) { renderPvpTab(); return; }   // 🐛 v3.5.74 稽核修#1：追殺中不重複扣款（雙保險·UI 已 disable）
     player.gold -= cost;
     if (typeof pvpMarkForChase === 'function') pvpMarkForChase(r);
-    if (typeof logTrollEncounterTrashTalk === 'function') logTrollEncounterTrashTalk(r.n);
+    if (typeof logPvpRevengeTrashTalk === 'function') logPvpRevengeTrashTalk(r);
+    else if (typeof logTrollEncounterTrashTalk === 'function') logTrollEncounterTrashTalk(r.n);
     logSys(`<span class="text-red-300 font-bold">你花費 ${cost.toLocaleString()} 金幣，對 ${_pvpTabEsc(r.n)} 發起復仇追殺。</span>`);
     saveGame();
     updateUI();
@@ -2438,7 +2439,7 @@ function renderSquadPanel() {
         }
         if ((el = document.getElementById('squad-status-' + s))) {   // 🤝 Phase4：傭兵異常狀態小字（無狀態時空白不佔版面）
             let _ss = a.statuses || {}, _out = [];
-            [['stun', '暈眩'], ['freeze', '冰凍'], ['stone', '石化'], ['paralyze', '麻痺'], ['sleep', '沉睡'], ['silence', '沉默'], ['magicseal', '魔封'], ['poison', '中毒'], ['burn', '灼燒'], ['scald', '燙傷'], ['bleed', '出血'], ['slowAtk', '緩速'], ['weaken', '弱化'], ['disease', '疾病'], ['blind', '目盲'], ['potionFrost', '藥水霜化']].forEach(p => { if ((_ss[p[0]] || 0) > 0) _out.push(p[1]); });
+            [['stun', '暈眩'], ['freeze', '冰凍'], ['stone', '石化'], ['paralyze', '麻痺'], ['sleep', '沉睡'], ['silence', '沉默'], ['magicseal', '魔封'], ['poison', '中毒'], ['burn', '灼燒'], ['scald', '燙傷'], ['bleed', '出血'], ['slowAtk', '緩速'], ['weaken', '弱化'], ['disease', '疾病'], ['blind', '目盲'], ['potionFrost', '藥水霜化'], ['foulWater', '汙濁之水']].forEach(p => { if ((_ss[p[0]] || 0) > 0) _out.push(p[1]); });   // 🌊 v3.6.20 含汙濁之水
             el.textContent = _out.length ? ('⚠ ' + _out.join('·')) : '';
         }
     });

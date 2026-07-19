@@ -6,6 +6,7 @@
   'use strict';
 
   var DEBUG_KEY = 'AFK_OFFLINE_DEBUG';
+  var LAST_REPORT_KEY = 'afk_offline_last_report';
   function isDebug() { try { return !!window[DEBUG_KEY]; } catch (e) { return false; } }
   function round2(n) { return Math.round((n || 0) * 100) / 100; }
   function nowMs() { try { return performance.now(); } catch (e) { return Date.now(); } }
@@ -96,6 +97,7 @@
       else { report.averages.dps = 0; }
     }
     _lastReport = report;
+    try { localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(report)); } catch (e) {}
     _report = null;
     _sections = {};
     printSummary(report);
@@ -135,7 +137,14 @@
     } catch (e) { console.warn('[AFK-OFFLINE] printSummary 失敗:', e); }
   }
 
-  function getLastReport() { return _lastReport; }
+  function getLastReport() {
+    if (_lastReport) return _lastReport;
+    try {
+      var raw = localStorage.getItem(LAST_REPORT_KEY);
+      if (raw) { _lastReport = JSON.parse(raw); return _lastReport; }
+    } catch (e) {}
+    return null;
+  }
 
   window.AFKOfflineProfiler = {
     begin: begin,
