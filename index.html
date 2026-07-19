@@ -6,33 +6,16 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script>
-      // 📱 手機使用真實裝置寬度，交由手機專用 CSS 重新排列；桌機維持原本流動三欄版面。
-      (function () {
-        var DESIGN_W = 1180;   // 保留舊版相容欄位；新版手機不再強制套用此設計寬度。
-        function isMobileDevice() {
-          var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-          var minSide = Math.min(screen.width || 9999, screen.height || 9999);
-          var uaMobile = /Android|iPhone|iPod|iPad|Mobile|Silk|Kindle|BlackBerry|Windows Phone/i.test(navigator.userAgent || '');
-          return (coarse && minSide <= 1024) || uaMobile;   // 真手機/平板才觸發；桌機(細指標/大螢幕)維持 device-width
-        }
-        function applyViewport(forceMobile) {
-          var m = document.querySelector('meta[name="viewport"]');
-          if (!m) return null;
-          var mobile = (typeof forceMobile === 'boolean') ? forceMobile : isMobileDevice();
-          m.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
-          return m.getAttribute('content');
-        }
-        window.__mobileScaling = { DESIGN_W: DESIGN_W, isMobileDevice: isMobileDevice, apply: applyViewport };
-        applyViewport();
-      })();
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- 🗑️ v3.5.87 移除死的行動裝置偵測 IIFE：applyViewport 無任何分支（mobile 變數算了沒用）、
+         DESIGN_W/isMobileDevice/window.__mobileScaling 全專案零呼叫；唯一實際效果 viewport-fit=cover 直接併入上方 meta。
+         （width=1180 手機縮放已於桌機專注決策時移除·本作 desktop-only） -->
+
     <title>放置天堂 - 日出之國</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=31507b0b66">
-    <link rel="stylesheet" href="css/floating-ui.css?v=4f1d5ac98e">
+    <link rel="stylesheet" href="css/style.css?v=08ff7b308f">
+    <link rel="stylesheet" href="css/floating-ui.css?v=f9232e9e67">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
 <body class="h-screen w-screen overflow-hidden">
@@ -64,11 +47,7 @@
         </div>
       </div>
 
-        <div id="slot-select-panel" class="hidden flex flex-col gap-4 items-center my-8 w-full">
-            <h2 id="slot-select-title" class="text-2xl font-bold text-yellow-400">選擇存檔位</h2>
-            <div id="slot-list" class="flex flex-col gap-2 w-[44rem] max-w-full max-h-[85vh] overflow-y-auto pr-1"></div>
-            <button onclick="slotBackToMenu()" class="btn px-6 py-2 bg-slate-700 hover:bg-slate-600 text-base font-bold">返回</button>
-        </div>
+        <!-- 🗑️ v3.5.83 移除舊的兩段式 #slot-select-panel：唯一入口早已改為 openLoadSelect() 的 #load-select-panel -->
 
         <div id="load-select-panel" class="hidden" aria-label="角色選擇">
           <div id="load-art-stage">
@@ -196,7 +175,7 @@
         <div id="col-left" class="w-[340px] flex flex-col gap-4">
             <!-- 新增了 id="status-panel"，並加入去底色與加深背景的樣式確保文字可讀 -->
             <div id="status-panel" class="panel bg-cover bg-top bg-no-repeat" style="background-blend-mode: multiply; background-color: rgba(30, 41, 59, 0.85);">
-                <div class="panel-header text-center flex justify-between bg-transparent border-b border-slate-700"><span class="flex items-center shrink-0"><span id="st-classname">職業</span><span id="classic-badge" class="hidden font-bold ml-1" style="color:#fbbf24;text-shadow:0 0 5px rgba(251,191,36,0.7);font-size:0.85rem;line-height:1;" title="經典模式（硬核）：死亡損失該等級 5% 最大經驗（不降等）、無祝福/精通/席琳；掉落率、經驗與金幣獲得與一般模式相同">⚔經典</span></span><span id="victory-badge" class="hidden font-bold" style="color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.85);font-size:1.4rem;line-height:1;align-items:center;gap:0.15rem;" title="攻城獲勝期間：全商店8折、開放獲勝城池"><span style="font-size:1.05em;line-height:1;position:relative;top:-0.08em;">👑</span><span style="line-height:1;">攻城獲勝</span></span><span id="st-class" class="text-white text-lg font-bold cursor-pointer hover:bg-slate-700/50 rounded px-2 inline-block min-w-[2.5rem] text-right" title="點擊此處修改名稱" onclick="startEditName()"></span></div>
+                <div class="panel-header text-center flex justify-between bg-transparent border-b border-slate-700"><span class="flex items-center shrink-0"><span id="st-classname">職業</span><span id="classic-badge" class="hidden font-bold ml-1" style="color:#fbbf24;text-shadow:0 0 5px rgba(251,191,36,0.7);font-size:0.85rem;line-height:1;" title="經典模式（硬核）：死亡損失該等級 5% 最大經驗（不降等）、無祝福/精通/席琳；掉落率、經驗與金幣獲得與一般模式相同">⚔經典</span></span><span id="victory-badge" class="hidden font-bold" style="color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.85);font-size:1.4rem;line-height:1;align-items:center;gap:0.15rem;" title="血盟持有城堡：全商店8折、開放血盟城堡"><span style="font-size:1.05em;line-height:1;position:relative;top:-0.08em;">👑</span><span style="line-height:1;">血盟城堡</span></span><span id="st-class" class="text-white text-lg font-bold cursor-pointer hover:bg-slate-700/50 rounded px-2 inline-block min-w-[2.5rem] text-right" title="點擊此處修改名稱" onclick="startEditName()"></span></div>
                 <div class="status-compact-body text-base">
                     <div class="status-level-row text-slate-400">
                         <span>等級</span><span class="text-white font-bold text-xl" id="st-lv">1</span>
@@ -305,6 +284,8 @@
                     <span class="shrink-0">系統與物品日誌</span>
                     <span id="syslog-pandora" class="text-sm font-normal truncate text-right min-w-0"></span>
                 </div>
+                <!-- 📌 v3.5.77 NPC 叫賣釘選列：最多兩條常駐於日誌頂端，不會被其他訊息推走；空的時候由 CSS :empty 自動收起 -->
+                <div id="sys-log-pins"></div>
                 <div id="sys-log" class="flex-1 p-4 overflow-y-auto log-bg rounded-b-xl shadow-inner text-base"></div>
                 <!-- 🔒 系統與物品日誌捲動鎖定提示（同戰鬥日誌：向上捲動鎖定刷新、捲回底部自動解除） -->
                 <button id="sys-log-unlock" onclick="sysLogToBottom()" class="hidden absolute left-1/2 -translate-x-1/2 bottom-2 z-10 px-3 py-1 text-xs font-bold rounded-full shadow-lg bg-amber-700/90 hover:bg-amber-600 border border-amber-400 text-amber-50">🔒 已鎖定捲動 ▾ 回到最新</button>
@@ -321,13 +302,13 @@
                 <button class="btn text-base py-2 font-bold px-0" onclick="switchTab('weapons', this)">武器</button>
                 <button class="btn text-base py-2 font-bold px-0" onclick="switchTab('armors', this)">防具</button>
                 <button class="btn text-base py-2 font-bold px-0" onclick="switchTab('items', this)">道具</button>
-                <!-- 第三排：統計 / 收藏 / 一鍵賣出 -->
-                <button class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #28350f 0%, #6b8e23 26%, #202b0c 48%, #566f1f 72%, #151d08 100%); color: #ecfccb; border-color: #84cc16;" onclick="switchTab('audit', this)">統計</button>
+                <!-- 第三排：統計/存檔 / 收藏 / 一鍵賣出 -->
+                <button class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #28350f 0%, #6b8e23 26%, #202b0c 48%, #566f1f 72%, #151d08 100%); color: #ecfccb; border-color: #84cc16;" onclick="switchTab('audit', this); saveGame()">統計/存檔</button>
                 <button id="btn-collection" class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #4a2f0c 0%, #b3850e 28%, #3f2a0c 52%, #9a720c 76%, #2e2008 100%); color: #fde68a; border-color: #d4a017;" onclick="openCollectionPanel()">收藏</button>
                 <button id="btn-autosell" class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #2e1065 0%, #6d28d9 28%, #1e1b4b 52%, #7c3aed 76%, #1e133f 100%); color: #ddd6fe; border-color: #8b5cf6;" onclick="openAutoSellRules()">自動販賣</button>
-                <!-- 第四排：PVP / 存檔 / 自動化設定 -->
+                <!-- 第四排：PVP / 血盟 / 自動化設定 -->
                 <button id="btn-pvp" class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #565d68 0%, #6b7280 26%, #3f4651 48%, #5a6270 72%, #313740 100%); color: #f1f5f9; border-color: #6b7280; box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.22), 0 1px 2px rgba(0,0,0,.35);" onclick="switchTab('pvp', this)">PVP</button>
-                <button class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #064e3b 0%, #059669 28%, #053f30 52%, #047857 76%, #042f24 100%); color: #a7f3d0; border-color: #10b981;" onclick="saveGame()">存檔</button>
+                <button id="btn-clan" class="btn text-base py-2 font-bold px-0" onclick="switchTab('clan', this)">血盟</button>
                 <button id="btn-automation" class="btn text-base py-2 font-bold px-0" style="background: linear-gradient(135deg, #0c4a5e 0%, #0e7490 28%, #0a3d4d 52%, #11657e 76%, #093440 100%); color: #a5f3fc; border-color: #0891b2;" onclick="switchTab('automation', this)" title="自動化設定（獲得物品時自動排列背包·每10秒最多一次·與自動販賣同一開關）">自動化設定</button>
             </div>
 
@@ -346,25 +327,33 @@
                         <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離傷害</div> <div class="text-white text-right font-bold" id="dt-mdmg">0</div></span>
                         <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離命中</div> <div class="text-white text-right font-bold" id="dt-mhit">0</div></span>
                         <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離爆擊率</div> <div class="text-white text-right font-bold" id="dt-mcrit-p">0%</div></span>
+                        <span class="stat-row" data-grp="melee"><div class="text-slate-200">近距離爆擊傷害</div> <div class="text-white text-right font-bold" id="dt-mcritdmg">0%</div></span>
                         <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離傷害</div> <div class="text-white text-right font-bold" id="dt-rdmg">0</div></span>
                         <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離命中</div> <div class="text-white text-right font-bold" id="dt-rhit">0</div></span>
                         <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離爆擊率</div> <div class="text-white text-right font-bold" id="dt-rcrit">0%</div></span>
+                        <span class="stat-row" data-grp="ranged"><div class="text-slate-200">遠距離爆擊傷害</div> <div class="text-white text-right font-bold" id="dt-rcritdmg">0%</div></span>
                         <span class="stat-row" data-grp="extra"><div class="text-slate-200">額外傷害</div> <div class="text-white text-right font-bold" id="dt-edmg">0</div></span>
                         <span class="stat-row" data-grp="extra"><div class="text-slate-200">額外命中</div> <div class="text-white text-right font-bold" id="dt-ehit">0</div></span>
                         <div class="text-slate-200">魔法傷害</div> <div class="text-white text-right font-bold" id="dt-mgdmg">0</div>
                         <div class="text-slate-200">額外魔法點數</div> <div class="text-white text-right font-bold" id="dt-sp">0</div>
                         <div class="text-slate-200">魔法命中</div> <div class="text-white text-right font-bold" id="dt-mhit-mag">0</div>
                         <div class="text-slate-200">魔法爆擊率</div> <div class="text-white text-right font-bold" id="dt-mcrit">0%</div>
+                        <div class="text-slate-200">魔法爆擊傷害</div> <div class="text-white text-right font-bold" id="dt-mgcritdmg">0%</div>
                         <div class="text-slate-200">MP消耗減免</div> <div class="text-white text-right font-bold" id="dt-mpreduce">0%</div>
+                        <div class="text-slate-200">擊殺回魔</div> <div class="text-white text-right font-bold" id="dt-mpkill">0</div>
+                        <div class="text-slate-200">魔法防禦 (MR)</div> <div class="text-white text-right font-bold" id="dt-mr">0</div>
                         <div class="text-slate-400 text-red-400">HP恢復量</div> <div class="text-red-400 text-right font-bold" id="dt-hpr">0</div>
 						<div class="text-slate-400 text-blue-300">MP恢復量</div> <div class="text-blue-300 text-right font-bold" id="dt-mpr">0</div>
+                        <div class="text-slate-200">藥水恢復量</div> <div class="text-white text-right font-bold" id="dt-potion">0%</div>
 						<div class="text-slate-200">迴避率 (ER)</div> <div class="text-white text-right font-bold" id="dt-er">0%</div>
                         <div class="text-slate-200">傷害減免 (DR)</div> <div class="text-white text-right font-bold" id="dt-dr">0</div>
-                        <div class="text-red-300">火屬性抗性</div> <div class="text-red-200 text-right font-bold" id="dt-resfire">0%</div>
-                        <div class="text-blue-300">水屬性抗性</div> <div class="text-blue-200 text-right font-bold" id="dt-reswater">0%</div>
-                        <div class="text-green-300">風屬性抗性</div> <div class="text-green-200 text-right font-bold" id="dt-reswind">0%</div>
-                        <div class="text-amber-300">地屬性抗性</div> <div class="text-amber-200 text-right font-bold" id="dt-researth">0%</div>
+                        <div class="text-slate-200">移動速度</div> <div class="text-white text-right font-bold" id="dt-movespeed">100%</div>
                         <div class="text-slate-200">攻擊速度</div> <div class="text-white text-right font-bold" id="dt-spd">1.0s</div>
+                        <div class="text-slate-300">無屬性抗性</div> <div class="text-slate-100 text-right font-bold" id="dt-resnone">0</div>
+                        <div class="text-red-300">火屬性抗性</div> <div class="text-red-200 text-right font-bold" id="dt-resfire">0</div>
+                        <div class="text-blue-300">水屬性抗性</div> <div class="text-blue-200 text-right font-bold" id="dt-reswater">0</div>
+                        <div class="text-green-300">風屬性抗性</div> <div class="text-green-200 text-right font-bold" id="dt-reswind">0</div>
+                        <div class="text-amber-300">地屬性抗性</div> <div class="text-amber-200 text-right font-bold" id="dt-researth">0</div>
                     </div>
                     <div class="border-t border-slate-700 pt-4 text-base leading-relaxed" id="dt-buffs"></div>
 
@@ -387,6 +376,7 @@
                 <div id="tab-armors" class="p-3 overflow-y-auto h-full hidden flex-col gap-2"></div>
                 <div id="tab-audit" class="p-3 overflow-y-auto h-full hidden flex-col gap-2"></div>
                 <div id="tab-pvp" class="p-3 overflow-y-auto h-full hidden flex-col gap-2"></div>
+                <div id="tab-clan" class="p-3 overflow-y-auto h-full hidden flex-col gap-2"></div>
                 <!-- 🔧 v2.6.74 自動化設定改「分頁內嵌」（原 v2.6.73 浮動視窗取消）：與 能力/技能 同框架，switchTab(automation) 切換；set-* 控制項恆在 DOM 供 saveGame/自動化讀取 -->
                 <div id="tab-automation" class="p-4 text-base overflow-y-auto h-full hidden">
                     <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col gap-2">
@@ -445,14 +435,14 @@
         </div>
     </div>
 
-    <section id="equipment-window" class="equipment-window hidden" aria-label="角色裝備" aria-hidden="true"><div id="equipment-window-frame" class="equipment-window-frame"><img class="equipment-window-bg" alt="" draggable="false"><div id="equipment-window-drag" class="equipment-window-drag"></div><button id="equipment-window-close" class="equipment-window-close" type="button" aria-label="關閉裝備視窗"></button><button id="equipment-window-next" class="equipment-window-arrow equipment-window-next" type="button" aria-label="下一頁"></button><button id="equipment-window-prev" class="equipment-window-arrow equipment-window-prev" type="button" aria-label="上一頁"></button><div id="equipment-window-weight" class="equipment-window-weight" aria-live="polite">負重 0 %</div><div id="equipment-window-stats" class="equipment-window-stats"></div><div id="equipment-window-slots" class="equipment-window-slots"></div><div id="equipment-morph-snapshot" class="equipment-morph-snapshot hidden" aria-live="polite"><div id="equipment-morph-name" class="equipment-morph-name"></div><img id="equipment-morph-image" class="equipment-morph-image" alt="" draggable="false"><div id="equipment-morph-bonus" class="equipment-morph-bonus"></div></div><aside id="equipment-side-panel" class="equipment-side-panel hidden"><header class="equipment-side-header"><div><strong id="equipment-side-title">武器</strong><small>單擊查看・雙擊直接裝備</small></div><button id="equipment-side-close" type="button">✕</button></header><div id="equipment-side-list" class="equipment-side-list"></div></aside></div></section>
+    <section id="equipment-window" class="equipment-window hidden" aria-label="角色裝備" aria-hidden="true"><div id="equipment-window-frame" class="equipment-window-frame"><img class="equipment-window-bg" alt="" draggable="false"><button id="equipment-window-next" class="equipment-window-arrow equipment-window-next" type="button" aria-label="下一頁"></button><button id="equipment-window-prev" class="equipment-window-arrow equipment-window-prev" type="button" aria-label="上一頁"></button><div id="equipment-window-weight" class="equipment-window-weight" aria-live="polite">負重 0 %</div><!-- 🗑️ v3.5.84 移除 #equipment-window-stats（18 欄數值屬上一版角色卡版型）；🗑️ v3.5.87 整區刪除浮動視窗殘骸：drag/close/side-panel/morph-snapshot markup（js/19 已改純嵌入式·立繪被 CSS 無條件隱藏屬死 UI） --><div id="equipment-window-slots" class="equipment-window-slots"></div></div></section>
     <section id="warehouse-window" class="warehouse-window hidden" aria-label="共用倉庫" aria-hidden="true"><div id="warehouse-window-frame" class="warehouse-window-frame"><header id="warehouse-window-drag" class="warehouse-window-header"><div><h2>共用倉庫</h2><span>背包與倉庫之間存入／取出物品</span></div><button id="warehouse-window-close" type="button">Close</button></header><div id="warehouse-window-content" class="warehouse-window-content"></div></div></section>
 
     <!-- 物品操作 Modal -->
     <div id="item-modal" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 flex gap-4 items-start">
         <div id="modal-compare" class="hidden panel border-slate-600 p-5 min-w-[280px] max-w-[340px] max-h-[80vh] overflow-y-auto shadow-[0_0_40px_rgba(0,0,0,0.8)]" style="background:#1e293b"></div>
         <div class="panel border-slate-500 p-6 min-w-[360px] shadow-[0_0_40px_rgba(0,0,0,0.8)]" style="background:#1e293b">
-            <h3 id="modal-item-name" class="text-xl font-bold mb-3 border-b border-slate-600 pb-3 flex items-center justify-between"><span>物品名稱</span><span id="modal-lock-icon" class="text-lg cursor-pointer" onclick="toggleLockModal()">🔓</span></h3>
+            <h3 id="modal-item-name" class="text-xl font-bold mb-3 border-b border-slate-600 pb-3 flex items-center justify-between"><span>物品名稱</span><span id="modal-lock-icon" class="text-lg">🔓</span><!-- 🗑️ v3.5.83 移除 onclick="toggleLockModal()"：該函式全專案未定義（開窗前 innerHTML 一律被覆寫，故從未真的觸發） --></h3>
             <p id="modal-item-desc" class="text-base text-slate-300 mb-6 min-h-[60px] leading-relaxed">物品說明</p>
             <div class="grid grid-cols-2 gap-3" id="modal-actions"></div>
             <button onclick="closeModal()" class="mt-5 w-full btn py-3 bg-slate-700 text-lg font-bold">關閉視窗</button>
@@ -541,31 +531,32 @@
     </script>
 
     <script src="js/anim-manifest.js?v=92a56e237d"></script>
-    <script src="js/00-data.js?v=a8b09227c4"></script>
-<script src="js/01-drops-config.js?v=5fcde1924c"></script>
-<script src="js/02-stats-recompute.js?v=d08b5cc4cf"></script>
-    <script src="js/03-combat-core.js?v=b837ab41cf"></script>
-    <script src="js/04-combat-attack.js?v=e2ae37f8ce"></script>
-<script src="js/05-kill-progression.js?v=e128aa2c00"></script>
-    <script src="js/06-status-allies.js?v=689b62f30a"></script>
-    <script src="js/07-skills-cast.js?v=d2da0cebf2"></script>
-<script src="js/08-items-equip.js?v=0ccd0331cb"></script>
-<script src="js/09-vfx-render.js?v=073f7dea32"></script>
-<script src="js/10-ui-tabs.js?v=8287fa0851"></script>
-<script src="js/11-world-map.js?v=30038d60cd"></script>
-<script src="js/12-npc-quests.js?v=f76ec5b401"></script>
-<script src="js/13-shop-save.js?v=e29bf2cd6f"></script>
-<script src="js/14-craft-pandora.js?v=b48dcdc325"></script>
-<script src="js/15-cards.js?v=5c15dcdafc"></script>
-<script src="js/16-equip-book.js?v=45290f2d29"></script>
-<script src="js/18-misc-book.js?v=cc8f8f7ce4"></script>
-<script src="js/17-audio.js?v=d5d8303e2f"></script>
-<script src="js/19-equipment-window.js?v=dc7fd40ad4"></script>
-<script src="js/20-warehouse-window.js?v=6b884f76fa"></script>
+    <script src="js/00-data.js?v=ee6f4b924d"></script>
+<script src="js/01-drops-config.js?v=a02d5f5415"></script>
+<script src="js/02-stats-recompute.js?v=a10ace0080"></script>
+    <script src="js/03-combat-core.js?v=314f9ca6cd"></script>
+    <script src="js/04-combat-attack.js?v=d4464648fb"></script>
+<script src="js/05-kill-progression.js?v=576591d01c"></script>
+    <script src="js/06-status-allies.js?v=9d1c1af7d5"></script>
+    <script src="js/07-skills-cast.js?v=1f4b85438d"></script>
+<script src="js/08-items-equip.js?v=6b86653850"></script>
+<script src="js/09-vfx-render.js?v=e780853269"></script>
+<script src="js/10-ui-tabs.js?v=ec32382d69"></script>
+<script src="js/11-world-map.js?v=375f064b69"></script>
+<script src="js/12-npc-quests.js?v=1d5643f5da"></script>
+<script src="js/13-shop-save.js?v=11ef307441"></script>
+<script src="js/14-craft-pandora.js?v=93361ad4d0"></script>
+<script src="js/15-cards.js?v=25f619c05b"></script>
+<script src="js/16-equip-book.js?v=b33a18a2d7"></script>
+<script src="js/18-misc-book.js?v=13944acf14"></script>
+<script src="js/17-audio.js?v=e47b91e1d4"></script>
+<script src="js/19-equipment-window.js?v=273781550d"></script>
+<script src="js/20-warehouse-window.js?v=f0ce1aeb02"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
-    <script src="js/23-summons.js?v=e6321ca162"></script>
-    <script src="js/22-pets.js?v=38b7b42703"></script>
-    <script src="js/24-pandora-relic-market.js?v=032021e0ca"></script>
+    <script src="js/23-summons.js?v=b73dd78865"></script>
+    <script src="js/22-pets.js?v=9d0774f096"></script>
+    <script src="js/24-pandora-relic-market.js?v=fee8ff31be"></script>
+    <script src="js/25-clan-system.js?v=d5ff0fa5a1"></script>
 <!-- 外掛事件匯流排(階段1,純工具物件,不掛接本體;必須排在所有其他 afk-*.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-hook.js?v=20260719a"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -575,17 +566,17 @@
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260719c"></script>
+<script src="afk-mobile.js?v=20260719d"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-backnav.js?v=20260712a"></script>
+<script src="afk-backnav.js?v=20260719a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-slotinfo.js?v=20260712a"></script>
+<script src="afk-slotinfo.js?v=20260719a"></script>
 <!-- 共用補充資料(掉落查詢+小百科共用的手動清單;純資料無 DOM,需先於 dex/wiki 載入) -->
 <script src="afk-extradata.js?v=20260714a"></script>
 <!-- 怪物/掉落查詢外掛(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-dex.js?v=20260718a"></script>
 <!-- 小百科外掛(專精/武器特性/職業魔法;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-wiki.js?v=20260719d"></script>
+<script src="afk-wiki.js?v=20260719e"></script>
 <!-- 共用倉庫視覺註記:可學技能書顯示「可學」、角色不可使用的裝備/技能書顯示淡紅色外框，背包／倉庫兩側都標(純視覺;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-warehouse-skill.js?v=20260719a"></script>
 <!-- 自動販賣「個別例外」bug修復:永遠保留/永遠販賣後搜尋字/分類/捲動位置不再被重置(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -617,7 +608,7 @@
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260719a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-whatsnew.js?v=20260719b"></script>
+<script src="afk-whatsnew.js?v=20260719c"></script>
 <!-- 冒險地圖「黑市」按鈕旁新增「魔物追蹤」快捷鈕,等同主城奧貝勒/赫特/帝倫NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-track-shortcut.js?v=20260718a"></script>
 <!-- 冒險地圖快捷鈕列新增「寵物管理」,等同亞丁包武NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -665,9 +656,9 @@
 <!-- 「協力傭兵隊伍」面板加「存檔並切換至此角色」(monkey-patch renderSquadPanel,重用既有選存檔位讀取路徑;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-char-switch.js?v=20260710b"></script>
 <!-- 首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-asset-manager.js?v=20260710b"></script>
+<script src="afk-asset-manager.js?v=20260719a"></script>
 <!-- 首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可 -->
-<script src="afk-batch-settle.js?v=20260717c"></script>
+<script src="afk-batch-settle.js?v=20260719a"></script>
 <!-- 版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-uilayout.js?v=20260714a"></script>
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->

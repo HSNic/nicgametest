@@ -983,7 +983,7 @@
   }
   // 照抄 js/13-shop-save.js importSave() 的邏輯(核心不可改),把每個 confirm() 換成上面的自製視窗、
   // 用 async/await 依序詢問。用到的存檔輔助函式(_saveUnwrap/_lsGet/_lzSet/_lzSetStoredRaw/_saveWrap/
-  // whKey/PET_ROSTER_KEY/modeSuffix/slotSummary/renderLoadSelect/openSlotSelect/_slotMode)都是原作
+  // whKey/PET_ROSTER_KEY/modeSuffix/slotSummary/renderLoadSelect/_slotMode)都是原作
   // 已暴露的全域,沿用同一套、不重寫存檔格式。
   // 2026-07-13 使用者實機回報:同一個畫面連續按第二次「匯入進度」,iOS 選檔器只閃一下
   // 「正在準備檔案…」就自動跳掉,完全打不開檔案清單(第一次沒事)。原本(跟核心 importSave 同款
@@ -1077,8 +1077,7 @@
               petMsg = '\n（寵物名冊維持原狀，未還原）';
             }
           }
-          if (typeof _slotMode !== 'undefined' && _slotMode === 'load-grid') { if (typeof renderLoadSelect === 'function') renderLoadSelect(); }
-          else if (typeof openSlotSelect === 'function') openSlotSelect(_slotMode);
+          if (typeof renderLoadSelect === 'function') renderLoadSelect();
           var ns = slotSummary(n);
           window.alert('已匯入到存檔 ' + n + '：' + (ns ? (ns.cls + ' Lv.' + ns.lv + '　' + ns.name) : '完成') + '。' + (cur ? '\n（原存檔已自動備份，可點「復原備份」還原）' : '') + whMsg + petMsg);
           } catch (err) {
@@ -1821,23 +1820,6 @@
       'body.m-mobile #load-action-panel{flex:0 0 auto !important;position:relative !important;left:auto !important;top:auto !important;width:100% !important;margin:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:grid !important;grid-template-columns:repeat(3,1fr) !important;gap:8px !important;}',
       'body.m-mobile #load-action-panel button{height:40px !important;border-radius:10px !important;font-size:13px !important;}',
       'body.m-mobile #load-btn-enter{grid-column:1/-1 !important;height:46px !important;font-size:16px !important;}',
-
-      /* 載入進度畫面(#slot-list):原作每列是 [載入存檔 flex-1][動作區固定 w-56=224px → 匯入進度(+復原備份)]。
-         手機窄寬下 224px 的動作區吃掉約 6 成,左側真正要點的「載入存檔」被擠成細條、存檔名稱被迫折成多行。
-         改成左 2/3 給載入存檔、右 1/3 放動作區,匯入/復原在右側上下堆疊。scope 在 #slot-list 直接子層,
-         原作改版(換 id / 重排)規則自動失效、桌機不受影響。
-         #slot-list 改 grid + grid-auto-rows:1fr → 每列自動拉成跟最高那列等高(有/無備份、名稱折一行或兩行都一致),
-         不寫死高度、名稱變長也會自己同步。 */
-      'body.m-mobile #slot-list{display:grid !important;grid-template-columns:minmax(0,1fr) !important;grid-auto-rows:1fr !important;max-height:none !important;overflow:visible !important;}',   /* 拆掉內層捲動:原生 max-h-[85vh]+overflow-y-auto 會與外層 #creation-screen 形成雙 scrollbar,手機改讓整頁(外層)單一捲動 */
-      'body.m-mobile #slot-list > div{flex-wrap:nowrap !important;align-items:stretch !important;}',
-      /* 載入存檔鈕:左 2/3。沿用原作者渲染的內容(大頭貼 + 單行 label,含經典/傳統標籤與配色),手機只調版面:
-         解除桌機的 truncate 讓整串 label 換行、置中、大頭貼放大。額外的 📍/⏱ 由 afk-slotinfo.js 附加為 .afk-slot-extra。 */
-      'body.m-mobile #slot-list > div > button:first-child{flex:2 1 0 !important;min-width:0 !important;justify-content:center !important;flex-wrap:wrap !important;gap:2px 6px !important;line-height:1.3 !important;padding:.5rem .35rem !important;}',
-      'body.m-mobile #slot-list > div > button:first-child > span{white-space:normal !important;overflow:visible !important;text-overflow:clip !important;text-align:center !important;font-size:.92rem !important;}',   /* 解除桌機 truncate,讓「存檔N 職業 Lv 暱稱(模式)」整串換行顯示 */
-      'body.m-mobile #slot-list > div > button:first-child > img{width:40px !important;height:40px !important;}',   /* 👤 大頭貼放大(用原作者 img,不再自建 .m-slot-av) */
-      'body.m-mobile #slot-list .afk-slot-extra{font-size:.78rem !important;}',   /* 📍 掛機地點 / ⏱ 已掛機多久:afk-slotinfo.js 附加,手機微調字級 */
-      'body.m-mobile #slot-list > div > div{width:auto !important;flex:1 1 0 !important;min-width:0 !important;flex-direction:column !important;}',   /* 動作區:右 1/3,蓋掉固定 w-56,匯入/復原改上下堆疊 */
-      'body.m-mobile #slot-list > div > div > button{flex:1 1 0 !important;padding:.5rem .25rem !important;font-size:.8rem !important;}',   /* 匯入/復原:各佔右側一半高 */
 
       /* 🌡️ 手機降溫:把「無限循環的 drop-shadow/filter 呼吸動畫」改成靜態光暈(取原 keyframe 中間亮度)。
          這些 filter 動畫每一幀都要 GPU 重算濾鏡,幾十個元素同時跑(背包發光裝備/怪物恩賜/席琳字樣)是手機

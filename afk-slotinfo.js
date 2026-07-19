@@ -1,15 +1,16 @@
 /*
  * afk-slotinfo.js — 選角/載入畫面的「額外掛機資訊」掛載外掛(桌機 + 手機共用)
  *
- * 職責:在原作者 openSlotSelect 渲染的存檔鈕「下方附加」📍 目前掛在哪張地圖、⏱ 已掛機多久 兩行。
- *   只「附加」、絕不清空 → 原作者的單行 label(含經典/傳統標籤與配色)、大頭貼都原封不動,
- *   桌機與手機共用同一份附加邏輯(手機差異純由 afk-mobile.js 的 CSS 處理,不另外重建內容)。
+ * 職責:在原作者 renderLoadSelect 渲染的視覺化選角卡片上「疊加」📍 目前掛在哪張地圖、⏱ 已掛機多久 資訊。
+ *   只「附加」、絕不清空 → 原作者的卡片內容原封不動,桌機與手機共用同一份附加邏輯。
  *   對外仍暴露 window.AFK_SLOTINFO.read(slot) → { mapName, idleText }(純資料、無 DOM)供他人取用。
  *
  * 資料來源:afk-offline.js 寫的即時地圖記錄 afk_map_<slot>(較準)、最後活躍心跳 afk_ts_<slot>;
  *   讀不到 afk_map_ 就退回存檔 blob 的 ms.current。地圖中文名與離線上限呼叫 afk-offline 暴露的 window.__afk。
  *
- * 優雅降級:openSlotSelect / __afk 不存在就安靜停用,不弄壞畫面。
+ * 優雅降級:renderLoadSelect / __afk 不存在就安靜停用,不弄壞畫面。
+ *
+ * （2026-07-19 隨原作v3.6同步移除舊版文字清單選角畫面 #slot-select-panel，本檔同步拿掉對應的舊版附加邏輯）
  */
 (function () {
   // 把離線毫秒數格式化成「X 天 Y 小時 / X 小時 Y 分 / X 分鐘 / 剛剛」
@@ -59,44 +60,6 @@
 
   window.AFK_SLOTINFO = { version: '1.0.0', read: read };
 
-  // --- 舊版:在原作者的存檔鈕下「附加」📍/⏱ 兩行(文字清單版選角畫面,現已不是主要入口,留著當備援) ---
-  //   鈕本體是 flex 橫排(大頭貼 + 單行 label),設 flex-wrap 後把一個滿寬的資訊區塊擠到次行。
-  //   只附加、不清空 → 原作者的單行 label、大頭貼、經典/傳統模式樣式都原封不動。手機差異交給 afk-mobile 的 CSS。
-  function appendSlotInfo() {
-    var list = document.getElementById('slot-list');
-    if (!list) return;
-    var rows = list.children;
-    for (var i = 0; i < rows.length; i++) {
-      var btn = rows[i].children[0];
-      if (!btn || btn.querySelector('.afk-slot-extra')) continue;   // openSlotSelect 每次重建清單,理論上不會殘留;仍防呆去重
-      var info = read(i + 1);
-      if (!info.mapName && !info.idleText && !info.sherine) continue;
-      btn.style.flexWrap = 'wrap';
-      var box = document.createElement('span');
-      box.className = 'afk-slot-extra';
-      box.style.cssText = 'flex-basis:100%;width:100%;display:flex;flex-direction:column;gap:1px;margin-top:3px;font-size:.8rem;font-weight:400;color:#94a3b8;line-height:1.3;';
-      // 🔮 席琳世界狀態:一般＝綠(同遊戲 c-sherine)、瘋狂＝猩紅(同瘋狂主題);用正式名稱
-      if (info.sherine) {
-        var s = document.createElement('span');
-        s.textContent = info.sherine === 'mad' ? '🔥 瘋狂的席琳世界' : '🔮 席琳的世界';
-        s.style.cssText = 'font-weight:700;color:' + (info.sherine === 'mad' ? '#fb7185' : '#4ade80') + ';';
-        box.appendChild(s);
-      }
-      if (info.mapName) { var a = document.createElement('span'); a.textContent = '📍 ' + info.mapName; box.appendChild(a); }
-      if (info.idleText) { var b = document.createElement('span'); b.textContent = info.idleText; box.appendChild(b); }
-      btn.appendChild(box);
-    }
-  }
-
-  function wrapSlotSelect() {
-    if (typeof window.openSlotSelect !== 'function' || window.openSlotSelect.__afkSlotInfo) return false;
-    var orig = window.openSlotSelect;
-    var wrapped = function () { orig.apply(this, arguments); try { appendSlotInfo(); } catch (e) {} };
-    wrapped.__afkSlotInfo = true;
-    window.openSlotSelect = wrapped;
-    return true;
-  }
-
   // --- 新版(2026-07-11 三畫面改版):視覺化角色選擇畫面(#load-select-panel)的存檔卡片是純圖片
   //   按鈕(.load-slot-card,無文字列),改成在每張卡片左上角疊一個小徽章顯示 📍/⏱/🔮,
   //   純附加一個 absolute 定位的 span(卡片本身是 position:relative，見 css/style.css .load-slot-card),
@@ -136,11 +99,10 @@
     return true;
   }
 
-  var _oldOk = wrapSlotSelect();
   var _newOk = wrapRenderLoadSelect();
-  if (_newOk || _oldOk) {
+  if (_newOk) {
     console.log('[AFK-slotinfo] hooks OK — 選角畫面附加掛機地點/已掛機時間(桌機 + 手機共用)。');
   } else {
-    console.warn('[AFK-slotinfo] 找不到 openSlotSelect / renderLoadSelect，選角畫面掛機資訊停用。');
+    console.warn('[AFK-slotinfo] 找不到 renderLoadSelect，選角畫面掛機資訊停用。');
   }
 })();

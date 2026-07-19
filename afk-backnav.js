@@ -5,9 +5,9 @@
  *   iOS 返回手勢時 → 回到首頁主選單,而不是離開頁面 / 關掉 PWA。
  *
  * 作法(History API,完全不改作者碼,只包住作者的畫面切換函式 + 聽 popstate):
- *   - 進入子畫面(openSlotSelect / showCreation)後補一個 history「攔截狀態」→ 讓返回有東西可 pop。
- *   - 使用者按返回(popstate)且目前在子畫面 → 呼叫作者原生返回(slotBackToMenu / backToMenu)回首頁。
- *   - 使用者改用畫面上的「返回」鈕、或選存檔位進了遊戲(slotBackToMenu/backToMenu/startGame/loadGame)
+ *   - 進入子畫面(openLoadSelect / showCreation)後補一個 history「攔截狀態」→ 讓返回有東西可 pop。
+ *   - 使用者按返回(popstate)且目前在子畫面 → 呼叫作者原生返回(loadBackToMenu / backToMenu)回首頁。
+ *   - 使用者改用畫面上的「返回」鈕、或選存檔位進了遊戲(loadBackToMenu/backToMenu/startGame/loadGame)
  *     → 同步把攔截狀態 pop 掉,免 history 殘留、免在首頁/遊戲中多一次「空返回」。
  *   整個子流程(選存檔位→創角)只押一個攔截狀態,故從創角按一次返回即直接回首頁(與原生返回鈕一致)。
  *
@@ -32,8 +32,8 @@
   }
 
   // 🎨 2026-07-11 三畫面改版新增 load-select-panel(視覺化角色選擇畫面，取代舊版純文字 slot-select-panel
-  // 成為主要入口)；slot-select-panel/openSlotSelect 相關路徑保留當備援，仍列在 SUBS 內防呆。
-  var SUBS = ['slot-select-panel', 'creation-panel', 'load-select-panel'];
+  // 成為主要入口)；舊版 slot-select-panel/openSlotSelect 已於 2026-07-19 隨原作v3.6同步整段移除。
+  var SUBS = ['creation-panel', 'load-select-panel'];
   function vis(id) { var e = document.getElementById(id); return !!(e && !e.classList.contains('hidden')); }
   function subVisible() { for (var i = 0; i < SUBS.length; i++) if (vis(SUBS[i])) return true; return false; }
 
@@ -56,7 +56,6 @@
     // 兩層依序呼叫(先讓創角回選角畫面，緊接著讓選角畫面再回首頁)，一次按鍵直接到底。
     if (vis('creation-panel') && typeof window.backToMenu === 'function') window.backToMenu();
     if (vis('load-select-panel') && typeof window.loadBackToMenu === 'function') { window.loadBackToMenu(); return; }
-    if (vis('slot-select-panel') && typeof window.slotBackToMenu === 'function') window.slotBackToMenu();
   }
 
   window.addEventListener('popstate', function () {
@@ -100,12 +99,10 @@
   }
 
   function install() {
-    if (typeof window.openLoadSelect !== 'function' && typeof window.openSlotSelect !== 'function') return false;
+    if (typeof window.openLoadSelect !== 'function') return false;
     wrapEnter('openLoadSelect');   // 🎨 首頁 → 視覺化角色選擇畫面(新版主要入口)
-    wrapEnter('openSlotSelect');   // 首頁 → 選擇存檔位(舊版備援路徑)
     wrapEnter('showCreation');     // 選角畫面 → 創角(idempotent：進來時通常已經 trapped，pushTrap 會安靜跳過)
     wrapLeave('loadBackToMenu');   // 🎨 視覺化角色選擇畫面「返回」鈕 → 首頁
-    wrapLeave('slotBackToMenu');   // 選存檔位「返回」鈕 → 首頁(舊版備援路徑)
     // ⚠️ backToMenu() 2026-07-11 起不再直接回首頁，而是回上一層的選角畫面，故不再當「離開子流程」處理
     // (仍會被 routeHome() 硬體返回鍵路徑呼叫，但按鈕本身點擊不消耗攔截狀態，交給 loadBackToMenu 收尾)。
     wrapLeave('startGame');        // 創角 → 進遊戲

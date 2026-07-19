@@ -208,6 +208,18 @@ gh api repos/shines871/idle-lineage-class/git/trees/main?recursive=1 \
 | `afk-syncinfo.js` | 首頁顯示「原作者:秋玥 · 原版最後同步時間」(顯示在 `#main-menu` 最下方;作者為固定文字、時間讀根目錄 `last-sync.json` 換算台灣時間;時間讀不到只藏時間段、作者照顯示) |
 | `afk-pwa.js` | PWA「安裝成免網路遊玩」+ 自動/手動更新 + 背景預抓離線資源(首頁 `#main-menu`:未安裝顯示文字連結「安裝成免網路遊玩」、iOS 點了跳文字引導;**已安裝(standalone)** 顯示 checkbox「自動更新至最新版本」**預設打勾**,沒勾且有新版才顯示「更新至最新版」連結+確認視窗;安裝後背景把 `assets/` 全抓進圖桶顯示進度。`<head>` 的 manifest/圖示/theme-color 用 JS 注入(同步會洗掉寫死的)。SW 註冊沿用 afk-sw.js,本檔只管觀察更新/UI/預抓) |
 | `afk-analytics.js` | 注入 Cloudflare Web Analytics beacon 統計人數/開啟次數(評估 GitHub Pages 流量會否撞 100GB/月 軟上限;免費、不用 cookie、無自訂事件,只看 pageview/訪客/來源/路徑)。**只在正式站台注入**——非 https、localhost/127.0.0.1/`*.local` 一律略過,免本機測試污染統計;token 未填(`__` 開頭)時自動略過。不掛 DOM、不列入 smoke) |
+| `afk-hook.js` | **外掛式架構Hook・階段1**:純事件匯流排(`window.AFK_HOOK.on(name,fn)`/`emit(name,payload)`),無 DOM、不碰任何原作函式,只提供訂閱/發布機制給下面 `afk-hook-bind.js` 與其他外掛使用 |
+| `afk-hook-bind.js` | **外掛式架構Hook・階段2**:包裝原作 `castSkill`/`killMob`/`gameLoop`/`renderMobs`/`flushTickRender`/`gainItem` 這幾個全域函式,呼叫原函式後透過 `AFK_HOOK.emit` 轉發成統一事件(`skill:cast:after`/`mob:killed`/`tick:after`/`mobs:rendered`/`render:flushed`/`item:gained` 等,詳見 `docs/交接待辦/2026-07-19_外掛式架構Hook實作交接.md`);**必須排在 afk-hook.js 之後、其他要訂閱事件的外掛之前** |
+| `afk-vfx.js` | **外掛式架構Hook・階段4**:純 DOM/CSS overlay 特效層,訂閱 `afk-hook-bind.js` 轉發的 `skill:cast:after`/`mob:killed` 事件播放擊殺火花/施法脈衝特效,不碰原作程式碼,只讀事件 payload |
+| `afk-cache.js` | **外掛式架構Hook・階段3**:從 `afk-pwa.js` 拆出來的素材對帳邏輯(逐張 sha 比對 `assets-manifest.json`),純職責分離,沒有加回背景分層預抓(那個是「方向B」,已評估過暫不做) |
+
+### 🆕 2026-07-19 使用者明訂:以後新增的外掛,只要用到下面這幾類事件,優先訂閱 `AFK_HOOK`,不要自己重新 monkey-patch 原作函式
+
+- **適用範圍**:新外掛若需要在「技能施放後、怪物被擊殺、遊戲 tick 跑完、怪物渲染完、畫面 flush 完、玩家獲得物品」這幾個時機點掛自己的邏輯,一律透過 `window.AFK_HOOK.on('skill:cast:after'|'mob:killed'|'tick:after'|'mobs:rendered'|'render:flushed'|'item:gained', fn)` 訂閱,**不要**自己再手動包一次 `castSkill`/`killMob`/`gameLoop`/`renderMobs`/`flushTickRender`/`gainItem`——`afk-hook-bind.js` 已經包好轉發成統一事件了,重複包裝同一個原作函式容易互相打架(過去 `afk-offline.js`/`afk-training.js`/`afk-crit-heavy-fx-v2.js` 就各自包過 `killMob`/`castSkill`,是這次蓋 Hook 架構的起因)。
+- **新外掛引用順序**:要用到 `AFK_HOOK` 事件的外掛,`<script>` 一定要排在 `afk-hook.js`＋`afk-hook-bind.js` 之後(見上面兩支的說明),事件才訂得到。
+- **不在這 6 種事件涵蓋範圍內的需求**(例如上面提過的 `player:hit`——玩家扣血邏輯散落多處無單一函式可乾淨包裝),或需要修改原作本體才能做到的,才可以評估後個案手動 hook,而且要先跟使用者確認代價(改本體有風險)。
+- **既有舊外掛不強制遷移**:`afk-offline.js`/`afk-training.js` 目前仍用舊式 monkey-patch 包 `killMob`,這次評估過遷移風險(涉及離線結算/木人場高風險邏輯,改寫沒有玩家看得到的好處)刻意不做——**這條只管「以後新增的外掛」,不代表要回頭把舊外掛也改掉**,除非哪支舊外掛剛好因為其他原因要重寫,才順便一起遷移。
+- **🚫 純UI類外掛(新增按鈕、改版面/CSS、查資料頁面、監聽DOM點擊/`MutationObserver`…)不需要也不應該套用 Hook 架構**(2026-07-19 使用者明訂,避免誤解成「新外掛一律要套Hook」):Hook 架構只解決「多支外掛搶著包同一個原作函式(技能/怪物/tick那6種事件)」這個問題,跟畫面/按鈕/查詢類外掛完全無關。硬套上去沒有任何好處,反而會有壞處:①**多一層不必要的依賴**——這支外掛會被迫排在 `afk-hook.js`＋`afk-hook-bind.js` 之後才能載入,`afk-hook-bind.js` 包的是原作 `castSkill`/`killMob` 等函式,原作改版導致它失效時,連帶會拖垮這支跟技能/怪物邏輯毫無關係的UI外掛;②**多繞一手卻沒解決問題**——例如單純「點按鈕開視窗」硬要繞去訂閱 `tick:after` 之類事件才觸發,只會讓程式碼更難懂,對此外掛而言 Hook 要解決的「搶同一個原作函式」問題根本沒發生過;③**違反外掛「優雅降級、獨立掛點」的設計原則**(見本檔最上方⭐核心原則)——平白增加一個原本不需要的失效點。**判準:這支新外掛需不需要在原作那6個函式執行的「前後」插入邏輯?不需要就照舊用直接插DOM/CSS/監聽點擊事件的寫法,不要為了「用新架構」而硬套。**
 
 > **小百科 / 掉落查詢的「獨立頁」(`?view=`)**:`index.html?view=wiki`、`index.html?view=dex` 會讓對應外掛把面板鋪滿整頁(藏掉創角/遊戲畫面、改 `document.title`、隱藏關閉鈕、背景點擊不關),並在最上方加一條**頁首導覽**(`#m-standalone-nav`:🏠首頁 / 📚小百科 / 📖掉落查詢,active 標亮)可互切與回首頁。看起來像獨立網頁。首頁兩顆入口旁各有一顆 `↗` 小鈕用 `window.open` 開新分頁到這網址;原本點主鈕開 modal 的行為保留。(頁首 `buildStandaloneNav` 在兩支外掛各有一份相同實作,只有 active 那支會跑、用 id 去重。)**資料仍來自 index.html 的 `DB`/`MOB_DROPS`/… 全域**(無法真的抽成獨立檔——那些 const 夾在原作者主程式裡、且每小時自動同步會整支覆蓋),所以獨立頁就是「重用 index.html 當資料源、只顯示該面板」。全寫在外掛內、不動原作者碼,自動同步不會洗掉。
 

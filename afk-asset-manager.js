@@ -64,47 +64,9 @@
     window.AFK_SETTINGS = window.AFK_SETTINGS || { _items: [], add: function (it) { this._items.push(it); } };
     AFK_SETTINGS.add({ label: '🏦 角色資產管理', onClick: openModal });
 
-    // 使用者實測回饋:這是「跨存檔位管理」功能,放在「選擇存檔位(載入進度)」畫面比首頁設定選單更直覺、更容易被發現。
-    // 兩個入口都留著(設定選單維持既有習慣;這裡多開一個更貼近使用情境的捷徑),monkey-patch openSlotSelect 加一顆按鈕。
-    if (typeof openSlotSelect === 'function') {
-      var _origOpenSlotSelect = openSlotSelect;
-      window.openSlotSelect = function (mode) {
-        var r = _origOpenSlotSelect.apply(this, arguments);
-        try { mountSlotLoadEntry(mode); } catch (e) { console.warn('[AFK-asset-manager] 掛載選存檔位入口失敗', e); }
-        return r;
-      };
-    }
-    function mountSlotLoadEntry(mode) {
-      var title = document.getElementById('slot-select-title');
-      if (!title) return;
-      var bar = document.getElementById('m-slotload-toolbar');
-      if (!bar) {
-        bar = document.createElement('div');
-        bar.id = 'm-slotload-toolbar';
-        bar.style.display = 'flex';
-        bar.style.gap = '10px';
-        bar.style.flexWrap = 'wrap';
-        bar.style.justifyContent = 'center';
-        title.parentNode.insertBefore(bar, title.nextSibling);
-      }
-      bar.style.display = (mode === 'load') ? 'flex' : 'none';
-      if (mode === 'load' && !document.getElementById('m-asset-entry-btn')) {
-        var btn = document.createElement('button');
-        btn.id = 'm-asset-entry-btn';
-        btn.type = 'button';
-        btn.className = 'btn';
-        btn.style.padding = '8px 16px';
-        btn.style.fontSize = '14px';
-        btn.style.fontWeight = 'bold';
-        btn.style.minHeight = '40px';
-        btn.style.background = '#312e81';
-        btn.style.borderColor = '#4338ca';
-        btn.style.color = '#c7d2fe';
-        btn.textContent = '🏦 角色資產管理';
-        btn.addEventListener('click', openModal);
-        bar.appendChild(btn);
-      }
-    }
+    // （2026-07-19 隨原作v3.6同步移除舊版文字清單選角畫面 #slot-select-panel，本檔同步拿掉依附在它上面的
+    //   「選存檔位畫面捷徑按鈕」——那個捷徑本來就要靠 openSlotSelect 被呼叫才會出現，而現行流程一律走
+    //   openLoadSelect/renderLoadSelect，openSlotSelect 早已是死碼，捷徑從未真的出現過。主要入口（首頁設定選單）不受影響。）
 
     // ── 讀取某存檔位的「摘要 + 明文資料」；currentSlot 走記憶體(即時)，其餘走 localStorage(讀檔當下快照) ──
     function readSlot(n) {

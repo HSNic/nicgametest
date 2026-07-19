@@ -163,48 +163,9 @@
       return r;
     };
 
-    // 使用者實測回饋:這是「跨存檔位管理」功能,放在「選擇存檔位(載入進度)」畫面比首頁設定選單更直覺、更容易被發現。
-    // 兩個入口都留著(設定選單維持既有習慣;這裡多開一個更貼近使用情境的捷徑),monkey-patch openSlotSelect 加一顆按鈕。
-    // 與 afk-asset-manager.js 共用同一個 #m-slotload-toolbar 容器(各自負責掛自己的按鈕,不互相依賴載入順序)。
-    if (typeof openSlotSelect === 'function') {
-      var _origOpenSlotSelect = openSlotSelect;
-      window.openSlotSelect = function (mode) {
-        var r = _origOpenSlotSelect.apply(this, arguments);
-        try { mountSlotLoadEntry(mode); } catch (e) { console.warn('[AFK-batch-settle] 掛載選存檔位入口失敗', e); }
-        return r;
-      };
-    }
-    function mountSlotLoadEntry(mode) {
-      var title = document.getElementById('slot-select-title');
-      if (!title) return;
-      var bar = document.getElementById('m-slotload-toolbar');
-      if (!bar) {
-        bar = document.createElement('div');
-        bar.id = 'm-slotload-toolbar';
-        bar.style.display = 'flex';
-        bar.style.gap = '10px';
-        bar.style.flexWrap = 'wrap';
-        bar.style.justifyContent = 'center';
-        title.parentNode.insertBefore(bar, title.nextSibling);
-      }
-      bar.style.display = (mode === 'load') ? 'flex' : 'none';
-      if (mode === 'load' && !document.getElementById('m-batch-entry-btn')) {
-        var btn = document.createElement('button');
-        btn.id = 'm-batch-entry-btn';
-        btn.type = 'button';
-        btn.className = 'btn';
-        btn.style.padding = '8px 16px';
-        btn.style.fontSize = '14px';
-        btn.style.fontWeight = 'bold';
-        btn.style.minHeight = '40px';
-        btn.style.background = '#0e4429';
-        btn.style.borderColor = '#15803d';
-        btn.style.color = '#bbf7d0';
-        btn.textContent = '⏱️ 批次結算所有存檔位';
-        btn.addEventListener('click', confirmStart);
-        bar.appendChild(btn);
-      }
-    }
+    // （2026-07-19 隨原作v3.6同步移除舊版文字清單選角畫面 #slot-select-panel，本檔同步拿掉依附在它上面的
+    //   「選存檔位畫面捷徑按鈕」——那個捷徑本來就要靠 openSlotSelect 被呼叫才會出現，而現行流程一律走
+    //   openLoadSelect/renderLoadSelect，openSlotSelect 早已是死碼，捷徑從未真的出現過。主要入口（首頁設定選單）不受影響。）
 
     function confirmStart() {
       var msg = '將依序把存檔 1~' + SLOT_COUNT + ' 的離線收益都結算一次，各自的收益歸各自角色（不是拿其中一個角色的戰力幫其他角色打怪）。\n\n' +

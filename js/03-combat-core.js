@@ -42,7 +42,8 @@ function magicBaseDamage(rolled, dStats, flatBase, includeStat) {
     return Math.max(0, Number(rolled) || 0) + Math.max(0, Number(flatBase) || 0) + stat;
 }
 // 舊版方向治癒：INT 25 前沿用原始魔力加成級距；之後每 5 INT +1，INT 80 封頂。
-// 治癒不吃魔法傷害、道具 SP、法術階級、魔法爆擊；正義值系統未實裝，因此固定採滿正義倍率 ×2。
+// 治癒不吃魔法傷害、道具 SP、法術階級、魔法爆擊；×2 為 classicHeal 基礎倍率（與正義值無關）。
+// ⚖️ 正義值加成另由 justiceHeal 旗標在 rollHealingSpell 內以 pvpJusticeHealMultValue 乘算（滿正義 +20%·紅名不加成）。
 function classicHealMagicBonus(dStats) {
     let int = Math.max(0, Math.floor(Number(dStats && dStats.int) || 0));
     if (int <= 9) return -1;
@@ -299,6 +300,16 @@ function playerAttackIntervalTicks(includeTemporarySlow) {
     if (includeTemporarySlow !== false && player.statuses && player.statuses.slowAtk > 0) ticks *= 2;
     return ticks;
 }
+// ⚔️ v3.5.100 副手攻擊間隔（tick）：與主手同公式，只是讀 d.aspdOff（js/02 以「副手/主手 基礎間隔比」推導）。
+//   回傳 0＝沒有可用副手 → 呼叫端不跑副手計時器。
+function playerOffhandIntervalTicks(includeTemporarySlow) {
+    if (!player || !player.eq || !player.eq.offwpn) return 0;
+    let aspd = (player.d) ? Number(player.d.aspdOff) : 0;
+    if (!Number.isFinite(aspd) || aspd <= 0) return 0;
+    let ticks = Math.max(1, aspd * 10);
+    if (includeTemporarySlow !== false && player.statuses && player.statuses.slowAtk > 0) ticks *= 2;   // 寒冰吐息等減速：兩手同步吃
+    return ticks;
+}
 // ⚔️ 天堂職業硬直：玩家被「直接命中」（物理/魔法·非 DoT）時，延遲下次一般攻擊 d.hitstun 個 tick。每個攻擊週期最多硬直一次（不無限疊加·避免被群毆時完全鎖死）。
 function applyPlayerHitstun() {
     if (!state || state._pStunCycle || player.dead) return;
@@ -443,7 +454,7 @@ function tick() {
     // === 出怪判定：以邏輯 tick (state.ticks) 為準，與主迴圈時間補跑同步 ===
     // mapState.spawnAt[i] = 該格子預定出怪的 tick 值；為 null 代表該格目前有怪、無需排程。
     {
-        let isPureBossMap = PURE_BOSS_MAPS.includes(mapState.current) && !KING_ROOMS[mapState.current];   // 🔧 軍王之室仍屬純BOSS房(免自動瞬移/追蹤)，但版面用三格
+        let isPureBossMap = PURE_BOSS_MAPS.includes(mapState.current) && !KING_ROOMS[mapState.current];   // 🔧 軍王之室仍屬純BOSS房(免自動瞬移/追蹤)，但四軍王房改用五格
         if(!mapState.spawnAt) mapState.spawnAt = [null, null, null, null, null];
         let nowT = state.ticks;
         if(KING_ROOMS[mapState.current] && state._kbRespawnAt != null) {
@@ -453,7 +464,7 @@ function tick() {
             // 🏛️ 雙BOSS祭壇：不逐格自動補怪（初次生成於 changeMap；單隻陣亡不補）。防呆：兩隻皆亡卻未標記全滅 → 補標，交由 settleDeadMobs 啟動 5 秒同時復活
             if(state._kbVictory !== true && !mapState.mobs.some(m => m && m.boss)) state._kbVictory = true;
         } else {
-            let slotCount = backSlotsActive() ? 5 : 3;                          // 🆕 一般狩獵地圖開放後排兩格(3,4)→最多 5 隻；特殊版面維持 3 格
+            let slotCount = backSlotsActive() ? 5 : 3;                          // 🆕 一般狩獵／攻城／時空裂痕／四軍王房開放後排兩格(3,4)→最多 5 隻
             for(let i=0; i<slotCount; i++) {
                 if(mapState.mobs[i]) { mapState.spawnAt[i] = null; continue; } // 有怪：清除排程
                 if(isPureBossMap && i !== 1) continue;                          // 純 BOSS 房只生中央
@@ -504,6 +515,25 @@ function tick() {
             state.pDmgTick = Math.max(0, state.pDmgTick - aspdTicks);   // 保留小數餘額，長期平均攻速才正確
             state._pStunCycle = false;   // ⚔️ 硬直：每次攻擊後重置「本週期已硬直」旗標（下週期被擊可再延遲一次）
         }
+
+        // ⚔️ v3.5.100 迅猛雙斧副手：獨立計時器（不再掛在主手攻擊後面·js/04 的 piggyback 已移除）。
+        //   與主手同一套「保留已完成比例＋小數餘額」寫法，兩手因此各自跑自己的節奏、可不同步。
+        let offTicks = playerOffhandIntervalTicks(true);
+        if (offTicks > 0) {
+            let offProgress = Number(state.pOffDmgTick);
+            if (!Number.isFinite(offProgress)) offProgress = 0;
+            let prevOff = Number(state._pOffAtkIntervalTicks);
+            if (offProgress > 0 && Number.isFinite(prevOff) && prevOff > 0 && prevOff !== offTicks) {
+                offProgress = Math.min(1, offProgress / prevOff) * offTicks;   // 換武器/加速變動時保留進度比例
+            }
+            state._pOffAtkIntervalTicks = offTicks;
+            state.pOffDmgTick = offProgress + 1;
+            if (state.pOffDmgTick >= offTicks) {
+                let _ot = getTarget();   // 副手自行取目標（不依賴主手這一拍有沒有攻擊）
+                if (_ot) dualWieldOffhandAttack(_ot);
+                state.pOffDmgTick = Math.max(0, state.pOffDmgTick - offTicks);
+            }
+        } else { state.pOffDmgTick = 0; state._pOffAtkIntervalTicks = 0; }   // 卸下副手：歸零，避免下次裝上時瞬間觸發
     }
     
     { let _pd = _dpsDealt(_dpsPlayerSnap); if (_pd > 0) _dps.player += _pd; }   // 🎯 DPS：結算玩家階段輸出（攻擊／自動施法／持續增益）；怪物中毒/出血 DoT 於 processMobStatusTick 另計入玩家
@@ -616,27 +646,12 @@ function tick() {
     if(!player.dead) { let _auraSnap = _dpsSnap(); try { relicAuraTick(); } catch(e){} let _auraDealt = _dpsDealt(_auraSnap); if(_auraDealt > 0) _dps.player += _auraDealt; }   // 🏺 蠅災的詛咒等 auraDmg：玩家階段週期全體固定魔傷（自帶快照→正確計入玩家 DPS·修 code-review#1）
     if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
     if(!player.dead) pledgeBlessTick();   // 生命的祝福：場上血盟怪物持續治療
-    // 盟主祝福到期清理（每秒檢查；到期即移除並重算屬性）
-    if(!player.dead && player.blessings && state.ticks % 10 === 0) {
-        let _changed = false;
-        for(let k in player.blessings) {
-            if(player.blessings[k] > 0 && player.blessings[k] <= Date.now()) {
-                // 🩸 v2.6.24 血盟祝福「切換式」：到期時若「自動續期」開啟且身上有王族搜索狀 → 扣 1 張續 24 小時；沒得扣 → 自動關閉續期並移除
-                if(player.blessingAuto && player.blessingAuto[k] && typeof _blessingConsumeWarrant === 'function' && _blessingConsumeWarrant()) {
-                    player.blessings[k] = Date.now() + 24 * 3600 * 1000;
-                    let _bn = (typeof BLESSING_DEFS !== 'undefined' && BLESSING_DEFS[k]) ? BLESSING_DEFS[k].n : k;
-                    logSys(`血盟祝福「<span class="text-amber-300 font-bold">${_bn}</span>」到期，自動消耗 1 張 王族搜索狀 續期 24 小時。`);
-                } else {
-                    if(player.blessingAuto && player.blessingAuto[k]) { player.blessingAuto[k] = false; let _bn = (typeof BLESSING_DEFS !== 'undefined' && BLESSING_DEFS[k]) ? BLESSING_DEFS[k].n : k; logSys(`血盟祝福「<span class="text-amber-300 font-bold">${_bn}</span>」到期，王族搜索狀不足，已停止自動續期。`); }
-                    player.blessings[k] = 0;
-                }
-                _changed = true;
-            }
-        }
-        if(_changed) { calcStats(); updateUI(); if(typeof _activePanel !== 'undefined' && String(_activePanel || '').startsWith('pledge:') && typeof renderPledgeNPC === 'function') { try { renderPledgeNPC(document.getElementById('interaction-content'), player.bloodPledge); } catch(e){} } }
-    }
-
     // HoT 持續回復（體力回復術 / 生命的祝福）
+// 💤 【休眠機制】團隊 HoT（持續回復）：整條鏈路目前不可達——DB.skills 內已無任何技能宣告 hot/autoBuff
+//    （sk_regen 體力回復術／sk_elf_lifebless 生命的祝福 已改為 classicHeal+groupHeal 的「瞬間全隊治癒」）。
+//    機制本身完整且正確，刻意保留以便日後新增持續回復技能：只要在 js/00-data.js 該技能加回
+//    `hot: { interval: <每跳 tick 數>, ticks: <總跳數> }` 與 `autoBuff: true`，整條鏈路即自動復活。
+//    相關落點：js/03 tick 回復迴圈、js/07 applyTeamHot＋施放分支、js/06 傭兵施放、js/08 狀態圖示、js/10 取消打勾結束。
     if(player.hots && !player.dead) {   // 🍃 團隊 HoT（體力回復術/生命的祝福）：多技能並存·每 interval 對玩家＋全體非倒地傭兵各回復一次
         let _hotAllies = (player.allies || []).filter(a => a && !a._downed && (a.curHp || 0) > 0);
         for(let _hsk in player.hots) {
@@ -645,7 +660,7 @@ function tick() {
                 _h.cd = _h.interval;
                 let heal = _h.healDice
                     ? Math.max(1, Math.floor((rollDice(_h.healDice[0], _h.healDice[1]) + (_h.healBase || 0)) * _h.spCoef * (_h.healMult || 1)))
-                    : Math.max(1, Math.floor((roll(_h.valDice[0], _h.valDice[1]) + (_h.magicDmg || 0)) * (_h.healMult || 1)));   // 🏺 v3.1.80 治癒者的恢復魔棒：施放者持有 hotHealMult 武器→每跳回復 ×2（施放時快照在 HoT 實例）
+                    : Math.max(1, Math.floor((roll(_h.valDice[0], _h.valDice[1]) + (_h.magicDmg || 0)) * (_h.healMult || 1)));   // 🏺 v3.1.80 治癒者的恢復魔棒：施放者持有 groupHealMult 武器→每跳回復 ×2（施放時快照在 HoT 實例；v3.5.94 欄位更名同步）
                 player.hp = Math.min(player.mhp, player.hp + heal);   // 🔧 水之元氣不套用於持續回復(HoT)
                 _hotAllies.forEach(a => { a.curHp = Math.min(a.mhp || 1, (a.curHp || 0) + heal); });   // 🍃 全體傭兵同步回復
                 try { if (typeof petsOutList === 'function') petsOutList().forEach(p => { if (p && !p._downed && (p.hp || 0) > 0) p.hp = Math.min(p.mhp || 1, (p.hp || 0) + heal); }); } catch (e) {}   // 🩹 v3.2.67 團隊 HoT 也回復出戰寵物
@@ -673,7 +688,7 @@ function hasLoadFreeRegen() {
     return false;
 }
 
-// 🏺 v3.4.x 拆分為 HP／MP 兩段，供 gameLoop 排程用不同節奏（巨魔的再生戒指只加速 HP·MP 維持 16 秒）；regenTick 保留為合併呼叫供其他來源使用。
+// 🏺 v3.4.x 拆分為 HP／MP 兩段，供 gameLoop 排程用不同節奏（巨魔的再生戒指只加速 HP·MP 維持 16 秒）。合併版 regenTick 已於 v3.5.83 移除（零呼叫點）。
 function _regenHP() {
     if(!state.running || player.dead) return;
     let _loadFreeRegen = hasLoadFreeRegen();
@@ -698,17 +713,10 @@ function _regenMP() {
         }
     }
 }
-function regenTick() {
-    if(!state.running || player.dead) return;
-    _regenHP();
-    _regenMP();
-    // 🔧 架構統一：buff 倒數已移至 tick() 的每秒區塊（單一遞減點）。regenTick 現在只負責 HP/MP 恢復與 UI 刷新。
-    // 👈 這行是血條與魔條實際上會不會動的關鍵！
-    updateUI();
-}
+// 🗑️ v3.5.83 移除 regenTick()：零呼叫點。HP/MP 恢復由 tick() 內的 _hpIv/_mpIv 排程直接呼叫 _regenHP()/_regenMP()。
 
-// 純BOSS房（不會出現一般怪與血盟特殊敵人）
-// 🔧 軍王之室（三格控制型BOSS房）：中央固定BOSS、兩側固定指定小怪；需軍王的鑰匙入場、無傳送/日光、小怪不掉落、擊敗BOSS傳送回村
+// 純BOSS房（不會出現一般怪）
+// 🔧 軍王之室（五格控制型BOSS房）：中央固定BOSS、其餘四格固定指定小怪；需軍王的鑰匙入場、無傳送/日光、小怪不掉落、擊敗BOSS傳送回村
 const KING_ROOMS = {
     king_baranka_room:  { boss: 'de_king_baranka', minion: 'de_train_hellhound', name: '魔獸軍王之室' },
     law_king_room:      { boss: 'de_king_laia',    minion: 'de_lab_mage',        name: '法令軍王之室' },
@@ -743,13 +751,13 @@ function sanctBossRespawnCharge() {
 }
 const BOSS_BIG_MAPS = ['antaras_lair', 'fafurion_lair', 'valakas_lair'];   // 👑 方案B放大版面只套用這3個龍窟(不含底比斯祭壇等其餘純BOSS房)
 
-// 🆕 後排雙格：一般狩獵地圖在原本三格(前排)之外，再追加兩格「後排」小怪→場上最多同時 5 隻。
-//    後排(idx 3,4)只出一般怪、不出頭目；純BOSS房/軍王之室/攻城/時空裂痕維持三格不變(避免改動其專屬版面與平衡)。
+// 🆕 後排雙格：一般狩獵、攻城、時空裂痕與四個軍王之室追加兩格「後排」→場上最多同時 5 隻。
+//    單體純BOSS房與雙BOSS祭壇維持三格；攻城建築出現時也不會壓縮為三格。
 function backSlotsActive() {
-    return !PURE_BOSS_MAPS.includes(mapState.current)
-        && !KING_ROOMS[mapState.current]
-        && mapState.current !== 'rift_battle'
-        && !isSiegeArea(mapState.current);
+    let kingRoom = KING_ROOMS[mapState.current];
+    return mapState.current === 'rift_battle'
+        || !!(kingRoom && !kingRoom.dual)
+        || !PURE_BOSS_MAPS.includes(mapState.current);
 }
 
 // 血盟敵人：等級與能力隨玩家等級縮放，於生成當下依各自的 scale 參數計算
@@ -979,8 +987,10 @@ function logTrollEncounterTrashTalk(name) {
     logSys(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${_name}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_PLAYER_TAUNTS))}</span>`);
     logSys(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${_name}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_NPC_TAUNTS))}</span>`);
 }
-function applyTrollScaling(mob) {
-    let L = Math.min(100, Math.max(1, player.lv + 5));
+function applyTrollScaling(mob, levelOverride) {
+    let requested = Number(levelOverride);
+    let L = Number.isFinite(requested) ? Math.round(requested) : player.lv + 5;
+    L = Math.min(100, Math.max(1, L));
     let s = mob.scale || {};
     mob.lv = L;
     mob.hp = (s.hpC || 12) * L; mob.curHp = mob.hp;
@@ -1039,7 +1049,7 @@ function spawnMob(idx) {
     if (mapState.current === 'rift_battle') { spawnRiftMob(idx); return; }   // 🌀 時空裂痕：自訂動態出怪（不靠 DB.maps）
     let pool = DB.maps[mapState.current];
     if(!pool) return;
-    // 🔧 軍王之室：中央(1)固定 BOSS、兩側(0/2)固定指定小怪（不走一般出怪/席琳強化/追蹤邏輯）
+    // 🔧 軍王之室：中央(1)固定 BOSS、其餘四格固定指定小怪（不走一般出怪/席琳強化/追蹤邏輯）
     if(KING_ROOMS[mapState.current]) {
         let _kr = KING_ROOMS[mapState.current];
         let _id;
@@ -1056,15 +1066,9 @@ function spawnMob(idx) {
     let bossInBattle = mapState.mobs.some(m => m && m.boss);
     let bossPool = pool.filter(id => DB.mobs[id] && DB.mobs[id].boss);
     let normalPool = pool.filter(id => DB.mobs[id] && !DB.mobs[id].boss);
-    // 攻城區：玩家不會遭遇自己陣營的盟主（特羅斯陣營不遇特羅斯王子；依詩蒂陣營不遇依詩蒂公主）
-    if (isSiegeArea(mapState.current)) {
-        if (player.bloodPledge === 'tros') normalPool = normalPool.filter(id => id !== 'siege_tros');
-        else if (player.bloodPledge === 'esti') normalPool = normalPool.filter(id => id !== 'siege_esti');
-    }
-    
     let mobId;
     let siegeArea = isSiegeArea(mapState.current);
-    let allowMultiBoss = backSlotsActive();   // 🆕 5格地圖：5格(0~4)皆可同時出現多隻頭目（不再受 bossInBattle 限制·後排也會出王·同名仍限1隻）；攻城等3格版面維持單頭目
+    let allowMultiBoss = backSlotsActive() && !siegeArea;   // 🆕 一般5格地圖可同時出現多隻頭目；攻城雖改為5格，仍維持單一城門／守護塔
     // 🏛️ 長老之室 BOSS 節流：場上最多同時 2 隻長老 BOSS；已有 1 隻時須該 BOSS 存活滿 3 分鐘才可能出現第 2 隻
     let _elderRoom = mapState.current === 'elder_room';
     let _elderBossOk = true;
@@ -1090,21 +1094,15 @@ function spawnMob(idx) {
             if (uniquePool.length > 0) safePool = uniquePool;
         }
         mobId = safePool[Math.floor(Math.random() * safePool.length)];
-        // 血盟特殊敵人：已加入任一血盟陣營者，於非BOSS房狩獵地區有 0.3% 機率遇到敵對血盟。
-        // 兩陣營遇到的敵人相同；排除「與自己性別職業對應」的血盟敵人；依詩蒂陣營玩家不論職業都不會遇到依詩蒂本人。
-        // 從符合條件者中平均抽一隻；場上可同時有多隻不同名的血盟敵人，但不會有同名兩隻。
-        if(player.bloodPledge && !PURE_BOSS_MAPS.includes(mapState.current) && !isSiegeArea(mapState.current) && Math.random() < 0.003) {
-            let onField = mapState.mobs.filter(m => m).map(m => m.n);
-            let candidates = Object.keys(DB.mobs).filter(id => {
-                let d = DB.mobs[id];
-                if(!d.pledgeEnemy) return false;
-                if(d.excludeAvatar === player.avatar) return false;                 // 不遇到與自己性別職業對應者
-                if(player.bloodPledge === 'esti' && id === 'esti_enemy') return false; // 依詩蒂陣營玩家不會遇到依詩蒂
-                return !onField.includes(d.n);
-            });
-            if(candidates.length > 0) mobId = candidates[Math.floor(Math.random() * candidates.length)];
+        if (siegeArea) {
+            let _onF = mapState.mobs.filter(m => m).map(m => m.n);
+            let _siegePvp = pvpCreateRandomOpponent(_onF);
+            _siegePvp.siegePlayer = true;
+            _siegePvp.siegeLevel = Math.min(100, Math.max(1, player.lv + Math.floor(Math.random() * 21) - 10));
+            mobId = TROLL_CLASS_BY_AVATAR[_siegePvp.avatar] || 'troll_warrior';
+            mapState._trollSpawn = _siegePvp;
         }
-        // PVP：玩家開啟後，野外一般出怪有 1% 機率遭遇隨機玩家 NPC；血盟敵人不列入此規則。
+        // PVP：玩家開啟後，野外一般出怪有 1% 機率遭遇隨機玩家 NPC。
         if (typeof pvpEnsureState === 'function') pvpEnsureState();
         if (player.pvpOn && typeof MAP_CATEGORIES !== 'undefined' && MAP_CATEGORIES.wild
             && MAP_CATEGORIES.wild.some(m => m.v === mapState.current)
@@ -1173,14 +1171,22 @@ function spawnMob(idx) {
     }
     if(base.pledgeEnemy) applyPledgeEnemyScaling(mapState.mobs[idx]);   // 血盟敵人：依玩家等級縮放
     if(base.trollPlayer) {   // 😤 白目玩家：等級縮放＋名稱=叫賣NPC本人＋戰鬥動態=玩家職業動畫（v3.5.64·assets/anim/玩家<avatar>·從職業動畫產出·idle/attack/hurt/death/skill＋_s 影子全套·動態註冊 MOB_ANIM_ALIAS 真共用）
-        applyTrollScaling(mapState.mobs[idx]);
         let _t = mapState._trollSpawn;
+        applyTrollScaling(mapState.mobs[idx], _t && _t.siegeLevel);
         if (_t) {
             mapState.mobs[idx].n = _t.n;
             mapState.mobs[idx]._pvpAlignment = pvpClampAlignment(_t.alignmentValue);
             mapState.mobs[idx]._pvpAvatar = TROLL_CLASS_BY_AVATAR[_t.avatar] ? _t.avatar : "男戰士";
             mapState.mobs[idx]._pvpRandom = !!_t.pvpRandom;
             mapState.mobs[idx]._pvpRevenge = !!_t.pvpRevenge;
+            if (_t.siegePlayer) {
+                mapState.mobs[idx].siegeEnemy = true;
+                mapState.mobs[idx]._siegePlayer = true;
+                mapState.mobs[idx].race = '玩家';
+                mapState.mobs[idx].exp = 30 * mapState.mobs[idx].lv;
+                mapState.mobs[idx].goldMin = 0;
+                mapState.mobs[idx].goldMax = 0;
+            }
             mapState.mobs[idx].img = "assets/classanim/" + (mapState.mobs[idx]._pvpAvatar || "男戰士") + "F/unarmed_idle_0.png";   // 動畫缺檔時的靜態後備
             if (typeof MOB_ANIM_NAMES !== "undefined" && typeof MOB_ANIM_ALIAS !== "undefined") {
                 let _dir = "玩家" + (mapState.mobs[idx]._pvpAvatar || "男戰士");
@@ -1221,7 +1227,10 @@ function getMobColor(mobLv) {
     return "mc-mobname";   // 🔧 戰鬥日誌怪名＝淡金色（2026-06）：怪卡名已統一白色(getMobNameClass 直接回白)，日誌怪名改金色以與其他白色訊息區隔；getMobColor 主要供 logCombat 怪名 span 使用
 }
 
-// 怪物名稱顯示用 class：血盟＝固定鮮紅+紅色醒目特效（不受等差影響）；頭目＝保留等差顏色+金色專屬特效
+// 怪物名稱顯示用 class：一律白。白鎖規則＝css/style.css 的 `#battle-view .mob-name, #battle-view .mob-name span { color:#fff!important }`
+//   （⚠️改用選擇器指路·行號會漂移；同區塊另有 `#battle-view .mob-name { opacity:0 }` 的名字淡入規則，勿混）；
+//   頭目(含血盟頭目)固定鮮紅由其下一條 `#battle-view .mob-name span.mob-name-boss` 高優先規則設定
+// 🗑️ v3.5.87 修正過時註解：舊「血盟固定鮮紅+特效／頭目保留等差」描述已與實作相反（等差色與 pledgeNameGlow 皆已移除）
 function getMobNameClass(m) {
     // 👑 頭目(含血盟頭目)名稱固定鮮紅(mob-name-boss·紅色由 CSS 設定)；其餘(含血盟一般怪)維持白色
     if (m && m.boss) return 'mc-white font-bold mob-name-boss';
@@ -1287,7 +1296,7 @@ function consumeWetMult(target, ele) {
     if (target && ele === 'wind' && (target._wetUntil || 0) > state.ticks) { target._wetUntil = 0; return 2; }
     return 1;
 }
-function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst, forceGraze) {
+function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst, forceGraze, probe) {   // 🔎 v3.5.87 probe=true：純探測模式（穿透波及命中判定用）——不寫 _beautyMissStack、不設 _vfxBig、不消耗潮濕 _wetUntil；回傳值照常
     let isRanged = !!(wpn && wpn.ranged);
     let hitBonus = (isRanged ? player.d.rangedHit : player.d.meleeHit) + player.d.extraHit + (player._skillHitBonus || 0) + (player._setBeauty5 ? (player._beautyMissStack || 0) : 0);   // 🗼 范德之劍：施展衝擊之暈時本次技能近距離命中+1；🔮 麗人5/5：未命中堆疊命中
     let dmgBonus = (isRanged ? player.d.rangedDmg : player.d.meleeDmg);
@@ -1309,7 +1318,10 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     if (player.buffs && player.buffs.sk_warrior_outlaw > 0) hitValue = Math.max(hitValue, 10);   // ⚔️ 亡命之徒：一般攻擊最低命中率 50%
 
     // 🔧 重擊特效武器（雙手鈍器）：骰 19 一律觸發重擊（粉碎），不論本應為擦傷/命中/未命中 → 重擊率 5%→10%
-    let _cw = player.eq.wpn && DB.items[player.eq.wpn.id];
+    // ⚔️ v3.5.97 改用「本次揮擊的武器」而非硬編主手：迅猛雙斧副手揮擊會傳入 wpnInst=player.eq.offwpn，
+    //   原本 _cw 恆取主手 → 副手自己的 crush／heavyRatePct／ignHardSkin／cleave 全部失效，反而借用主手的（名實不符）。
+    //   與同函式 _swingId(下方) 及 wpnEnFinalMult(wpnInst||主手) 同源，也與傭兵側 allyStrikeRoll 的 opts.wpnInst 對齊。
+    let _cw = (wpnInst && DB.items[wpnInst.id]) || (player.eq.wpn && DB.items[player.eq.wpn.id]);
     let isCrush = !!(_cw && _cw.eff === 'crush');
     let rollHit = roll(1, 20);
     let hit = false, heavy = false, graze = false, crush = false;
@@ -1322,8 +1334,8 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     else if (player.buffs && player.buffs.sk_elf_preciseshot > 0 && rollHit === 1) hit = true;   // 🏹 精準射擊：擲骰1由必定未命中→必定命中（最高命中率可達100%）
     else if (rollHit !== 1 && hitValue >= rollHit) hit = true;
     else if (rollHit === 19) { hit = true; graze = true; }   // 一般武器：擲到19本應未命中時 → 擦傷（傷害剩50%）
-    if(!hit) { if (player._setBeauty5) player._beautyMissStack = (player._beautyMissStack || 0) + 10; return { dmg: 0, hit: false, heavy: false, crit: false, graze: false, crush: false, ranged: isRanged }; }   // 🔮 麗人5/5：未命中→額外命中+10可堆疊
-    if (player._setBeauty5 && player._beautyMissStack) player._beautyMissStack = 0;   // 🔮 麗人5/5：物理命中→堆疊歸零
+    if(!hit) { if (player._setBeauty5 && !probe) player._beautyMissStack = (player._beautyMissStack || 0) + 10; return { dmg: 0, hit: false, heavy: false, crit: false, graze: false, crush: false, ranged: isRanged }; }   // 🔮 麗人5/5：未命中→額外命中+10可堆疊（🔎 探測不堆疊）
+    if (player._setBeauty5 && player._beautyMissStack && !probe) player._beautyMissStack = 0;   // 🔮 麗人5/5：物理命中→堆疊歸零（🔎 探測不歸零）
 
     // ⚔️ 武器種類內建特性（2026-07 用戶要求·僅自然骰路徑=一般攻擊/雙擊·🎮 經典模式停用）：
     //    鋼爪＝命中(非擦傷)後「額外 5%」機率升級為重擊（沿用重擊完整效果：取最大擲骰/VFX金字/訊息）；雙刀＝命中(非擦傷) 5% 機率最終傷害×2（見下方 _outDmg·訊息標記「雙刃×2」）
@@ -1334,7 +1346,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     // 爆擊判定（依遠/近距離爆擊率；🔧 迴避精通：forceCrit 必定爆擊）
     let isCrit = !!forceCrit || (Math.random() * 100 < critRate);
     if (graze) isCrit = false;   // 擦傷不會爆擊
-    if (target) { if (isCrit) target._vfxBig = 'crit'; else if (heavy) target._vfxBig = 'heavy'; }   // ✨ VFX：玩家物理命中→爆擊大紅／重擊大金（唯一樞紐 getPhysicalDmg，涵蓋連射/連擊/雙擊/穿透/魔擊/反擊/居合）
+    if (target && !probe) { if (isCrit) target._vfxBig = 'crit'; else if (heavy) target._vfxBig = 'heavy'; }   // ✨ VFX：玩家物理命中→爆擊大紅／重擊大金（唯一樞紐 getPhysicalDmg·🔎 探測不標特效——波及目標實吃主目標平砍傷害·標爆擊會名實不符）
     let critMult = isCrit ? (1 + critDmg / 100) : 1;  // 爆擊係數 = 1 + 爆擊傷害%
 
     // 武器傷害（重擊必定取最大值；🔧 烈焰之魂：持續內近距離一般攻擊武器擲骰必定最大值）
@@ -1358,9 +1370,9 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     // 先判定武器/箭矢本身是否帶「對不死/狼人」加成 (unBonus)
     let hasUnBonus = false;
     // 檢查箭矢 (例如銀箭、米索莉箭)
-    if (arrowData && (arrowData.unBonus || arrowData.unDice)) hasUnBonus = true;
+    if (arrowData && arrowData.unBonus) hasUnBonus = true;   // 🗑️ v3.5.87 刪恆假死運算元 unDice（DB.items 全表零定義）
     // 檢查近戰武器 (例如銀斧、精靈短劍)
-    if (wpn && !arrowData && (wpn.unBonus || wpn.unDice || wpn.sp === 'elf')) hasUnBonus = true;
+    if (wpn && !arrowData && wpn.unBonus) hasUnBonus = true;   // 🗑️ v3.5.87 同上：unDice / sp==='elf' 恆假（sp 只在變身型態物件上且為數字）
 
     // 1. 武器本身的 unBonus 優先：對「不死」或「狼人」+1D20
     if (hasUnBonus && (target.un || target.isWolf)) {
@@ -1385,7 +1397,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
       if (wpn && wpn.counterAllEle && target.e && target.e !== 'none') _ecm = Math.max(_ecm, 1.4);   // 🏺 不定形的變幻劍：一般攻擊剋制地/水/火/風一切屬性之敵（強制 ≥×1.4）
       if (wpn && wpn.counterEles && target.e && wpn.counterEles.includes(target.e)) _ecm = Math.max(_ecm, 1.4);   // 🌑 v3.4.67 冥皇執行劍：一般攻擊對指定屬性(地/風)敵人 ×1.4（與屬性剋制取大）
       _outDmg = Math.max(1, Math.floor(_outDmg * _ecm)); }   // ⚔️ 屬性剋制：屬性詞綴優先，否則取揮擊武器基底 ele（「一般攻擊轉為X屬性」遺物·與傭兵路徑 js/06 getWpnEle 對齊·v3.1.33 稽核修）剋怪 ×1.4、被剋 ×0.6（無屬性→×1）
-    _outDmg = Math.max(1, Math.floor(_outDmg * consumeWetMult(target, _wAff ? _wAff.ele : getWpnEle(null, DB.items[_swingId]))));   // 🏺 海洋水晶球：潮濕目標受風屬性物理傷害 ×2 並解除
+    _outDmg = Math.max(1, Math.floor(_outDmg * (probe ? 1 : consumeWetMult(target, _wAff ? _wAff.ele : getWpnEle(null, DB.items[_swingId])))));   // 🏺 海洋水晶球：潮濕目標受風屬性物理傷害 ×2 並解除（🔎 探測不白耗潮濕狀態）
     if (target && target._fireVulnUntil > state.ticks && (_wAff ? _wAff.ele : getWpnEle(null, DB.items[_swingId])) === 'fire') _outDmg = Math.max(1, Math.floor(_outDmg * 1.3));   // 🏺 遺物 灼熱蜥蜴長舌：目標帶火屬性弱點時受火屬性攻擊 +30%
     if (_natRoll && player.d.eleWpnMult && (_wAff ? _wAff.ele : getWpnEle(null, DB.items[_swingId])) === player.d.eleWpnMult.ele) _outDmg = Math.max(1, Math.floor(_outDmg * player.d.eleWpnMult.mult));   // 🏺 v3.1.80 四之牙臂甲：裝備對應屬性武器時一般攻擊傷害 ×1.2（僅自然骰＝一般攻擊/雙擊/連射/穿透·屬性詞綴優先於基底 ele）
     if (heavy && player.mastery === 'k_cleave' && _cw && _cw.eff === 'cleave') _outDmg = Math.max(1, Math.floor(_outDmg * 1.5));   // 🏅 切割精通：觸發重擊時傷害 ×1.5
@@ -1552,7 +1564,7 @@ function procMagicStrike(t, isSpread) {
     t.curHp -= res.dmg;
     t.justHit = getWpnEle(player.eq.wpn, wpn);
     mobWake(t);
-    wearHardSkin(t, null, true, false);   // 🔧 硬皮消磨：魔擊重擊 → 視為一般重擊 -2
+    // 🗑️ v3.5.87 移除死呼叫 wearHardSkin(t, null, true, false)：魔擊不削減硬皮（「重擊額外削減」機制已於 2026-06 移除·wpnId=null 時 dec 恆 0）
     let mark = res.crit ? '會心一擊' : '重擊';
     logCombat(`<span class="font-bold" style="color:#d8b4fe;text-shadow:0 0 6px #a855f7;">【${isSpread ? '擴散魔擊' : '魔擊'}】</span>對 <span class="${getMobColor(t.lv)}">${t.n}</span> 造成 ${res.dmg} 點傷害（${mark}!）。`, res.crit ? 'player-crit' : 'player-special');
     if (t.curHp <= 0) {
@@ -1642,7 +1654,7 @@ function rapidfireProc(arrowData, forceProc, classicOk) {
         if (wpn.bonespike && _t.curHp > 0) _t._bonespike = Math.min(10, (_t._bonespike || 0) + 1);   // 🏺 骸骨意志之弓：連射額外箭矢命中→累積 1 層骨刺（上限 10·普攻引爆）
         _t.justHit = getWpnEle(player.eq.wpn, wpn);
         mobWake(_t);
-        if (_res.heavy) wearHardSkin(_t, null, true, false);   // 🔧 硬皮消磨：連射箭重擊 → 視為一般重擊 -2
+        // 🗑️ v3.5.87 移除死呼叫 wearHardSkin(_t, null, true, false)：連射箭不削減硬皮（同魔擊·wpnId=null 時 dec 恆 0）
         let _mark = (_res.heavy && _res.crit) ? '會心一擊' : (_res.crit ? '爆擊' : (_res.heavy ? '重擊' : ''));
         logCombat(`【連射】箭矢命中 <span class="${getMobColor(_t.lv)}">${_t.n}</span>，造成 ${_rfDmg} 點傷害${_mark ? '（' + _mark + '!）' : ''}。`, _res.crit ? 'player-crit' : (_res.heavy ? 'player-heavy' : 'player'));
         if (_t.curHp <= 0) killMob(_ti);
@@ -1804,16 +1816,23 @@ function dualWieldOffhandAttack(t) {
     let dice = owpn ? (t.s === 'L' ? owpn.dmgL : owpn.dmgS) : 2;
     let res = getPhysicalDmg(dice, t, owpn, null, false, false, false, false, player.eq.offwpn);   // 副手獨立命中判定（可未命中）；傳入副手實例→屬性詞綴用副手自身（祝福/遠古已於 recompute 計入 global d）
     if (!res.hit) { if (typeof vfxMiss === 'function') vfxMiss(t); logCombat(`<span class="font-bold" style="color:#fbbf24;">【迅猛雙斧】</span>副手追擊 <span class="${getMobColor(t.lv)}">${t.n}</span> 未命中。`, 'miss'); return; }
+    // ⚔️ v3.5.97 副手武器自身的即死 proc（比照主手 js/04 命中後先判即死→成功則不再跑一般扣血）
+    if (typeof offhandInstakillProc === 'function' && offhandInstakillProc(player.eq.offwpn, owpn, t)) return;
     let dmg = res.dmg;
     if (player.skills.includes('sk_warrior_berserk') && Math.random() < 0.05) dmg *= 2;   // ⚔️ 狂暴：副手亦為一般攻擊
+    if (typeof offhandDmgMods === 'function') dmg = offhandDmgMods(owpn, t, dmg);   // ⚔️ v3.5.97 副手扣血前的傷害修飾（selfBreakProc／eleBonusDmg）
     dmg = Math.max(1, dmg);
     t.curHp -= dmg; if (typeof terrorVisageOnDamage === 'function') terrorVisageOnDamage(t, dmg, 'melee'); t.justHit = getWpnEle(player.eq.offwpn, owpn); mobWake(t);   // 🌅 巨大骷髏：副手視為近距離
     if (t.curHp > 0) wearHardSkin(t, player.eq.offwpn.id, res.heavy, false, true, player.classicMode);
+    if (typeof offhandAfterHit === 'function') offhandAfterHit(player.eq.offwpn, owpn, t, dmg);   // ⚔️ v3.5.97 副手扣血後的 proc（procHealFlat／procBurn／onHitEleDmg）
     let mark = (res.heavy && res.crit) ? '會心一擊' : (res.crit ? '爆擊' : (res.heavy ? '重擊' : ''));
     logCombat(`<span class="font-bold" style="color:#fbbf24;text-shadow:0 0 6px #d97706;">【迅猛雙斧】</span>副手 ${owpn.n} 追擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg} 點傷害${mark?'（'+mark+'!）':''}。`, 'player');
     let idx = mapState.mobs.findIndex(m => m && m.uid === t.uid);
     if (t.curHp <= 0) { if (idx !== -1) killMob(idx); }
     else renderMobs();
+    // ⚔️ v3.5.97 副手武器的附魔施放（procSkill／spellProc／procStatusSkill／procFireSkillRate 家族）。
+    //   ⚠️ 擺在擊殺結算「之後」＝比照主手（playerAttack 先 killMob 再呼叫 weaponSpellProc），該函式內部自帶目標死亡處理與轉移。
+    if (typeof weaponSpellProc === 'function') weaponSpellProc(t, true, player.eq.offwpn);
 }
 // ⚔️ 迅猛雙斧：副手武器有效性同步——主手不再可雙持／失去迅猛雙斧／副手武器不合格時，退回背包
 function syncDualWield() {
@@ -1841,6 +1860,8 @@ function reboundExtraAttack(mob) {
             logCombat(`<span class="font-bold" style="color:#d6d3d1;text-shadow:0 0 6px #78716c;">【反彈】</span>反擊追打 <span class="${getMobColor(mob.lv)}">${mob.n}</span>，造成 ${dmg} 點傷害。`, 'player');
         } else { if (typeof vfxMiss === 'function') vfxMiss(mob); logCombat(`<span class="font-bold" style="color:#d6d3d1;">【反彈】</span>反擊追打未命中。`, 'miss'); }
     }
+    // ⚔️ v3.5.100 刻意保留的例外（不是漏改）：副手雖已改為獨立計時器、不再跟「主手一般攻擊」走，
+    //   但【反彈】是另一個獨立的反擊事件（不是主手揮擊），維持雙持者反擊時兩手都打，避免無聲 nerf 反擊精通。
     if (mob.curHp > 0 && player.eq.offwpn && warriorDualWieldWpnOk(player.eq.offwpn.id)) dualWieldOffhandAttack(mob);   // 副手：再一次
     let idx = mapState.mobs.findIndex(m => m && m.uid === mob.uid);
     if (mob.curHp <= 0 && idx !== -1) killMob(idx);
@@ -1956,6 +1977,7 @@ function qiguPlayerAttack(target, wpn) {
     if (target.st && target.st.mrhalf > 0) target.st.mrhalf = 0;
     mobWake(target);
     if (typeof reflectWallOnDamage === 'function') reflectWallOnDamage(target, dmg, 'magic', null);   // 🌑 v3.4.14 血壁空間：奇古獸普攻主擊＝魔法反射（玩家傭兵一致）
+    if (player.dead) return;   // ☠️ v3.5.87 反射可反殺施放者：死後中止收尾（不結算擊殺/特效 proc·比照 js/04 playerAttack）
     logCombat(`<span class="font-bold" style="color:#c4b5fd;text-shadow:0 0 6px #8b5cf6;">【幻術士】</span>奇古獸對 <span class="${getMobColor(target.lv)}">${target.n}</span> 造成 ${dmg} 點魔法傷害。`, 'magic');
     if (target.curHp <= 0) killMob(mapState.targetIdx); else renderMobs();   // 主擊先結算（避免與下方特效各自 killMob 重複擊殺）
     qiguWeaponProc(target, wpn);        // 奇古獸特效（幻影衝擊/心靈破壞；主擊已擊殺則內部 guard 跳過、自行處理擊殺）

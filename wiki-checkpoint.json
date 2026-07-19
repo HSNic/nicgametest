@@ -1,6 +1,6 @@
 {
-  "reconciledIndexCommit": "35cdd095f334d1fa86170bbc9ce25ba0f5624597",
-  "reconciledIndexBlob": "c5f266678123030d60b3624f6bfe17bb9d2b36ee",
-  "reconciledAt": "2026-07-19 10:46 (UTC+8)",
-  "note": "跑完整 /update-wiki SOP(範圍:2026-07-17 checkpoint 8b26e8344 → HEAD,涵蓋 v3.4.86→v3.5.4→v3.5.36→v3.5.66→v3.5.76 累積四次同步)。逐檔核對 js/00~14/24 + css/style.css 的 diff(--stat 共21個檔案變動),確認以下項目皆已在先前幾輪session手動補寫完成,本輪不必重做:①真夏納變身+龍之鑽石說明(afk-wiki.js 已有5+8處提及);②白目玩家彩蛋系統(潘朵拉黑市分頁「😤別把玩家收購NPC惹毛了」卡片);③全新PVP性向值系統(新增「性向與PVP」獨立分頁,key='pvp');④攻速/移速公式精確化(既有文字本身就寫精確值,不用改);⑤吉爾塔斯武器依邪惡值縮放說明;⑥究極光裂術正義門檻;⑦神聖疾走/風之疾走互斥(MAGIC_FACT補充);⑧萬能藥掉落權重調整+潘朵拉收購萬能藥。本輪唯一發現並修正的缺口:潘朵拉遊蕩收購NPC(js/24-pandora-relic-market.js)的機率/存活時間/安全區白名單在v3.5.66已從5%/2小時/(排除5類安全區)改成10%/3小時/(只排除5個特定城鎮,拉斯塔巴德/傲慢之塔/時空裂痕/沉默洞穴系開放),但小百科「潘朵拉黑市」分頁的「💎龍之鑽石怎麼賺」段落還停在舊數字,已修正並補「最後更新:2026-07-19,v3.5.76」標註。另確認v3.5.36新增6件遺物裝備(黑騎士精銳長槍/鎧衛隊漆黑塔盾/被敲爛的半邊頭盔/食屍鬼的啃食面容/黝黑的烈火皮囊/水靈的魔力珠)皆已在MOB_DROPS且裝備頁靠buildItemDescHTML自動顯示完整特殊效果(格檔套裝加成/冰凍common/免疫沉默/火牢加倍/擊殺回血),無需手動補寫;js/15-cards.js的林德拜爾特殊刷出怪已在afk-dex.js的SPECIAL_BLOCKS涵蓋。已用Playwright無頭實測潘朵拉分頁:render正確顯示新數字、搜尋「龍之鑽石」命中3筆、無JS error。smoke-hooks/check-hook-points皆通過。"
+  "reconciledIndexCommit": "UNCOMMITTED",
+  "reconciledIndexBlob": "UNCOMMITTED",
+  "reconciledAt": "2026-07-19 23:45 (UTC+8)",
+  "note": "合併原作v3.5.76→v3.6.03(約30小版號)後跑的小百科比對:主要新增是全新「血盟系統」(js/25-clan-system.js,帳號內共用、非玩家對戰),已整段重寫afk-wiki.js的renderPledge分頁(原內容是舊版「王族搜索狀/依詩蒂特羅斯陣營戰」,已查證該套機制大部分被移除/改造,不能只補充要整段重寫);其餘改動(雙手武器攻速分離/反射反殺補完/死碼清除/離線NPC閒聊/寵物隨機減傷)不影響小百科既有內容,無需調整。5個直接改本體客製(創角UI/能力分頁舊表格/首頁公告橫幅/強化無事訊息+新確認的slot-select-panel移除)已於同步後對照歷史commit補回。commit待使用者確認後才會產生,故此欄位先標UNCOMMITTED,下次比對時以git log補正确commit。"
 }
