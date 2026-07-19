@@ -1,5 +1,5 @@
 /* ============================================================================
- * afk-pwa.js — 把遊戲變成可「安裝成 APP」的 PWA(安裝 UI + 圖桶對帳)
+ * afk-pwa.js — 把遊戲變成可「安裝成 APP」的 PWA(安裝 UI + 觸發素材對帳)
  *
  * 行為（全在首頁 #main-menu 的「⚙ 設定」選單，遊戲中不顯示）：
  *   ● 還沒安裝 → 設定選單出現「📥 安裝成 APP」。
@@ -13,20 +13,21 @@
  *   改為純 on-demand——玩到哪張抓哪張、抓到就進圖桶持久留著,回訪/離線都用得上。
  *   故移除:背景預抓、「N 張新圖待下載」提示、預抓進度 UI、PRECACHE_DONE/MANIFEST_SIG 旗標。
  *
- * 仍保留「圖桶對帳」(reconcileImages)：每次載入把最新 manifest 送進 SW,清掉「作者換過、
- *   內容對不上的舊圖」(下次用到才 on-demand 抓新版)。它不下載圖、幾乎不耗流量,只確保圖桶不餵舊圖;
- *   沒有它,作者換圖後玩家會永遠看到快取的舊版。
+ * 圖桶對帳(reconcileImages/reconcileAnim)已拆到 afk-cache.js(階段3,純職責分離,
+ *   行為完全不變):每次載入把最新 manifest 送進 SW,清掉「作者換過、內容對不上的舊圖」
+ *   (下次用到才 on-demand 抓新版)。本檔只負責在 watchUpdates() 呼叫 AFK_CACHE 觸發對帳,
+ *   不再自己實作 fetch/postMessage 邏輯。需排在 afk-cache.js 之後載入。
  *
  * 沒有「程式更新」UI 的原因：
  *   sw.js 已把導覽文件改 network-first——線上開頁一律最新「殼」,JS 帶 ?v= 換版即換 URL,
  *   「線上＝永遠最新」自動且無條件,不需頁面端偵測落後/強制刷新/讓使用者選自動更新。離線退快取照常。
  *
  * 設計重點：
- *   - SW 註冊沿用 afk-sw.js;本檔只負責「安裝 UI / 圖桶對帳」。
+ *   - SW 註冊沿用 afk-sw.js;本檔負責「安裝 UI」,素材對帳邏輯在 afk-cache.js。
  *   - <head> 的 manifest / 圖示 / theme-color 用 JS 注入(每小時自動同步會整份覆蓋 index.html、洗掉寫死的)。
  *   - 非安全環境(file://)自動略過 SW 相關功能,遊戲照舊、零錯誤。
  *
- * 掛接：index.html </body> 前 <script src="afk-pwa.js"></script>
+ * 掛接：index.html </body> 前 <script src="afk-pwa.js"></script>(需排在 afk-cache.js 之後)
  * ========================================================================== */
 (function () {
   'use strict';
@@ -128,51 +129,20 @@
     });
   }
 
-  // ----- 圖桶對帳(不下載圖,只清作者換過的舊圖,下次 on-demand 抓新版)-----------
-  // 抓最新對帳清單(走網路、永遠最新),交給 cb 用。
-  function withJson(url, cb) {
-    fetch(url, { cache: 'no-cache' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data && data.length) cb(data); })
-      .catch(function () {});
-  }
-  // 首次安裝尚未接管(無 controller)→ 等接管後再把 fn 跑起來。
-  function whenController(fn) {
-    var ctrl = navigator.serviceWorker.controller;
-    if (ctrl) { fn(ctrl); return; }
-    navigator.serviceWorker.addEventListener('controllerchange', function once() {
-      navigator.serviceWorker.removeEventListener('controllerchange', once);
-      whenController(fn);
-    });
-  }
-  // 每次載入把最新 assets-manifest 送給 SW reconcile:只清掉 sha 對不上的舊圖(作者換一張只清那一張,
-  //   下次用到才 on-demand 抓新版),不下載整包。
-  function reconcileImages() {
-    whenController(function (ctrl) {
-      withJson('assets-manifest.json', function (manifest) {
-        ctrl.postMessage({ type: 'reconcile-images', manifest: manifest });
-      });
-    });
-  }
-  // 怪物動畫幀「一怪一雜湊」對帳:anim/ 幀太多不進 assets-manifest,改用 anim-manifest.json(每個怪資料夾一個合併 sha),
-  //   送給 SW 逐「怪」比對——某怪的幀被作者換過 → 該怪快取整包清掉、下次看到時 on-demand 抓新版。不下載整包。
-  function reconcileAnim() {
-    whenController(function (ctrl) {
-      withJson('anim-manifest.json', function (folders) {
-        ctrl.postMessage({ type: 'reconcile-anim', folders: folders });
-      });
-    });
-  }
-
-  // ----- SW 觀察:nudge 重抓 sw.js 比對 + 圖桶對帳(更新接管交給瀏覽器,本檔不主導)-----------
+  // ----- SW 觀察:nudge 重抓 sw.js 比對 + 觸發素材對帳(更新接管交給瀏覽器,本檔不主導)-----------
   function watchUpdates() {
     navigator.serviceWorker.ready.then(function (r) {
       reg = r;
       // 載入時 nudge 瀏覽器重抓 sw.js 比對。更新接管走瀏覽器標準流程即可(導覽已 network-first,
       //   使用者看到的程式碼本來就一律最新,不需頁面端 skip-waiting/強制 reload)。
       reg.update().catch(function () {});
-      reconcileImages();   // 每次載入:清掉作者換過的舊圖(下次用到才 on-demand 抓新版)
-      reconcileAnim();     // 同上,但針對怪物動畫幀(逐「怪」對帳,見 reconcileAnim)
+      // 素材對帳(逐張圖 + 怪物動畫幀)邏輯已拆到 afk-cache.js;這裡只負責觸發。
+      if (window.AFK_CACHE) {
+        AFK_CACHE.reconcileImages();   // 每次載入:清掉作者換過的舊圖(下次用到才 on-demand 抓新版)
+        AFK_CACHE.reconcileAnim();     // 同上,但針對怪物動畫幀(逐「怪」對帳)
+      } else {
+        console.warn('[AFK-pwa] 找不到 AFK_CACHE,略過素材對帳(afk-cache.js 沒有先載入?)');
+      }
     }).catch(function () {});
   }
 

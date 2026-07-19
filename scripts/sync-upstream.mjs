@@ -49,6 +49,7 @@ const rawUrl = (p) => `https://raw.githubusercontent.com/${UPSTREAM_USER}/${REPO
 //      整支沒載入」,不是順序錯。
 //   重排前留意上面兩點即可。
 const PLUGINS = [
+  { file: 'afk-hook.js', comment: '外掛事件匯流排(階段1,純工具物件,不掛接本體;必須排在所有其他 afk-*.js 之前;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-offline-profiler.js', comment: '離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-offline.js', comment: '離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-sfx-fastload.js', comment: '音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可)' },
@@ -71,13 +72,16 @@ const PLUGINS = [
   { file: 'afk-powersave.js', comment: '省電模式核心邏輯:monkey-patch 動畫ticker/畫面重繪頻率,真正降低耗電(需排在 afk-quickpanel.js 之前;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-quickpanel.js', comment: '首頁「⚙ 設定」按鈕+彈窗:集中戰鬥特效/傷害數字/音樂/音效/省電模式 5 個開關(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-autobuy.js',  comment: '外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可)' },
-  { file: 'afk-pwa.js',      comment: 'PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可)' },
+  { file: 'afk-cache.js',    comment: '素材對帳(圖桶逐張對帳+怪物動畫幀對帳,從 afk-pwa.js 拆出,階段3純職責分離,行為不變;需排在 afk-pwa.js 之前;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-pwa.js',      comment: 'PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可)' },
   { file: 'afk-storage.js',  comment: '首頁設定鈕:檢查存檔大小(純唯讀列出 localStorage 各 key 用量;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-cloud-sync-v2.js', comment: '跨裝置雲端存檔同步(配對碼+後端代管,取代舊版Google登入方案afk-cloud-sync.js.disabled;API_BASE未設定前對遊戲零介入;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-history.js',  comment: '離線掛機歷史紀錄:首頁設定選單列出各角色最近 5 筆離線收益(純唯讀讀 afk_hist_<slot>;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-diagnostics.js', comment: '效能診斷:首頁「📋 紀錄」小選單裡的「⚙️ 效能診斷」,產生 FPS/記憶體/裝置/背景執行等診斷報告給開發者(純唯讀)' },
   { file: 'afk-mobname.js',  comment: '顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-training.js', comment: '木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-hook-bind.js', comment: '外掛事件匯流排:實際包裝 castSkill/killMob/gameLoop/renderMobs/flushTickRender/gainItem(階段2;需排在 afk-offline.js、afk-training.js 之後,才能包到最外層;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-vfx.js', comment: '純DOM/CSS overlay特效層(階段4;吃 afk-hook-bind.js 的 skill:cast:after/mob:killed 事件;需排在 afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-itemsearch.js', comment: '物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-analytics.js', comment: 'Cloudflare Web Analytics beacon 注入:統計人數/開啟次數(只在正式站台送;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-classic-list.js', comment: '道具/武器/防具/裝備清單恢復舊版橫列式外觀(純 CSS 覆寫,不動原作者本體;可獨立維護,原作者更新後重新加回此行即可)' },

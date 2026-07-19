@@ -566,6 +566,8 @@
     <script src="js/23-summons.js?v=e6321ca162"></script>
     <script src="js/22-pets.js?v=38b7b42703"></script>
     <script src="js/24-pandora-relic-market.js?v=032021e0ca"></script>
+<!-- 外掛事件匯流排(階段1,純工具物件,不掛接本體;必須排在所有其他 afk-*.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-hook.js?v=20260719a"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-offline-profiler.js?v=20260714a"></script>
 <!-- 離線掛機外掛(包 saveGame/loadGame;建議讓 afk-fixes 的存檔防呆排在此之後最乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -610,8 +612,10 @@
 <script src="afk-quickpanel.js?v=20260715b"></script>
 <!-- 外掛自動購買:肉 / 魔法屏障卷軸(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-autobuy.js?v=20260715a"></script>
-<!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 背景預抓離線資源(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-pwa.js?v=20260706a"></script>
+<!-- 素材對帳(圖桶逐張對帳+怪物動畫幀對帳,從 afk-pwa.js 拆出,階段3純職責分離,行為不變;需排在 afk-pwa.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-cache.js?v=20260719a"></script>
+<!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可) -->
+<script src="afk-pwa.js?v=20260719a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-whatsnew.js?v=20260719a"></script>
 <!-- 冒險地圖「黑市」按鈕旁新增「魔物追蹤」快捷鈕,等同主城奧貝勒/赫特/帝倫NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -630,6 +634,10 @@
 <script src="afk-mobname.js?v=20260713a"></script>
 <!-- 木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-training.js?v=20260709a"></script>
+<!-- 外掛事件匯流排:實際包裝 castSkill/killMob/gameLoop/renderMobs/flushTickRender/gainItem(階段2;需排在 afk-offline.js、afk-training.js 之後,才能包到最外層;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-hook-bind.js?v=20260719a"></script>
+<!-- 純DOM/CSS overlay特效層(階段4;吃 afk-hook-bind.js 的 skill:cast:after/mob:killed 事件;需排在 afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-vfx.js?v=20260719a"></script>
 <!-- 物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-itemsearch.js?v=20260718a"></script>
 <!-- Cloudflare Web Analytics beacon 注入:統計人數/開啟次數(只在正式站台送;可獨立維護,原作者更新後重新加回此行即可) -->
