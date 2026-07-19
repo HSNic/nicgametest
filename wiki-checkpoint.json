@@ -1,6 +1,6 @@
 {
-  "reconciledIndexCommit": "8b26e8344",
-  "reconciledIndexBlob": "e1b735786ad13b162eb9a8775fe3806835b1e0f3",
-  "reconciledAt": "2026-07-17 18:04 (UTC+8)",
-  "note": "此檔案先前(2026-07-06後)未持續更新,期間已有多次小百科維護(黑暗妖精聖地、遺忘之島、軍王之室等,見版本異動紀錄與各commit訊息)但checkpoint沒有跟著推進,導致這次要用時發現reconciledIndexCommit已在歷史中查不到(可能因分支操作而失效)。這次改用Cowork已完成的差異分析(docs/同步/同步差異分析_20260717.md,v3.4.86→v3.5.4)當diff素材,逐項對照:①【新內容】日出之國怪物區(13小怪+5頭目)→自動讀DB,dex/wiki裝備·職業魔法·地圖分頁不用改;②【新機制】三段變身頭目(transformTo/transformHpPct,玉藻→九尾→殺生石)+terror_visage(巨大骷髏免疫)+onHitPoison(牛鬼系反向下毒)→COMBAT_SECTIONS新增專節說明(中間階不算擊殺、卡片只從最終階隨機掉一張);③【新製作線】宙斯之熔岩高崙滅魔裝備(SLAYER_RECIPES,不在CRAFT_RECIPES,仿DEMONKING_RECIPES/LUMIEL_RECIPES模式)→補進afk-dex.js buildCraftIndex與afk-wiki.js renderCraft;④【全域】怪物金幣掉落公式monsterGoldRange重寫→不影响小百科/掉落查詢顯示,免改。已Playwright無頭實測戰鬥機制頁與製作頁:新段落正確顯示、無漏翻英文、無JS error;掉落查詢搜「牛鬼」「滅魔的金屬盔甲」皆正確定位到來源。同步套用時一併補回被整批覆蓋沖掉的創角UI(creation-layout-v2)與能力分頁舊版表格樣式(#tab-stats)兩項客製。"
+  "reconciledIndexCommit": "35cdd095f334d1fa86170bbc9ce25ba0f5624597",
+  "reconciledIndexBlob": "c5f266678123030d60b3624f6bfe17bb9d2b36ee",
+  "reconciledAt": "2026-07-19 10:46 (UTC+8)",
+  "note": "跑完整 /update-wiki SOP(範圍:2026-07-17 checkpoint 8b26e8344 → HEAD,涵蓋 v3.4.86→v3.5.4→v3.5.36→v3.5.66→v3.5.76 累積四次同步)。逐檔核對 js/00~14/24 + css/style.css 的 diff(--stat 共21個檔案變動),確認以下項目皆已在先前幾輪session手動補寫完成,本輪不必重做:①真夏納變身+龍之鑽石說明(afk-wiki.js 已有5+8處提及);②白目玩家彩蛋系統(潘朵拉黑市分頁「😤別把玩家收購NPC惹毛了」卡片);③全新PVP性向值系統(新增「性向與PVP」獨立分頁,key='pvp');④攻速/移速公式精確化(既有文字本身就寫精確值,不用改);⑤吉爾塔斯武器依邪惡值縮放說明;⑥究極光裂術正義門檻;⑦神聖疾走/風之疾走互斥(MAGIC_FACT補充);⑧萬能藥掉落權重調整+潘朵拉收購萬能藥。本輪唯一發現並修正的缺口:潘朵拉遊蕩收購NPC(js/24-pandora-relic-market.js)的機率/存活時間/安全區白名單在v3.5.66已從5%/2小時/(排除5類安全區)改成10%/3小時/(只排除5個特定城鎮,拉斯塔巴德/傲慢之塔/時空裂痕/沉默洞穴系開放),但小百科「潘朵拉黑市」分頁的「💎龍之鑽石怎麼賺」段落還停在舊數字,已修正並補「最後更新:2026-07-19,v3.5.76」標註。另確認v3.5.36新增6件遺物裝備(黑騎士精銳長槍/鎧衛隊漆黑塔盾/被敲爛的半邊頭盔/食屍鬼的啃食面容/黝黑的烈火皮囊/水靈的魔力珠)皆已在MOB_DROPS且裝備頁靠buildItemDescHTML自動顯示完整特殊效果(格檔套裝加成/冰凍common/免疫沉默/火牢加倍/擊殺回血),無需手動補寫;js/15-cards.js的林德拜爾特殊刷出怪已在afk-dex.js的SPECIAL_BLOCKS涵蓋。已用Playwright無頭實測潘朵拉分頁:render正確顯示新數字、搜尋「龍之鑽石」命中3筆、無JS error。smoke-hooks/check-hook-points皆通過。"
 }
