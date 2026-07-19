@@ -1,6 +1,6 @@
 {
-  "reconciledIndexCommit": "UNCOMMITTED",
-  "reconciledIndexBlob": "UNCOMMITTED",
+  "reconciledIndexCommit": "6e21ebe1df2a8f8e866391860f7d1ea0249e21d2",
+  "reconciledIndexBlob": "9ac101e94a17251e7ed173b8fb3fa72dd230ad9f",
   "reconciledAt": "2026-07-19 23:45 (UTC+8)",
-  "note": "合併原作v3.5.76→v3.6.03(約30小版號)後跑的小百科比對:主要新增是全新「血盟系統」(js/25-clan-system.js,帳號內共用、非玩家對戰),已整段重寫afk-wiki.js的renderPledge分頁(原內容是舊版「王族搜索狀/依詩蒂特羅斯陣營戰」,已查證該套機制大部分被移除/改造,不能只補充要整段重寫);其餘改動(雙手武器攻速分離/反射反殺補完/死碼清除/離線NPC閒聊/寵物隨機減傷)不影響小百科既有內容,無需調整。5個直接改本體客製(創角UI/能力分頁舊表格/首頁公告橫幅/強化無事訊息+新確認的slot-select-panel移除)已於同步後對照歷史commit補回。commit待使用者確認後才會產生,故此欄位先標UNCOMMITTED,下次比對時以git log補正确commit。"
+  "note": "合併原作v3.5.76→v3.6.03(約30小版號)後跑的小百科比對:主要新增是全新「血盟系統」(js/25-clan-system.js,帳號內共用、非玩家對戰),已整段重寫afk-wiki.js的renderPledge分頁(原內容是舊版「王族搜索狀/依詩蒂特羅斯陣營戰」,已查證該套機制大部分被移除/改造,不能只補充要整段重寫);其餘改動(雙手武器攻速分離/反射反殺補完/死碼清除/離線NPC閒聊/寵物隨機減傷)不影響小百科既有內容,無需調整。5個直接改本體客製(創角UI/能力分頁舊表格/首頁公告橫幅/強化無事訊息+新確認的slot-select-panel移除)已於同步後對照歷史commit補回。"
 }
