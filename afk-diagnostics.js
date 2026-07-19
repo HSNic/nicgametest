@@ -229,6 +229,83 @@
     });
   }
 
+  // ---- 離線結算效能(讀 afk-offline-profiler.js 蒐集到的最近一次補跑報告) -----
+  // 只讀 window.AFKOfflineProfiler.getLastReport(),不碰 afk-offline.js 本體;
+  // 目前報告裡還沒有 ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 這幾項
+  // (需要改本體才能量測,屬於下一階段的工作),複製出來的 JSON 先誠實只含現有欄位。
+  function offlineProfileSection() {
+    var api = window.AFKOfflineProfiler;
+    var report = api && typeof api.getLastReport === 'function' ? api.getLastReport() : null;
+    if (!report) {
+      return (
+        '<div class="m-diag-offline">' +
+          '<div class="m-diag-offline-title">🕒 離線結算效能</div>' +
+          '<div class="m-diag-desc">目前還沒有離線補跑紀錄(登入時如果經過離線掛機,結算完成後這裡會顯示最近一次的耗時明細)。</div>' +
+        '</div>'
+      );
+    }
+    var t = report.timings, c = report.counts;
+    var rows = [
+      ['離線秒數', report.offlineSeconds],
+      ['總耗時', t.totalMs + ' ms'],
+      ['Fast Mode', t.fastModeMs + ' ms'],
+      ['Boss', t.bossMs + ' ms'],
+      ['Loot', t.lootMs + ' ms'],
+      ['Batch', t.batchMs + ' ms'],
+      ['UI', t.uiMs + ' ms'],
+      ['全模擬', t.fullSimMs + ' ms'],
+      ['擊殺數', c.monsterKills],
+      ['Boss數', c.bossKills]
+    ];
+    var rowsHtml = rows.map(function (r) {
+      return '<div class="m-diag-row"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>';
+    }).join('');
+    return (
+      '<div class="m-diag-offline">' +
+        '<div class="m-diag-offline-title">🕒 離線結算效能(最近一次)</div>' +
+        '<div class="m-diag-live">' + rowsHtml + '</div>' +
+        '<button id="m-diag-offline-copy-btn" type="button">📋 複製離線結算JSON</button>' +
+      '</div>'
+    );
+  }
+
+  function offlineProfileJson() {
+    var api = window.AFKOfflineProfiler;
+    var report = api && typeof api.getLastReport === 'function' ? api.getLastReport() : null;
+    if (!report) return null;
+    var out = {
+      generatedAt: new Date().toISOString(),
+      mode: null, map: null, cls: null, level: null,   // 目前只能在外掛層讀取「複製當下」的狀態,不代表補跑當時
+      offlineSeconds: report.offlineSeconds,
+      timings: report.timings,
+      counts: report.counts,
+      rewards: report.rewards,
+      averages: report.averages,
+      flags: report.flags,
+      errors: report.errors,
+      note: 'ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 尚未實作(需改afk-offline.js本體,見交接待辦第二階段)。'
+    };
+    try {
+      out.map = (typeof mapState !== 'undefined' && mapState) ? mapState.current : null;
+      out.cls = (typeof player !== 'undefined' && player) ? player.cls : null;
+      out.level = (typeof player !== 'undefined' && player) ? player.lv : null;
+    } catch (e) {}
+    return out;
+  }
+
+  function copyOfflineProfileJson() {
+    var btn = document.getElementById('m-diag-offline-copy-btn');
+    var data = offlineProfileJson();
+    if (!data) return;
+    var text = JSON.stringify(data, null, 2);
+    var done = function (ok) { if (btn) btn.textContent = ok ? '✅ 已複製' : '複製失敗,請手動截圖'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }).catch(function () { done(false); });
+    } else {
+      done(false);
+    }
+  }
+
   // ---- 彈窗 UI(比照 afk-storage.js 的既有 modal 風格) -----------------------
   function renderLiveBody() {
     var p = perfSnapshot();
@@ -239,6 +316,7 @@
         '<div class="m-diag-row"><span>平均 / 最慢一幀</span><b>' + (p.avgFrameMs != null ? (p.avgFrameMs + 'ms / ' + p.maxFrameMs + 'ms') : '取樣中…') + '</b></div>' +
         '<div class="m-diag-row"><span>記憶體用量</span><b>' + mem + '</b></div>' +
       '</div>' +
+      offlineProfileSection() +
       '<div class="m-diag-desc">如果覺得玩起來發燙、變慢、卡頓,按下面的按鈕產生一份診斷報告(.json 檔),' +
       '傳給開發者比對就可以了。報告只包含效能/裝置/遊戲狀態等技術資訊,不含帳號密碼。</div>' +
       '<button id="m-diag-gen-btn" type="button">📥 產生並下載診斷報告</button>' +
@@ -253,6 +331,8 @@
       body.innerHTML = renderLiveBody();
       var b = document.getElementById('m-diag-gen-btn');
       if (b) b.addEventListener('click', downloadReport);
+      var ob = document.getElementById('m-diag-offline-copy-btn');
+      if (ob) ob.addEventListener('click', copyOfflineProfileJson);
     }
   }
   var _liveTimer = null;
@@ -304,6 +384,10 @@
       '.m-diag-live{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}',
       '.m-diag-row{display:flex;align-items:baseline;justify-content:space-between;background:#111c30;border:1px solid #1e293b;border-radius:8px;padding:8px 11px;font-size:13px;color:#cbd5e1;}',
       '.m-diag-row b{color:#fcd34d;font-size:14px;}',
+      '.m-diag-offline{margin-bottom:14px;padding:10px;background:#0c1424;border:1px solid #1e293b;border-radius:9px;}',
+      '.m-diag-offline-title{color:#e2e8f0;font-size:13.5px;font-weight:bold;margin-bottom:8px;}',
+      '#m-diag-offline-copy-btn{width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#e2e8f0;font-size:13px;cursor:pointer;}',
+      '#m-diag-offline-copy-btn:active{background:#334155;}',
       '.m-diag-desc{color:#94a3b8;font-size:12.5px;line-height:1.6;margin-bottom:12px;}',
       '#m-diag-gen-btn{width:100%;padding:11px;border-radius:9px;border:1px solid #d97706;background:#b45309;color:#fef3c7;font-size:14px;font-weight:bold;cursor:pointer;}',
       '#m-diag-gen-btn:active{background:#92400e;}',

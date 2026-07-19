@@ -168,8 +168,76 @@
       if (obj.wh) warehouses[key] = obj.wh;
       slots[String(n)] = { slot: obj.slot, save: obj.save, afk: obj.afk, packedAt: obj.packedAt };
     });
-    return { slots: slots, warehouses: warehouses };
+    return { slots: slots, warehouses: warehouses, clan: payload.readClan() };
   };
+
+  // 血盟資料（js/25-clan-system.js，2026-07-19 隨 v3.6.03 新增）是「帳號共用桶」，不屬於任何
+  // 單一存檔位，跟著整包文件走一份即可，不用逐 slot 重複打包。舊版外掛(還沒有血盟系統)/讀取失敗
+  // 一律安全回傳 null，上傳/合併時視為「沒有血盟資料」，不影響其餘同步流程。
+  payload.readClan = function () {
+    if (typeof _clanReadStateResult !== 'function') return null;
+    try { var r = _clanReadStateResult(); return r.ok ? r.state : null; } catch (e) { return null; }
+  };
+  payload.writeClan = function (state) {
+    if (!state || typeof _clanWriteState !== 'function') return;
+    try { _clanWriteState(state); } catch (e) { console.warn('[AFK-cloud-sync-v2] writeClan 失敗:', e); }
+  };
+
+  // 血盟資料合併(不是覆蓋)：members{} 是「同帳號多個角色」各自的貢獻紀錄，換裝置/上傳衝突時
+  // 單純比大小的時間戳覆蓋會讓其中一台裝置已經存到的進度憑空消失，改成逐欄位取「不會讓進度倒退」
+  // 的合併結果(2026-07-20 依 codex 複核意見定案):
+  //   - xp / 每位成員 contribution：取兩邊較大值(不可能靠合併精準還原「這段時間各自貢獻了多少」，
+  //     取較大值是「絕不倒退」的保守解，代價是極端情況下重複計入的貢獻不會被扣掉，可接受)。
+  //   - 只有其中一邊有的成員：整筆保留，不因為另一邊沒有就被視為要刪除。
+  //   - buffOn/buffAt：整筆採用 buffAt 較新的那一側(能表達「buff 已被較新的裝置關閉/到期」這種狀態，
+  //     不是 buffOn/buffAt 分開各自取值)。
+  //   - modes.normal/modes.classic：兩邊都有各自的創立紀錄且不是同一個血盟(名稱或創始人不同)時，
+  //     保留本機這份(不無聲蓋掉，只是先不強制二選一)，但印出警告(含模式/本機名稱/雲端名稱)方便事後追查。
+  function clanMergeStates(local, remote) {
+    if (!remote) return null;     // 雲端沒有血盟資料(舊文件/從沒上傳過)，沒東西可合併
+    if (!local) return remote;    // 本機沒有(血盟系統剛裝上/讀取失敗)，直接採用雲端
+    var out = {
+      v: 1,
+      xp: Math.max(local.xp || 0, remote.xp || 0),
+      modes: { normal: null, classic: null },
+      members: {},
+      updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0)
+    };
+    ['normal', 'classic'].forEach(function (mk) {
+      var lm = local.modes && local.modes[mk];
+      var rm = remote.modes && remote.modes[mk];
+      if (lm && rm) {
+        if (lm.name !== rm.name || lm.leaderId !== rm.leaderId) {
+          console.warn('[AFK-cloud-sync-v2] 血盟合併衝突(模式=' + mk + ')：本機=「' + lm.name + '」、雲端=「' + rm.name + '」，已保留本機這份，未自動二選一。');
+          out.modes[mk] = lm;
+        } else {
+          // 同一個血盟(名稱+創始人相同)：castle(佔領城堡)沒有各自獨立的時間戳可比較，
+          // 用整份血盟資料的 updatedAt(哪邊比較晚寫入)當判斷依據——攻城/棄守都會讓 updatedAt 更新，
+          // 這樣才不會漏掉「另一台裝置後來才打下/丟掉城堡」這件事(2026-07-20 依使用者要求補齊)。
+          out.modes[mk] = (remote.updatedAt || 0) > (local.updatedAt || 0) ? rm : lm;
+        }
+      } else {
+        out.modes[mk] = lm || rm || null;
+      }
+    });
+    var ids = {};
+    Object.keys(local.members || {}).forEach(function (k) { ids[k] = 1; });
+    Object.keys(remote.members || {}).forEach(function (k) { ids[k] = 1; });
+    Object.keys(ids).forEach(function (id) {
+      var lm = (local.members || {})[id];
+      var rm = (remote.members || {})[id];
+      if (lm && !rm) { out.members[id] = lm; return; }
+      if (rm && !lm) { out.members[id] = rm; return; }
+      var newer = (rm.buffAt || 0) > (lm.buffAt || 0) ? rm : lm;
+      out.members[id] = {
+        mode: newer.mode,
+        contribution: Math.max(lm.contribution || 0, rm.contribution || 0),
+        buffOn: newer.buffOn,
+        buffAt: newer.buffAt
+      };
+    });
+    return out;
+  }
 
   // ===========================================================================
   // api：呼叫後端(配對碼) — 全部用 fetch，帶逾時保護；不做背景重試/排隊，失敗直接回錯給呼叫端
@@ -231,7 +299,7 @@
     return { ok: false, err: err };
   }
 
-  function emptyDoc() { return { slots: {}, warehouses: {} }; }
+  function emptyDoc() { return { slots: {}, warehouses: {}, clan: null }; }
 
   // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
   // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選；
@@ -262,6 +330,11 @@
         if (!rsum || !lsum || lsum.ts === rsum.ts) { merged.slots[k] = localSlots[k]; if (localWh[key]) merged.warehouses[key] = localWh[key]; return; }   // 內容一致（或無法比較），直接用本機
         conflicts.push({ slot: k, whKeyStr: key, localObj: localSlots[k], remoteObj: remoteSlots[k] });
       });
+      // 血盟資料獨立於各存檔位衝突之外：不管本次有沒有 slot 衝突，都合併(取不倒退)一次；
+      // 合併結果一併寫回本機，避免只有雲端拿到合併結果、本機這台裝置反而沒同步到。
+      var mergedClan = clanMergeStates(localDoc.clan, remoteDoc.clan);
+      if (mergedClan) { merged.clan = mergedClan; payload.writeClan(mergedClan); }
+      else if (localDoc.clan) { merged.clan = localDoc.clan; }
       function finalize() {
         if (typeof onProgress === 'function') onProgress(78, '套用衝突選擇並重新上傳…');
         return api.putSave(cfg.getCode(), merged, r.remote.version).then(function (r2) {
@@ -317,6 +390,10 @@
       cfg.rememberSync(r.version, r.hash);
       var remoteDoc = r.save || emptyDoc();
       var remoteSlots = remoteDoc.slots || {};
+      // 血盟資料獨立於各存檔位的下載選擇之外：不管等下有沒有 slot 衝突要問玩家，血盟合併都
+      // 直接安全套用(取不倒退的合併結果),不需要跳視窗問——覆蓋掉不會有「選錯導致進度消失」的風險。
+      var mergedClan = clanMergeStates(payload.readClan(), remoteDoc.clan);
+      if (mergedClan) payload.writeClan(mergedClan);
       var conflicts = [];
       var applied = 0;
       Object.keys(remoteSlots).forEach(function (k) {

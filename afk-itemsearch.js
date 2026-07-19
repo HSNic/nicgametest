@@ -38,6 +38,15 @@
 
   function norm(s) { return (s || '').toLowerCase(); }
 
+  // 搜尋輸入 debounce(2026-07-20):卡片/物品量大時每打一字就同步全量篩選會卡頓,
+  // 改成打字後延遲150ms才真的跑 filter;compositionend(注音組字結束)不等待、立刻跑一次,
+  // 避免組字體驗被debounce拖慢。用 inputId 各自計時,互不干擾。
+  var _debounceTimers = {};
+  function debouncedApply(id, fn) {
+    clearTimeout(_debounceTimers[id]);
+    _debounceTimers[id] = setTimeout(fn, 150);
+  }
+
   // 🈶 注音/拼音組字防護(2026-07-11):組字中若剛好撞上遊戲重繪(掛機掉寶等),整個搜尋框 <input>
   // 會被原作 renderTabs/renderWarehouseNPC 整段 innerHTML 換掉 → 瀏覽器的組字緩衝區被強制中斷,
   // 打到一半的注音就跳掉。無法從外部保留「正在被替換的那個 DOM 節點」,唯一辦法是組字期間乾脆
@@ -110,9 +119,18 @@
     inp.id = inputId; inp.type = 'search'; inp.autocomplete = 'off';
     inp.placeholder = '🔍 搜尋名稱…';
     inp.value = q[key];
-    inp.addEventListener('input', function () { q[key] = inp.value; onChange(); });
+    inp.addEventListener('input', function () {
+      q[key] = inp.value;
+      if (inp.dataset.composing === '1') return;   // 組字中的 input 事件先不排 debounce,等 compositionend 立即跑
+      debouncedApply(inputId, onChange);
+    });
     inp.addEventListener('compositionstart', function () { inp.dataset.composing = '1'; });
-    inp.addEventListener('compositionend', function () { inp.dataset.composing = ''; flushPendingRebuilds(); });
+    inp.addEventListener('compositionend', function () {
+      inp.dataset.composing = '';
+      clearTimeout(_debounceTimers[inputId]);
+      onChange();   // 組字結束立即套用,不等 debounce
+      flushPendingRebuilds();
+    });
     wrap.appendChild(inp);
     return wrap;
   }

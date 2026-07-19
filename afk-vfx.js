@@ -44,8 +44,19 @@
     document.head.appendChild(style);
   }
 
+  // 離線補跑期間(state.ff)/自身補跑鎖(window.__afk.busy)跳過特效,避免每次擊殺/施法都多一次強制 reflow 拖慢結算
+  function isOfflineCatchup() {
+    try {
+      return (typeof state !== 'undefined' && state && state.ff) ||
+             (window.__afk && window.__afk.busy);
+    } catch (e) {
+      return false;
+    }
+  }
+
   // --- 施法特效:battle-view 邊框輕微脈衝(不改內容,只加一次性 class) ---
   AFK_HOOK.on('skill:cast:after', (payload) => {
+    if (isOfflineCatchup()) return;
     if (!payload || !payload.result) return; // 施法失敗(result 為 falsy)不觸發
     const bv = document.getElementById('battle-view');
     if (!bv) return;
@@ -56,6 +67,7 @@
 
   // --- 擊殺特效:在怪物最後所在的畫面座標放一個火花爆裂,自動清除 ---
   AFK_HOOK.on('mob:killed', (payload) => {
+    if (isOfflineCatchup()) return;
     const uid = payload && payload.mob && payload.mob.uid;
     let rect = null;
     if (uid != null) {
