@@ -439,7 +439,17 @@
     try {
       if (window.AFKOfflineProfiler) {
         var _profOfflineSecs = (timing && timing.closeTs) ? (Date.now() - timing.closeTs) / 1000 : (totalTicks * TICK_MS / 1000);
-        window.AFKOfflineProfiler.begin({ offlineSeconds: _profOfflineSecs });
+        // 🧑 補跑當下(不是報告產生當下)就記錄角色資訊,避免產生診斷報告時全域 player/mapState 已經換人/換地圖
+        window.AFKOfflineProfiler.begin({
+          offlineSeconds: _profOfflineSecs,
+          character: {
+            slot: (typeof currentSlot !== 'undefined') ? currentSlot : null,
+            name: (player && player.name) || null,
+            cls: (player && player.cls) || null,
+            level: (player && player.lv != null) ? player.lv : null,
+            map: huntMap || null
+          }
+        });
       }
     } catch (e) {}
 

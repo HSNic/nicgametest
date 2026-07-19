@@ -300,6 +300,10 @@
       var origPrefs = readCurrentPrefs();
       applyBatchPerfPrefs();
 
+      // ⏱️ 批次結算會依序觸發8次離線補跑,若不分組,profiler只留得住最後一格的資料——
+      //   前面幾格全被覆蓋消失,沒辦法診斷「哪一格特別慢」。有 AFKOfflineProfiler 才呼叫,純觀測不影響結算。
+      try { if (window.AFKOfflineProfiler && typeof window.AFKOfflineProfiler.beginBatch === 'function') window.AFKOfflineProfiler.beginBatch(); } catch (e) {}
+
       var totals = { gold: 0, exp: 0, lv: 0, slots: 0 };
       try {
         for (var n = 1; n <= SLOT_COUNT; n++) {
@@ -327,6 +331,7 @@
         }
       } finally {
         restorePrefs(origPrefs);   // 不論成功/中途出例外,都要把音樂/音效/特效/傷害數字/省電模式還原成使用者原本的值
+        try { if (window.AFKOfflineProfiler && typeof window.AFKOfflineProfiler.endBatch === 'function') window.AFKOfflineProfiler.endBatch(); } catch (e) {}
       }
 
       document.getElementById('m-bs-foot').innerHTML =

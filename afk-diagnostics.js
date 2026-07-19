@@ -231,23 +231,37 @@
     });
   }
 
-  // ---- 離線結算效能(讀 afk-offline-profiler.js 蒐集到的最近一次補跑報告) -----
-  // 只讀 window.AFKOfflineProfiler.getLastReport(),不碰 afk-offline.js 本體;
+  // ---- 離線結算效能(讀 afk-offline-profiler.js 蒐集到的最近一次補跑報告/批次結算) -----
+  // 只讀 window.AFKOfflineProfiler.getLastReport()/getLastBatch(),不碰 afk-offline.js/afk-batch-settle.js 本體;
   // 目前報告裡還沒有 ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 這幾項
   // (需要改本體才能量測,屬於下一階段的工作),複製出來的 JSON 先誠實只含現有欄位。
-  function offlineProfileSection() {
+
+  // 🎯 決定要顯示「單筆最近一次」還是「最近一次批次結算(8格)」:
+  //   批次結算(afk-batch-settle.js)依序切換8個存檔位,若只看單筆最近一次,批次跑完只會留下最後一格,
+  //   前面7格的效能資料全部消失、沒辦法診斷「哪一格特別慢」。判準:批次的 finishedAt 是否 >= 單筆的 startedAt——
+  //   剛跑完批次時批次一定較新(顯示整批);之後若又做過一次單獨結算,單筆會較新(改顯示單筆,批次資料已過時)。
+  function pickOfflineData() {
     var api = window.AFKOfflineProfiler;
-    var report = api && typeof api.getLastReport === 'function' ? api.getLastReport() : null;
-    if (!report) {
-      return (
-        '<div class="m-diag-offline">' +
-          '<div class="m-diag-offline-title">🕒 離線結算效能</div>' +
-          '<div class="m-diag-desc">目前還沒有離線補跑紀錄(登入時如果經過離線掛機,結算完成後這裡會顯示最近一次的耗時明細)。</div>' +
-        '</div>'
-      );
+    if (!api) return null;
+    var single = typeof api.getLastReport === 'function' ? api.getLastReport() : null;
+    var batch = typeof api.getLastBatch === 'function' ? api.getLastBatch() : null;
+    if (batch && batch.reports && batch.reports.length) {
+      var batchTime = Date.parse(batch.finishedAt || batch.startedAt || 0) || 0;
+      var singleTime = single ? (Date.parse(single.startedAt || 0) || 0) : -1;
+      if (batchTime >= singleTime) return { mode: 'batch', batch: batch };
     }
+    if (single) return { mode: 'single', single: single };
+    return null;
+  }
+
+  function charLabel(ch) {
+    ch = ch || {};
+    return (ch.slot != null ? ('存檔' + ch.slot + ' ') : '') + (ch.name || (ch.cls || '?')) + (ch.level != null ? (' Lv.' + ch.level) : '') + (ch.map ? ('｜' + ch.map) : '');
+  }
+
+  function reportRows(report) {
     var t = report.timings, c = report.counts;
-    var rows = [
+    return [
       ['離線秒數', report.offlineSeconds],
       ['總耗時', t.totalMs + ' ms'],
       ['Fast Mode', t.fastModeMs + ' ms'],
@@ -259,39 +273,88 @@
       ['擊殺數', c.monsterKills],
       ['Boss數', c.bossKills]
     ];
-    var rowsHtml = rows.map(function (r) {
+  }
+
+  function rowsToHtml(rows) {
+    return rows.map(function (r) {
       return '<div class="m-diag-row"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>';
     }).join('');
+  }
+
+  function offlineProfileSection() {
+    var picked = pickOfflineData();
+    if (!picked) {
+      return (
+        '<div class="m-diag-offline">' +
+          '<div class="m-diag-offline-title">🕒 離線結算效能</div>' +
+          '<div class="m-diag-desc">目前還沒有離線補跑紀錄(登入時如果經過離線掛機,結算完成後這裡會顯示最近一次的耗時明細)。</div>' +
+        '</div>'
+      );
+    }
+    var body;
+    if (picked.mode === 'batch') {
+      body = picked.batch.reports.map(function (report) {
+        return (
+          '<div class="m-diag-desc" style="margin-top:8px;font-weight:bold;">' + charLabel(report.character) + '</div>' +
+          rowsToHtml(reportRows(report))
+        );
+      }).join('');
+      return (
+        '<div class="m-diag-offline">' +
+          '<div class="m-diag-offline-title">🕒 離線結算效能(最近一次批次結算,共 ' + picked.batch.reports.length + ' 格)</div>' +
+          body +
+          '<button id="m-diag-offline-copy-btn" type="button">📋 複製離線結算JSON</button>' +
+        '</div>'
+      );
+    }
+    var report = picked.single;
+    var rows = [['結算角色', charLabel(report.character)]].concat(reportRows(report));
     return (
       '<div class="m-diag-offline">' +
         '<div class="m-diag-offline-title">🕒 離線結算效能(最近一次)</div>' +
-        '<div class="m-diag-live">' + rowsHtml + '</div>' +
+        '<div class="m-diag-live">' + rowsToHtml(rows) + '</div>' +
         '<button id="m-diag-offline-copy-btn" type="button">📋 複製離線結算JSON</button>' +
       '</div>'
     );
   }
 
-  function offlineProfileJson() {
-    var api = window.AFKOfflineProfiler;
-    var report = api && typeof api.getLastReport === 'function' ? api.getLastReport() : null;
-    if (!report) return null;
-    var out = {
-      generatedAt: new Date().toISOString(),
-      mode: null, map: null, cls: null, level: null,   // 目前只能在外掛層讀取「複製當下」的狀態,不代表補跑當時
+  function reportToJsonEntry(report) {
+    var ch = report.character || {};
+    return {
+      slot: ch.slot != null ? ch.slot : null,
+      name: ch.name || null,
+      map: ch.map || null,
+      cls: ch.cls || null,
+      level: ch.level != null ? ch.level : null,
       offlineSeconds: report.offlineSeconds,
       timings: report.timings,
       counts: report.counts,
       rewards: report.rewards,
       averages: report.averages,
       flags: report.flags,
-      errors: report.errors,
-      note: 'ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 尚未實作(需改afk-offline.js本體,見交接待辦第二階段)。'
+      errors: report.errors
     };
-    try {
-      out.map = (typeof mapState !== 'undefined' && mapState) ? mapState.current : null;
-      out.cls = (typeof player !== 'undefined' && player) ? player.cls : null;
-      out.level = (typeof player !== 'undefined' && player) ? player.lv : null;
-    } catch (e) {}
+  }
+
+  function offlineProfileJson() {
+    var picked = pickOfflineData();
+    if (!picked) return null;
+    var note = 'ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 尚未實作(需改afk-offline.js本體,見交接待辦第二階段)。';
+    if (picked.mode === 'batch') {
+      return {
+        generatedAt: new Date().toISOString(),
+        mode: 'batch',
+        batchId: picked.batch.batchId,
+        batchStartedAt: picked.batch.startedAt,
+        batchFinishedAt: picked.batch.finishedAt,
+        slots: picked.batch.reports.map(reportToJsonEntry),
+        note: note
+      };
+    }
+    var out = reportToJsonEntry(picked.single);
+    out.generatedAt = new Date().toISOString();
+    out.mode = 'single';
+    out.note = note;
     return out;
   }
 

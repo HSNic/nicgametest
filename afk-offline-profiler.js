@@ -7,6 +7,7 @@
 
   var DEBUG_KEY = 'AFK_OFFLINE_DEBUG';
   var LAST_REPORT_KEY = 'afk_offline_last_report';
+  var LAST_BATCH_KEY = 'afk_offline_last_batch';
   function isDebug() { try { return !!window[DEBUG_KEY]; } catch (e) { return false; } }
   function round2(n) { return Math.round((n || 0) * 100) / 100; }
   function nowMs() { try { return performance.now(); } catch (e) { return Date.now(); } }
@@ -16,10 +17,27 @@
   var _sections = {};      // {名稱: {total:累計毫秒, activeSince:目前這段的起始時間或null}}
   var _beginTs = 0;
 
-  function freshReport(offlineSeconds) {
+  // ⏱️ 批次結算(afk-batch-settle.js 依序切換8個存檔位)分組:每個存檔位各自呼叫一次 begin()/finish(),
+  //   若只存「最近一筆」,批次跑完只會留下最後一格的資料、前面幾格全部被覆蓋消失,沒辦法診斷「哪一格特別慢」。
+  //   beginBatch()~endBatch() 之間所有 finish() 產生的報告都會額外收進 _batchReports,批次結束後整批持久化。
+  var _batchId = null;      // 目前是否在批次結算中(非 null 代表是,值為批次識別碼)
+  var _batchReports = null; // 批次結算中已完成的各格報告陣列
+  var _batchStartedAt = 0;
+
+  function freshReport(offlineSeconds, character) {
     return {
       version: 1,
       startedAt: new Date().toISOString(),
+      batchId: _batchId,   // 非批次結算時為 null
+      // 🧑 補跑當下的角色資訊(由呼叫端在 begin() 時就傳入,不是診斷報告產生當下的全域 player/mapState——
+      //   兩者可能是不同角色/不同地圖,尤其批次結算逐格切換、或使用者結算完後又切別的存檔位再去產生診斷報告時)
+      character: {
+        slot: (character && character.slot != null) ? character.slot : null,
+        name: (character && character.name) || null,
+        cls: (character && character.cls) || null,
+        level: (character && character.level != null) ? character.level : null,
+        map: (character && character.map) || null
+      },
       offlineSeconds: Math.max(0, Math.round(offlineSeconds || 0)),
       timings: { fastModeMs: 0, bossMs: 0, lootMs: 0, batchMs: 0, uiMs: 0, fullSimMs: 0, totalMs: 0 },
       counts: { monsterKills: 0, bossKills: 0, dropCount: 0, skillCount: 0, buffCount: 0, totalHits: 0 },
@@ -30,9 +48,26 @@
     };
   }
 
+  function beginBatch() {
+    _batchId = 'batch-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+    _batchReports = [];
+    _batchStartedAt = Date.now();
+    return _batchId;
+  }
+
+  function endBatch() {
+    if (_batchId == null) return null;
+    var doc = { batchId: _batchId, startedAt: new Date(_batchStartedAt).toISOString(), finishedAt: new Date().toISOString(), reports: _batchReports };
+    try { localStorage.setItem(LAST_BATCH_KEY, JSON.stringify(doc)); } catch (e) {}
+    _lastBatchCache = doc;
+    _batchId = null;
+    _batchReports = null;
+    return doc;
+  }
+
   function begin(context) {
     // 每次補跑只建立一份報告:呼叫 begin() 一律視為「開始新的一次」,若上一份還沒 finish() 就直接捨棄(不應發生,補跑本就序列執行)
-    _report = freshReport(context && context.offlineSeconds);
+    _report = freshReport(context && context.offlineSeconds, context && context.character);
     _sections = {};
     _beginTs = nowMs();
   }
@@ -98,6 +133,7 @@
     }
     _lastReport = report;
     try { localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(report)); } catch (e) {}
+    if (_batchId != null && report.batchId === _batchId && _batchReports) _batchReports.push(report);
     _report = null;
     _sections = {};
     printSummary(report);
@@ -146,6 +182,16 @@
     return null;
   }
 
+  var _lastBatchCache = null;
+  function getLastBatch() {
+    if (_lastBatchCache) return _lastBatchCache;
+    try {
+      var raw = localStorage.getItem(LAST_BATCH_KEY);
+      if (raw) { _lastBatchCache = JSON.parse(raw); return _lastBatchCache; }
+    } catch (e) {}
+    return null;
+  }
+
   window.AFKOfflineProfiler = {
     begin: begin,
     startSection: startSection,
@@ -156,7 +202,10 @@
     addError: addError,
     finish: finish,
     printSummary: printSummary,
-    getLastReport: getLastReport
+    getLastReport: getLastReport,
+    beginBatch: beginBatch,
+    endBatch: endBatch,
+    getLastBatch: getLastBatch
   };
 
   console.log('[AFK-offline-profiler] hooks OK — 離線結算效能日誌已就緒(預設關閉,開 window.AFK_OFFLINE_DEBUG=true 觀察)。');
