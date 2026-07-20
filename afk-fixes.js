@@ -636,5 +636,48 @@
     } catch (e) { console.warn('[AFK-fixes] 村莊NPC影子圖404快取 安裝失敗,已略過:', e); }
   })();
 
+  /* --------------------------------------------------------------------------
+   * 修正#14(2026-07-20 效能優化參考報告核對交接):離線結算補跑期間跳過召喚物隊伍面板重繪,
+   * 減少召喚法角色(多隻召喚物)離線結算的卡頓
+   *
+   * 問題:`renderSummonPanel()`(js/23-summons.js)沒有像 `renderMobs`/`updateUI` 那樣的
+   *   state.inTick dirty-flag 防護,召喚物每次攻擊/被打(summonV2AttackOnce/enemyAttackSummon/
+   *   applyMobMagicToSummon)都會呼叫它,而它多半會觸發 renderSquadPanel() 重建隊伍面板 DOM。
+   *   召喚法角色可同時有多隻召喚物、各自攻速獨立,離線結算把大量時間壓縮模擬時,這個重繪會被
+   *   觸發非常多次,是「召喚法角色離線結算特別慢」的主因(比對過:afk-offline.js 的分段/喘息
+   *   機制本身沒問題,卡點在單一次 tick 內部這支函式被呼叫太多次)。
+   * 解法:比照 afk-vfx.js 的 isOfflineCatchup() 判斷式,離線補跑期間(state.ff 或
+   *   window.__afk.busy)直接跳過這次重繪。補跑結束後,原作既有的
+   *   `setInterval(renderSummonPanel, 500)` 會在最多 0.5 秒內自動補上最新畫面,玩家不會看到
+   *   任何異常。不改任何戰鬥/召喚數值計算,只跳過畫面重繪。
+   * 何時可移除:原作者自己替 renderSummonPanel 加上 state.inTick/state.ff 期間跳過重繪的
+   *   邏輯時,本段即多餘,可整段刪掉(抓不到 renderSummonPanel 會自動略過,不弄壞遊戲)。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    function isOfflineCatchup() {
+      try {
+        return (typeof state !== 'undefined' && state && state.ff) || (window.__afk && window.__afk.busy);
+      } catch (e) { return false; }
+    }
+    function install() {
+      if (typeof window.renderSummonPanel !== 'function' || window.renderSummonPanel.__catchupSkip) return true;
+      var orig = window.renderSummonPanel;
+      var guarded = function () {
+        if (isOfflineCatchup()) return;
+        return orig.apply(this, arguments);
+      };
+      guarded.__catchupSkip = true;
+      window.renderSummonPanel = guarded;
+      console.log('[AFK-fixes] 離線補跑跳過召喚物面板重繪 已掛上');
+      return true;
+    }
+    try {
+      if (!install()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+        else setTimeout(install, 0);
+      }
+    } catch (e) { console.warn('[AFK-fixes] 離線補跑跳過召喚物面板重繪 安裝失敗,已略過:', e); }
+  })();
+
   console.log('[AFK-fixes] hooks OK — 通用修正外掛已啟用。');
 })();

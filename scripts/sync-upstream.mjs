@@ -83,6 +83,7 @@ const PLUGINS = [
   { file: 'afk-training.js', comment: '木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-hook-bind.js', comment: '外掛事件匯流排:實際包裝 castSkill/killMob/gameLoop/renderMobs/flushTickRender/gainItem(階段2;需排在 afk-offline.js、afk-training.js 之後,才能包到最外層;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-vfx.js', comment: '純DOM/CSS overlay特效層(階段4;吃 afk-hook-bind.js 的 skill:cast:after/mob:killed 事件;需排在 afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可)' },
+  { file: 'afk-online-profile.js', comment: '線上遊玩效能量測(純觀測,用 AFK_HOOK.wrap 包 tick/flushTickRender/gameLoop 記耗時;需排在 afk-hook.js/afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-warehouse-search-debounce.js', comment: '共用倉庫搜尋加防抖動,物品數量多時打字搜尋不卡頓(可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-itemsearch.js', comment: '物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可)' },
   { file: 'afk-analytics.js', comment: 'Cloudflare Web Analytics beacon 注入:統計人數/開啟次數(只在正式站台送;可獨立維護,原作者更新後重新加回此行即可)' },

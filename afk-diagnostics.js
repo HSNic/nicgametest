@@ -379,6 +379,69 @@
     }
   }
 
+  // ---- 線上遊玩效能(讀 afk-online-profile.js 的 window.AFK_ONLINE_PROFILE.snapshot()) -----
+  // 只讀,不碰 afk-online-profile.js 本體;JSON 報告透過 AFK_DIAG.addCollector 掛入,
+  // 不需要改動 buildReport() 主流程。
+  function onlineProfileRows(p) {
+    return [
+      ['tick 次數(30秒內)', p.tickCount],
+      ['平均 / 最慢 tick', (p.avgTickMs != null ? (p.avgTickMs + 'ms / ' + p.maxTickMs + 'ms') : '—')],
+      ['平均 / 最慢 render', (p.avgRenderMs != null ? (p.avgRenderMs + 'ms / ' + p.maxRenderMs + 'ms') : '—')],
+      ['平均 / 最慢 每輪主迴圈', (p.avgFrameMs != null ? (p.avgFrameMs + 'ms / ' + p.maxFrameMs + 'ms') : '—')]
+    ];
+  }
+  function onlineProfileSection() {
+    var api = window.AFK_ONLINE_PROFILE;
+    if (!api || typeof api.snapshot !== 'function') {
+      return (
+        '<div class="m-diag-offline">' +
+          '<div class="m-diag-offline-title">🎮 線上遊玩效能</div>' +
+          '<div class="m-diag-desc">找不到 afk-online-profile.js,此項無法量測。</div>' +
+        '</div>'
+      );
+    }
+    var p = api.snapshot();
+    if (!p || p.tickCount === 0) {
+      return (
+        '<div class="m-diag-offline">' +
+          '<div class="m-diag-offline-title">🎮 線上遊玩效能(最近 30 秒)</div>' +
+          '<div class="m-diag-desc">' + ((p && p.reason === 'no-samples-yet') ? '尚未取樣到資料(角色需在遊戲中實際掛機一陣子)。' : '尚無資料。') + '</div>' +
+        '</div>'
+      );
+    }
+    return (
+      '<div class="m-diag-offline">' +
+        '<div class="m-diag-offline-title">🎮 線上遊玩效能(最近 30 秒)</div>' +
+        '<div class="m-diag-live">' + rowsToHtml(onlineProfileRows(p)) + '</div>' +
+      '</div>'
+    );
+  }
+  if (window.AFK_DIAG && typeof window.AFK_DIAG.addCollector === 'function') {
+    window.AFK_DIAG.addCollector('onlineProfile', function () {
+      var api = window.AFK_ONLINE_PROFILE;
+      if (!api || typeof api.snapshot !== 'function') return { ok: false, reason: 'plugin-not-loaded' };
+      var p = api.snapshot();
+      // 額外附上手機/省電/特效開關與目前隊伍規模,供比對「召喚物/傭兵多時是否比較慢」這類問題。
+      // 全部純讀取既有全域,不呼叫任何寫入函式,也不改任何核心邏輯。
+      try {
+        p.mobileMode = document.body.classList.contains('m-mobile');
+        p.powersaveOn = (window.AFK_POWERSAVE && typeof window.AFK_POWERSAVE.isOn === 'function') ? window.AFK_POWERSAVE.isOn() : null;
+        p.vfxOn = !window.__vfxOff;
+        p.vfxNumOn = !window.__vfxNumOff;
+        if (typeof mapState !== 'undefined' && mapState && Array.isArray(mapState.mobs)) {
+          p.mobCount = mapState.mobs.filter(Boolean).length;
+        }
+        if (typeof player !== 'undefined' && player) {
+          p.summonCount = Array.isArray(player.summonsV2) ? player.summonsV2.filter(function (s) { return s && !s._downed; }).length : 0;
+          p.allyCount = Array.isArray(player.allies) ? player.allies.filter(Boolean).length : 0;
+          p.petCount = (typeof petsOutList === 'function') ? petsOutList().length : 0;
+          p.activeBuffCount = player.buffs ? Object.keys(player.buffs).filter(function (k) { return player.buffs[k] > 0; }).length : 0;
+        }
+      } catch (e) { p.extraReadError = e.message; }
+      return p;
+    });
+  }
+
   // ---- 彈窗 UI(比照 afk-storage.js 的既有 modal 風格) -----------------------
   function renderLiveBody() {
     var p = perfSnapshot();
@@ -390,6 +453,7 @@
         '<div class="m-diag-row"><span>記憶體用量</span><b>' + mem + '</b></div>' +
       '</div>' +
       offlineProfileSection() +
+      onlineProfileSection() +
       '<div class="m-diag-desc">如果覺得玩起來發燙、變慢、卡頓,按下面的按鈕產生一份診斷報告(.json 檔),' +
       '傳給開發者比對就可以了。報告只包含效能/裝置/遊戲狀態等技術資訊,不含帳號密碼。</div>' +
       '<button id="m-diag-gen-btn" type="button">📥 產生並下載診斷報告</button>' +

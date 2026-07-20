@@ -42,6 +42,8 @@
   var MAX_WAIT_MS = 8 * 60 * 1000;   // 單一存檔位補跑等待上限(8分鐘;實測極端重角色24h補跑約需數分鐘,留餘裕)
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  // 每處理完一個存檔位就讓瀏覽器喘息一下,減少連續8格結算造成的發熱/UI假死;手機多休息一些。
+  function yieldMs() { return document.body.classList.contains('m-mobile') ? 150 : 50; }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function fmtDur(ms) {
     var s = Math.round(ms / 1000);
@@ -311,7 +313,7 @@
       try {
         for (var n = 1; n <= SLOT_COUNT; n++) {
           var sum = slotSummary(n);
-          if (!sum) { setRow(n, sum, { kind: 'skip-empty' }); continue; }
+          if (!sum) { setRow(n, sum, { kind: 'skip-empty' }); await sleep(yieldMs()); continue; }
           var t0 = Date.now();
           try {
             setRow(n, sum, { kind: 'running', elapsed: 0 });
@@ -334,6 +336,7 @@
             setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
           } finally {
             _slotWallMs[n] = Date.now() - t0;
+            await sleep(yieldMs());
           }
         }
       } finally {

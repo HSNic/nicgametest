@@ -584,7 +584,7 @@
 <!-- 自動販賣規則視窗 UI 優化:各別例外清單加捲動+搜尋、三大區塊可收合、文字修正(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-autosell-ui.js?v=20260708e"></script>
 <!-- 通用修正外掛(補原作者坑,桌機/手機通用;含 saveGame 空白角色防呆,建議排在 afk-offline 之後最乾淨——順序反了防呆仍擋得住毀檔,只是不夠乾淨;可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-fixes.js?v=20260719a"></script>
+<script src="afk-fixes.js?v=20260720a"></script>
 <!-- 能力分頁狀態文字列不管在哪個畫面都顯示(monkey-patch renderStatusEffects;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-status-always-text.js?v=20260717a"></script>
 <!-- 背景大圖快取 Service Worker 註冊(可獨立維護;原作者更新後重新加回此行即可) -->
@@ -608,7 +608,7 @@
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260719a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-whatsnew.js?v=20260720c"></script>
+<script src="afk-whatsnew.js?v=20260720d"></script>
 <!-- 冒險地圖「黑市」按鈕旁新增「魔物追蹤」快捷鈕,等同主城奧貝勒/赫特/帝倫NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-track-shortcut.js?v=20260718a"></script>
 <!-- 魔物追蹤視窗內加「自動續約」開關,到期自動用同樣目標續約(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -622,7 +622,7 @@
 <!-- 離線掛機歷史紀錄:首頁設定選單列出各角色最近 5 筆離線收益(純唯讀讀 afk_hist_<slot>;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-history.js?v=20260712a"></script>
 <!-- 效能診斷:首頁「📋 紀錄」小選單裡的「⚙️ 效能診斷」,產生 FPS/記憶體/裝置/背景執行等診斷報告給開發者(純唯讀) -->
-<script src="afk-diagnostics.js?v=20260720e"></script>
+<script src="afk-diagnostics.js?v=20260720f"></script>
 <!-- 系統與物品日誌加「系統/掉落/收購」訊息分類開關,比照戰鬥日誌既有的敵人/玩家等開關(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-syslog-filter.js?v=20260720b"></script>
 <!-- 顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -633,6 +633,8 @@
 <script src="afk-hook-bind.js?v=20260719a"></script>
 <!-- 純DOM/CSS overlay特效層(階段4;吃 afk-hook-bind.js 的 skill:cast:after/mob:killed 事件;需排在 afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-vfx.js?v=20260720a"></script>
+<!-- 線上遊玩效能量測(純觀測,用 AFK_HOOK.wrap 包 tick/flushTickRender/gameLoop 記耗時;需排在 afk-hook.js/afk-hook-bind.js 之後;可獨立維護,原作者更新後重新加回此行即可) -->
+<script src="afk-online-profile.js?v=20260720a"></script>
 <!-- 物品搜尋:背包(武/防/道)與倉庫清單支援名稱搜尋(monkey-patch renderTabs/renderWarehouseNPC 注入搜尋框;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-itemsearch.js?v=20260720a"></script>
 <!-- 共用倉庫搜尋加防抖動,物品數量多時打字搜尋不卡頓(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -664,7 +666,7 @@
 <!-- 首頁設定選單「🏦 角色資產管理」:跨存檔位查看/搬運金幣與物品進共用倉庫(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-asset-manager.js?v=20260720a"></script>
 <!-- 首頁設定選單「⏱️ 批次結算所有存檔位」:依序把每個存檔位的離線收益都結算一次,重用 afk-offline.js 的 per-slot 補跑機制;需排在 afk-offline.js 之後(依賴其曝光的 window.__afk.busy/last);可獨立維護,原作者更新後重新加回此行即可 -->
-<script src="afk-batch-settle.js?v=20260720b"></script>
+<script src="afk-batch-settle.js?v=20260720c"></script>
 <!-- 版面密度微調:分頁按鈕列/冒險地圖日誌區塊縮高(純 CSS 覆寫;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-uilayout.js?v=20260714a"></script>
 <!-- 玩家角色專屬淡藍光圈特效(純 CSS 覆寫,排除傭兵;可獨立維護,原作者更新後重新加回此行即可) -->
