@@ -379,11 +379,13 @@
     }
   }
 
-  // ---- 線上遊玩效能(讀 afk-online-profile.js 的 window.AFK_ONLINE_PROFILE.snapshot()) -----
+  // ---- 線上遊玩效能(讀 afk-online-profile.js 的 window.AFK_ONLINE_PROFILE.reportForDisplay()) -----
   // 只讀,不碰 afk-online-profile.js 本體;JSON 報告透過 AFK_DIAG.addCollector 掛入,
-  // 不需要改動 buildReport() 主流程。
+  // 不需要改動 buildReport() 主流程。reportForDisplay() 統一處理「追蹤中看即時/已關閉看最近一次
+  // 凍結報告」這個判斷,這裡跟遊戲內統計分頁的區塊共用同一份邏輯,不用各自判斷開關狀態。
   function onlineProfileRows(p) {
     return [
+      ['追蹤狀態', p.live ? '進行中' : '已關閉' + (p.stoppedAt ? ('(最近一次 ' + new Date(p.stoppedAt).toLocaleTimeString('zh-TW', { hour12: false }) + ')') : '')],
       ['tick 次數(30秒內)', p.tickCount],
       ['平均 / 最慢 tick', (p.avgTickMs != null ? (p.avgTickMs + 'ms / ' + p.maxTickMs + 'ms') : '—')],
       ['平均 / 最慢 render', (p.avgRenderMs != null ? (p.avgRenderMs + 'ms / ' + p.maxRenderMs + 'ms') : '—')],
@@ -392,7 +394,7 @@
   }
   function onlineProfileSection() {
     var api = window.AFK_ONLINE_PROFILE;
-    if (!api || typeof api.snapshot !== 'function') {
+    if (!api || typeof api.reportForDisplay !== 'function') {
       return (
         '<div class="m-diag-offline">' +
           '<div class="m-diag-offline-title">🎮 線上遊玩效能</div>' +
@@ -400,18 +402,21 @@
         '</div>'
       );
     }
-    var p = api.snapshot();
+    var p = api.reportForDisplay();
     if (!p || p.tickCount === 0) {
+      var desc = p && p.reason === 'disabled-no-report'
+        ? '追蹤預設關閉,在遊戲內「統計」分頁勾選「追蹤」即可開始量測。'
+        : (p && p.reason === 'no-samples-yet' ? '尚未取樣到資料(角色需在遊戲中實際掛機一陣子)。' : '尚無資料。');
       return (
         '<div class="m-diag-offline">' +
-          '<div class="m-diag-offline-title">🎮 線上遊玩效能(最近 30 秒)</div>' +
-          '<div class="m-diag-desc">' + ((p && p.reason === 'no-samples-yet') ? '尚未取樣到資料(角色需在遊戲中實際掛機一陣子)。' : '尚無資料。') + '</div>' +
+          '<div class="m-diag-offline-title">🎮 線上遊玩效能</div>' +
+          '<div class="m-diag-desc">' + desc + '</div>' +
         '</div>'
       );
     }
     return (
       '<div class="m-diag-offline">' +
-        '<div class="m-diag-offline-title">🎮 線上遊玩效能(最近 30 秒)</div>' +
+        '<div class="m-diag-offline-title">🎮 線上遊玩效能' + (p.live ? '(最近 30 秒)' : '') + '</div>' +
         '<div class="m-diag-live">' + rowsToHtml(onlineProfileRows(p)) + '</div>' +
       '</div>'
     );
@@ -419,8 +424,11 @@
   if (window.AFK_DIAG && typeof window.AFK_DIAG.addCollector === 'function') {
     window.AFK_DIAG.addCollector('onlineProfile', function () {
       var api = window.AFK_ONLINE_PROFILE;
-      if (!api || typeof api.snapshot !== 'function') return { ok: false, reason: 'plugin-not-loaded' };
-      var p = api.snapshot();
+      if (!api || typeof api.reportForDisplay !== 'function') return { ok: false, reason: 'plugin-not-loaded' };
+      // ⚠️ reportForDisplay() 在追蹤已關閉時回傳的是外掛內部共用的 lastReport 物件參照
+      //   (不是每次呼叫都重新產生的新物件),直接在這物件上加欄位會汙染外掛內部存的凍結報告
+      //   (下次讀取/存回 localStorage 都會帶著這次讀報告時混進來的欄位)。淺複製一份再加欄位。
+      var p = Object.assign({}, api.reportForDisplay());
       // 額外附上手機/省電/特效開關與目前隊伍規模,供比對「召喚物/傭兵多時是否比較慢」這類問題。
       // 全部純讀取既有全域,不呼叫任何寫入函式,也不改任何核心邏輯。
       try {

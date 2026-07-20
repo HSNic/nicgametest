@@ -45,10 +45,15 @@
   //   只有極稀有/遺物掉落公告才會用「掉落了」這個字眼(js/04-combat-attack.js)。
   //   sys-item-gain 這個 class 名稱是原作自己標的「這是一筆物品獲得訊息」結構化標記,比關鍵字更準,
   //   涵蓋:怪物掉落給你/商店-製作-任務兌換的「獲得物品:」/掛機期間彙總的「掛機期間獲得：」。
+  // 🔧 2026-07-20 再次修正(使用者回報):收購NPC「第一次上線廣播」那則訊息
+  //   (js/24-pandora-relic-market.js `logSys(_broadcastLineHTML(w))`)實際文字是
+  //   「收 ○○○ 金幣/鑽收 ○○○，人在 ○○○，意者密」,根本沒有「收購」兩個字,被誤判成系統分類。
+  //   改用該函式輸出的結構化 class 名稱 wander-broadcast-name/wander-broadcast-text 判斷,
+  //   跟 sys-item-gain 同一個精神(抓原作自己標的結構化標記,不是用猜的關鍵字)。
   function classify(msg) {
     if (typeof msg !== 'string') return 'sys';
     if (msg.indexOf('sys-item-gain') >= 0 || msg.indexOf('掉落了') >= 0) return 'drop';
-    if (msg.indexOf('收購') >= 0 || msg.indexOf('上架了') >= 0) return 'buy';
+    if (msg.indexOf('收購') >= 0 || msg.indexOf('上架了') >= 0 || msg.indexOf('wander-broadcast') >= 0) return 'buy';
     return 'sys';
   }
 

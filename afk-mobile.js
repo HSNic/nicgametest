@@ -655,10 +655,18 @@
         document.addEventListener('click', _wanderMenuDocHandler);
       }, 0);
     }
+    // 2026-07-20(使用者回報):按鈕只判斷了是不是手機模式,沒判斷「是否真的在遊戲畫面」,
+    //   導致首頁(尚未登入角色/已登出)也會冒出這顆按鈕。收購NPC的在線狀態是全域模擬,不綁定
+    //   於某個已登入角色,故只能靠 #game-screen 是否顯示來判斷「現在是不是真的在遊戲裡」。
+    function inGameScreen() {
+      var gs = document.getElementById('game-screen');
+      return !!(gs && !gs.classList.contains('hidden'));
+    }
     function refreshWanderBadge() {
       if (!document.body.classList.contains('m-mobile')) return;
       var btn = document.getElementById(WANDER_BTN_ID);
       if (!btn) return;
+      if (!inGameScreen()) { btn.style.display = 'none'; closeWanderMenu(); return; }   // 不在遊戲畫面(首頁/選角/創角):強制隱藏,不受在線人數影響
       var count = collectAllWanderers().length;
       var badge = document.getElementById('m-wander-badge');
       if (badge) badge.textContent = count > 0 ? String(count) : '';
