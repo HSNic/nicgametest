@@ -14,7 +14,7 @@
     <title>放置天堂 - 日出之國</title>
     <link rel="icon" type="image/png" href="assets/favicon.png">   <!-- 🖼️ 瀏覽器分頁圖示(favicon)：把你的圖放到 assets/favicon.png 即生效；可改 href 路徑或副檔名(.ico/.svg) -->
 
-    <link rel="stylesheet" href="css/style.css?v=8007da25cf">
+    <link rel="stylesheet" href="css/style.css?v=f1ca1a817b">
     <link rel="stylesheet" href="css/floating-ui.css?v=f9232e9e67">
     <link rel="stylesheet" href="css/tailwind-built.css?v=c0926cfba4"><!-- 🔧 預編譯 Tailwind（取代執行期 JIT tailwind.js）：只含實際用到的 class，省 407KB runtime + 移除持續掃描 DOM 的成本。置於 style.css 之後以保留原 cascade（utility 平手時勝過自訂 class，與舊 JIT 注入順序一致） -->
 </head>
@@ -259,12 +259,16 @@
                 </div>
             </div>
 
-            <!-- 📜 日誌列：戰鬥日誌(左) / 系統與物品日誌(右) 並排，各佔一半寬 -->
+            <!-- 📜 日誌列：戰鬥／系統日誌(左·分頁切換) / 世界頻道(右·NPC 對話＋提問輸入列) 並排，各佔一半寬 -->
             <div id="log-row" class="flex gap-4">
             <div id="combat-log-panel" class="panel flex-1 flex flex-col overflow-hidden relative">
                 <div class="panel-header text-slate-100 text-lg border-b border-red-900/40 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <span class="shrink-0">戰鬥日誌</span>
-                    <div class="flex items-center gap-1 flex-wrap justify-end">
+                    <!-- 🗂️ v3.6.50 戰鬥／系統日誌合併為同一視窗，由此切換（系統分頁有新訊息時顯示未讀點） -->
+                    <div class="shrink-0 flex items-center gap-1">
+                        <button id="logtab-btn-combat" onclick="switchLogTab('combat')" class="logtab-btn logtab-on">戰鬥日誌</button>
+                        <button id="logtab-btn-sys" onclick="switchLogTab('sys')" class="logtab-btn">系統日誌<span id="logtab-dot-sys" class="logtab-dot hidden"></span></button>
+                    </div>
+                    <div id="combat-filter-pills" class="flex items-center gap-1 flex-wrap justify-end">
                         <button id="cf-btn-hp" onclick="toggleMobHp()" class="cf-pill" style="color:#fca5a5;border-color:#64748b;background:rgba(71,85,105,.30)" title="點亮/點暗：怪物血量條">血量</button>
                         <button id="cf-btn-status" onclick="toggleMobStatus()" class="cf-pill" style="color:#e2e8f0;border-color:#64748b;background:rgba(71,85,105,.30)" title="點亮/點暗：怪物圖片上的異常狀態徽章與出血/鈍擊/硬皮等狀態標示">狀態</button>
                         <button id="cf-btn-enemy" onclick="toggleCombatFilter('enemy')" class="cf-pill" style="color:#fca5a5;border-color:#b91c1c;background:rgba(127,29,29,.30)" title="點亮/點暗：敵人的戰鬥訊息">敵人</button>
@@ -275,20 +279,30 @@
                     </div>
                 </div>
                 <div id="combat-log" class="flex-1 p-4 overflow-y-auto log-bg rounded-b-xl shadow-inner text-base tracking-wide"></div>
+                <!-- 🗂️ v3.6.50 系統日誌（含物品訊息）搬進本視窗，由標題列分頁鈕切換；預設隱藏 -->
+                <div id="sys-log" class="hidden flex-1 p-4 overflow-y-auto log-bg rounded-b-xl shadow-inner text-base"></div>
                 <!-- 🔒 戰鬥日誌捲動鎖定提示（向上捲動查看舊訊息時鎖定刷新，捲回底部自動解除） -->
                 <button id="combat-log-unlock" onclick="combatLogToBottom()" class="hidden absolute left-1/2 -translate-x-1/2 bottom-2 z-10 px-3 py-1 text-xs font-bold rounded-full shadow-lg bg-amber-700/90 hover:bg-amber-600 border border-amber-400 text-amber-50">🔒 已鎖定捲動 ▾ 回到最新</button>
+                <!-- 🔒 系統日誌捲動鎖定提示（同戰鬥日誌：向上捲動鎖定刷新、捲回底部自動解除） -->
+                <button id="sys-log-unlock" onclick="sysLogToBottom()" class="hidden absolute left-1/2 -translate-x-1/2 bottom-2 z-10 px-3 py-1 text-xs font-bold rounded-full shadow-lg bg-amber-700/90 hover:bg-amber-600 border border-amber-400 text-amber-50">🔒 已鎖定捲動 ▾ 回到最新</button>
             </div>
 
-            <div id="syslog-panel" class="panel h-1/3 flex flex-col overflow-hidden relative">
+            <!-- 🌐 v3.6.50 世界頻道：只放 NPC 對話（叫賣廣播／嗆聲／提問回覆）；底部輸入列可向全世界發問 -->
+            <div id="syslog-panel" class="panel flex-1 min-w-0 flex flex-col overflow-hidden relative">
                 <div class="panel-header text-slate-100 text-lg border-b border-blue-900/40 flex items-center justify-between gap-2">
-                    <span class="shrink-0">系統與物品日誌</span>
+                    <span class="shrink-0">世界頻道</span>
                     <span id="syslog-pandora" class="text-sm font-normal truncate text-right min-w-0"></span>
                 </div>
                 <!-- 📌 v3.5.77 NPC 叫賣釘選列：最多兩條常駐於日誌頂端，不會被其他訊息推走；空的時候由 CSS :empty 自動收起 -->
                 <div id="sys-log-pins"></div>
-                <div id="sys-log" class="flex-1 p-4 overflow-y-auto log-bg rounded-b-xl shadow-inner text-base"></div>
-                <!-- 🔒 系統與物品日誌捲動鎖定提示（同戰鬥日誌：向上捲動鎖定刷新、捲回底部自動解除） -->
-                <button id="sys-log-unlock" onclick="sysLogToBottom()" class="hidden absolute left-1/2 -translate-x-1/2 bottom-2 z-10 px-3 py-1 text-xs font-bold rounded-full shadow-lg bg-amber-700/90 hover:bg-amber-600 border border-amber-400 text-amber-50">🔒 已鎖定捲動 ▾ 回到最新</button>
+                <div id="world-log" class="flex-1 p-4 overflow-y-auto log-bg shadow-inner text-base"></div>
+                <!-- 💬 提問輸入列：Enter 或按鈕送出，隨機 NPC 回答（也可能只是來嘲笑）；點 NPC 名字可嘲諷／感謝 -->
+                <div id="world-input-row">
+                    <input id="world-input" type="text" maxlength="60" autocomplete="off" placeholder="向世界頻道發問（例：50級去哪練功？法師怎麼玩？大馬那裡打？）">
+                    <button id="world-send" onclick="worldChannelAsk()">發問</button>
+                </div>
+                <!-- 🔒 世界頻道捲動鎖定提示（同戰鬥日誌） -->
+                <button id="world-log-unlock" onclick="worldLogToBottom()" class="hidden absolute left-1/2 -translate-x-1/2 bottom-14 z-10 px-3 py-1 text-xs font-bold rounded-full shadow-lg bg-amber-700/90 hover:bg-amber-600 border border-amber-400 text-amber-50">🔒 已鎖定捲動 ▾ 回到最新</button>
             </div>
             </div><!-- /#log-row -->
         </div>
@@ -531,22 +545,22 @@
     </script>
 
     <script src="js/anim-manifest.js?v=92a56e237d"></script>
-    <script src="js/00-data.js?v=374d55bd96"></script>
-<script src="js/01-drops-config.js?v=a02d5f5415"></script>
-<script src="js/02-stats-recompute.js?v=a10ace0080"></script>
-    <script src="js/03-combat-core.js?v=ea873a1f96"></script>
-    <script src="js/04-combat-attack.js?v=d3795ff720"></script>
-<script src="js/05-kill-progression.js?v=cc1e1c2088"></script>
-    <script src="js/06-status-allies.js?v=617e409d5c"></script>
-    <script src="js/07-skills-cast.js?v=567b38a9f8"></script>
-<script src="js/08-items-equip.js?v=5c75b634d6"></script>
-<script src="js/09-vfx-render.js?v=a3ed918c6a"></script>
-<script src="js/10-ui-tabs.js?v=aa957d5e18"></script>
-<script src="js/11-world-map.js?v=574bacb9d6"></script>
-<script src="js/12-npc-quests.js?v=68dd6d062c"></script>
-<script src="js/13-shop-save.js?v=11ef307441"></script>
+    <script src="js/00-data.js?v=799a639062"></script>
+<script src="js/01-drops-config.js?v=4a471bdd50"></script>
+<script src="js/02-stats-recompute.js?v=5f848d1c07"></script>
+    <script src="js/03-combat-core.js?v=97d3bf1223"></script>
+    <script src="js/04-combat-attack.js?v=a59bda7393"></script>
+<script src="js/05-kill-progression.js?v=b403f08a68"></script>
+    <script src="js/06-status-allies.js?v=6b0f60a9c2"></script>
+    <script src="js/07-skills-cast.js?v=26b2dd522b"></script>
+<script src="js/08-items-equip.js?v=2f07f7d807"></script>
+<script src="js/09-vfx-render.js?v=5550c6b723"></script>
+<script src="js/10-ui-tabs.js?v=457c1d964e"></script>
+<script src="js/11-world-map.js?v=4be412b81f"></script>
+<script src="js/12-npc-quests.js?v=ce3014b2fe"></script>
+<script src="js/13-shop-save.js?v=af1a356e4c"></script>
 <script src="js/14-craft-pandora.js?v=93361ad4d0"></script>
-<script src="js/15-cards.js?v=25f619c05b"></script>
+<script src="js/15-cards.js?v=1937e5996c"></script>
 <script src="js/16-equip-book.js?v=b33a18a2d7"></script>
 <script src="js/18-misc-book.js?v=13944acf14"></script>
 <script src="js/17-audio.js?v=e47b91e1d4"></script>
@@ -554,9 +568,10 @@
 <script src="js/20-warehouse-window.js?v=f0ce1aeb02"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
     <script src="js/23-summons.js?v=b73dd78865"></script>
-    <script src="js/22-pets.js?v=0510a33714"></script>
-    <script src="js/24-pandora-relic-market.js?v=dd5fa820f5"></script>
-    <script src="js/25-clan-system.js?v=d5ff0fa5a1"></script>
+    <script src="js/22-pets.js?v=b68f5e36a5"></script>
+    <script src="js/24-pandora-relic-market.js?v=bd5ce35ea9"></script>
+    <script src="js/25-clan-system.js?v=6498a9eff4"></script>
+    <script src="js/26-world-channel.js?v=577ec38c31"></script>
 <!-- 外掛事件匯流排(階段1,純工具物件,不掛接本體;必須排在所有其他 afk-*.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-hook.js?v=20260719a"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -566,7 +581,7 @@
 <!-- 音效載入省流量(包 _sfxTryLoad,對照表直接讀正確副檔名、跳過探測404;純包裝無 DOM 掛點,可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-sfx-fastload.js?v=20260713a"></script>
 <!-- 手機版介面外掛(可獨立維護;原作者更新後重新加回此行即可) -->
-<script src="afk-mobile.js?v=20260720c"></script>
+<script src="afk-mobile.js?v=20260721c"></script>
 <!-- 手機返回鍵/手勢:在「選存檔位/創角」子畫面回首頁(History API,無 DOM 掛點;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-backnav.js?v=20260719a"></script>
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -608,7 +623,7 @@
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260719a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-whatsnew.js?v=20260720f"></script>
+<script src="afk-whatsnew.js?v=20260721a"></script>
 <!-- 冒險地圖「黑市」按鈕旁新增「魔物追蹤」快捷鈕,等同主城奧貝勒/赫特/帝倫NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-track-shortcut.js?v=20260718a"></script>
 <!-- 魔物追蹤視窗內加「自動續約」開關,到期自動用同樣目標續約(可獨立維護,原作者更新後重新加回此行即可) -->
@@ -624,7 +639,7 @@
 <!-- 效能診斷:首頁「📋 紀錄」小選單裡的「⚙️ 效能診斷」,產生 FPS/記憶體/裝置/背景執行等診斷報告給開發者(純唯讀) -->
 <script src="afk-diagnostics.js?v=20260720g"></script>
 <!-- 系統與物品日誌加「系統/掉落/收購」訊息分類開關,比照戰鬥日誌既有的敵人/玩家等開關(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-syslog-filter.js?v=20260720c"></script>
+<script src="afk-syslog-filter.js?v=20260721c"></script>
 <!-- 顯示怪物名稱模式:首頁設定選單三選一(全部常駐/鎖定中常駐/原版;純 CSS+body 屬性;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-mobname.js?v=20260713a"></script>
 <!-- 木人場:選怪→打不死木人→量即時DPS(純測試,效果只在 afk_dummy 假地圖,不擋存檔、離線不結算;可獨立維護,原作者更新後重新加回此行即可) -->

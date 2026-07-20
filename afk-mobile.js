@@ -306,28 +306,33 @@
       }
     }
 
-    // 戰鬥日誌 / 系統日誌:手機上做成「底部浮動面板」(從導覽列開,浮在畫面上,不擠壓戰鬥畫面)
-    var combatLog = document.getElementById('combat-log-panel');
-    var sysPanel = (function () { var s = document.getElementById('sys-log'); return s && s.closest ? s.closest('.panel') : null; })();
-    // 🔧 桌機還原日誌時要放回「原本的家」,不能硬塞中欄。作者 2026-06 大改版把兩個日誌包進 #log-row(中欄的子層),
-    //   舊碼的 logsToColumn 把它們 append 到 colCenter(中欄本身)→ 變成中欄直接子層、脫離 #log-row → 桌機中欄
-    //   排版壞掉(地圖框被擠扁、日誌跑回舊位置=使用者說的「中間那欄還是舊的」)。改成記住各自的原始父層,還原放回去。
-    var combatLogHome = combatLog ? combatLog.parentNode : null;   // 新版＝#log-row;舊版＝中欄。記載入當下的家
-    var sysPanelHome = sysPanel ? sysPanel.parentNode : null;
+    // 🔧(2026-07-21 同步 v3.6.80 後重新規劃)原作把「戰鬥／系統日誌」合併成同一塊面板
+    //   (#combat-log-panel,內建分頁鈕切換),另外新增獨立的「世界頻道」面板(#syslog-panel)。
+    //   手機底部導覽列新增第 6 顆「🌐世界」,跟「📜日誌」各自獨立開浮動面板;#combat-log-panel
+    //   本身已有原作內建的戰鬥/系統分頁鈕,不需要再自己包一組⇆切換。
+    var logPanel = document.getElementById('combat-log-panel');
+    var worldPanel = document.getElementById('syslog-panel');
+    // 🔧 桌機還原面板時要放回「原本的家」,不能硬塞中欄——記住各自載入當下的原始父層,還原時放回去。
+    var logPanelHome = logPanel ? logPanel.parentNode : null;
+    var worldPanelHome = worldPanel ? worldPanel.parentNode : null;
     var logSheet = null;
-    if (combatLog && sysPanel) {
-      sysPanel.classList.add('m-syslog');
+    if (logPanel && worldPanel) {
       logSheet = buildLogSheet();
       gs.appendChild(logSheet);
-      decorateLogHeader(combatLog, 'sys');     // 戰鬥日誌標題列:⇆ 切到系統 / ✕ 關閉
-      decorateLogHeader(sysPanel, 'combat');   // 系統日誌標題列:⇆ 切到戰鬥 / ✕ 關閉
+      decorateLogHeader(logPanel);     // 日誌標題列:✕ 關閉(戰鬥/系統切換走面板自己內建的分頁鈕)
+      decorateLogHeader(worldPanel);   // 世界頻道標題列:✕ 關閉
     }
     var logBody = logSheet ? logSheet.querySelector('#m-log-body') : null;
-    // 手機:把兩個日誌面板移進浮動面板;桌機:移回中欄原位(最後兩個子元素,順序還原)
-    function logsIntoSheet() { if (logBody && combatLog && sysPanel) { logBody.appendChild(combatLog); logBody.appendChild(sysPanel); } }
-    function logsToColumn() {   // 桌機:把兩個日誌放回原始父層(新版#log-row/舊版中欄),不要硬塞中欄
-      if (combatLog && combatLogHome) combatLogHome.appendChild(combatLog);
-      if (sysPanel && sysPanelHome) sysPanelHome.appendChild(sysPanel);
+    var worldBody = logSheet ? logSheet.querySelector('#m-world-body') : null;
+    // 手機:把兩個面板各自移進浮動面板裡各自的插槽(用 CSS 依目前分頁 class 決定顯示哪一個);
+    // 桌機:移回原始父層。
+    function logsIntoSheet() {
+      if (logBody && logPanel) logBody.appendChild(logPanel);
+      if (worldBody && worldPanel) worldBody.appendChild(worldPanel);
+    }
+    function logsToColumn() {
+      if (logPanel && logPanelHome) logPanelHome.appendChild(logPanel);
+      if (worldPanel && worldPanelHome) worldPanelHome.appendChild(worldPanel);
     }
 
     // 手機上拿掉「冒險地圖」標題文字(騰空間 + 控制項靠左不撐開);保留 status-alerts/siege-timer
@@ -388,10 +393,6 @@
         // 戰鬥畫面狀態鏡射:把 #dt-buffs(背包→能力→狀態)同步到喝水列下方的 #m-battle-buffs
         if (battleBuffs) { var dtb = document.getElementById('dt-buffs'); var h = dtb ? dtb.innerHTML : ''; if (h !== _lastBuffsHtml) { _lastBuffsHtml = h; battleBuffs.innerHTML = h; } }
       }
-      // 村莊時遊戲會給 combat-log-panel 加 hidden(沒有戰鬥日誌):強制切系統日誌、隱藏「切到戰鬥」鈕
-      var noCombat = !combatLog || combatLog.classList.contains('hidden');
-      document.body.classList.toggle('mlog-nocombat', noCombat);
-      if (noCombat && document.body.classList.contains('mlog-combat')) setLog('sys');
       ensureLoadSelectSlotPicker();   // 選角畫面(手機)8 顆存檔位按鈕:面板一出現就補插+每次刷新 active/名稱,idempotent
       ensureLoadArchOverlay();   // 選角畫面(手機)拱門疊圖(見下方 2026-07-13 註解),idempotent
       ensureTownNpcList();   // 城鎮 NPC 條列式選單(手機;見下方 2026-07-13 稍晚註解),idempotent(簽章沒變就不重建)
@@ -607,20 +608,49 @@
     function wandererTownName(w) {
       return (typeof DB !== 'undefined' && DB.towns && DB.towns[w.townId]) ? DB.towns[w.townId].n : (w.townId || '?');
     }
+    var _wanderExpandDocHandler = null;
+    // 🔧(2026-07-21 使用者回報)按鈕常駐蓋在畫面右下角、擋到底下內容,要求「內縮隱藏,想看的時候點一下再出現」。
+    //   做法:預設收合成貼在邊緣的一小截(m-wbtn-collapsed,平移大半個按鈕寬度出畫面外),第一次點擊只負責展開、
+    //   不直接開選單;展開後點別處自動收合回去;已展開時點按鈕才是原本的「開/關收購清單」。
+    function collapseWanderButton() {
+      var btn = document.getElementById(WANDER_BTN_ID);
+      if (btn) btn.classList.add('m-wbtn-collapsed');
+      if (_wanderExpandDocHandler) { document.removeEventListener('click', _wanderExpandDocHandler); _wanderExpandDocHandler = null; }
+    }
+    function expandWanderButton() {
+      var btn = document.getElementById(WANDER_BTN_ID);
+      if (!btn) return;
+      btn.classList.remove('m-wbtn-collapsed');
+      if (_wanderExpandDocHandler) document.removeEventListener('click', _wanderExpandDocHandler);
+      setTimeout(function () {
+        _wanderExpandDocHandler = function (e) {
+          if (e.target === btn || btn.contains(e.target)) return;
+          if (document.getElementById(WANDER_MENU_ID)) return;   // 選單開著時交給選單自己的外部點擊處理,不搶著收合按鈕
+          collapseWanderButton();
+        };
+        document.addEventListener('click', _wanderExpandDocHandler);
+      }, 0);
+    }
     function ensureWanderButton() {
       if (document.getElementById(WANDER_BTN_ID)) return;
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.id = WANDER_BTN_ID;
+      btn.className = 'm-wbtn-collapsed';
       btn.title = '收購玩家(流浪商人)';
       btn.innerHTML = '<span class="m-wbtn-ic">🏴</span><span id="m-wander-badge" class="m-wbtn-badge"></span>';
-      btn.addEventListener('click', function (ev) { ev.stopPropagation(); toggleWanderMenu(ev); });
+      btn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (btn.classList.contains('m-wbtn-collapsed')) { expandWanderButton(); return; }
+        toggleWanderMenu(ev);
+      });
       document.body.appendChild(btn);
     }
     function closeWanderMenu() {
       var m = document.getElementById(WANDER_MENU_ID);
       if (m) m.remove();
       if (_wanderMenuDocHandler) { document.removeEventListener('click', _wanderMenuDocHandler); _wanderMenuDocHandler = null; }
+      collapseWanderButton();   // 選單關閉後按鈕跟著收合回邊緣,不繼續佔畫面
     }
     function toggleWanderMenu(ev) {
       if (document.getElementById(WANDER_MENU_ID)) { closeWanderMenu(); return; }
@@ -808,14 +838,23 @@
       closeLog();   // 切換下方選單時一併關閉浮動日誌
     }
 
-    function setLog(v) {
-      document.body.classList.remove('mlog-combat', 'mlog-sys');
-      document.body.classList.add('mlog-' + v);
+    // tab: 'log'(戰鬥／系統日誌面板) | 'world'(世界頻道面板) —— 兩者互斥,浮動面板一次只顯示一個。
+    function updateLogNavActive(tab) {
+      var lb = nav.querySelector('[data-nav="log"]'), wb = nav.querySelector('[data-nav="world"]');
+      if (lb) lb.classList.toggle('m-active', tab === 'log');
+      if (wb) wb.classList.toggle('m-active', tab === 'world');
     }
-    function updateLogNavActive(on) { var b = nav.querySelector('[data-nav="log"]'); if (b) b.classList.toggle('m-active', !!on); }
-    function openLog() { document.body.classList.add('mlog-open'); updateLogNavActive(true); }
-    function closeLog() { document.body.classList.remove('mlog-open'); updateLogNavActive(false); }
-    function toggleLog() { if (document.body.classList.contains('mlog-open')) closeLog(); else openLog(); }
+    function openLogPanel(tab) {
+      document.body.classList.remove('mlog-tab-log', 'mlog-tab-world');
+      document.body.classList.add('mlog-tab-' + (tab === 'world' ? 'world' : 'log'));
+      document.body.classList.add('mlog-open');
+      updateLogNavActive(tab);
+    }
+    function closeLog() { document.body.classList.remove('mlog-open'); updateLogNavActive(null); }
+    function toggleLogPanel(tab) {
+      if (document.body.classList.contains('mlog-open') && document.body.classList.contains('mlog-tab-' + tab)) { closeLog(); return; }
+      openLogPanel(tab);
+    }
 
     function apply(on) {
       if (on) {
@@ -824,11 +863,11 @@
         document.body.classList.add('m-mobile');
         logsIntoSheet();
         if (!/mview-(battle|config|bag)/.test(document.body.className)) setView('battle');
-        if (!/mlog-(combat|sys)/.test(document.body.className)) setLog('combat');
+        if (!/mlog-tab-(log|world)/.test(document.body.className)) document.body.classList.add('mlog-tab-log');
         mirror();
       } else {
         document.body.classList.remove('m-mobile');
-        document.body.classList.remove('mlog-open');
+        document.body.classList.remove('mlog-open', 'mlog-tab-log', 'mlog-tab-world');
         logsToColumn();
         // 2026-07-13:切回桌機時把手機版拱門疊圖節點一併清掉,不要留著等下次意外現形
         // (見上方 CSS `body.m-mobile #m-load-arch-overlay` 註解)。
@@ -846,7 +885,18 @@
     else if (mql.addListener) mql.addListener(onMobileChange);
     window.addEventListener('orientationchange', onMobileChange);   // 裝置旋轉也重新判定
 
-    window.__afkm = { version: '1.0.0', apply: apply, setView: setView, setLog: setLog, openLog: openLog, closeLog: closeLog, toggleLog: toggleLog, isMobile: detectMobile };
+    // 🔧(2026-07-21)setLog/openLog/toggleLog 保留給 afk-offline.js 等既有呼叫端相容:
+    //   setLog(v) 現在改成呼叫原作內建的 switchLogTab(v)(戰鬥/系統切換走面板自己的分頁鈕);
+    //   openLog/toggleLog 一律指「📜日誌」浮動面板(不是世界頻道)。
+    window.__afkm = {
+      version: '1.1.0', apply: apply, setView: setView,
+      setLog: function (v) { if (typeof window.switchLogTab === 'function') window.switchLogTab(v === 'sys' ? 'sys' : 'combat'); },
+      openLog: function () { openLogPanel('log'); },
+      openWorld: function () { openLogPanel('world'); },
+      closeLog: closeLog,
+      toggleLog: function () { toggleLogPanel('log'); },
+      isMobile: detectMobile
+    };
 
     initWanderButton();
 
@@ -876,49 +926,50 @@
       return d;
     }
 
-    // --- 底部導覽列(第 4 顆「日誌」切換浮動面板)----------------------------
+    // --- 底部導覽列(第 4 顆「日誌」、第 5 顆「世界」各自切換獨立浮動面板)----------------------------
     function buildNav() {
       var n = document.createElement('div');
       n.id = 'm-nav';
-      [['battle', '⚔️', '戰鬥', 'view'], ['config', '👥', '隊伍', 'view'], ['bag', '🎒', '背包', 'view'], ['log', '📜', '日誌', 'log'], ['logout', '🚪', '登出', 'logout']].forEach(function (it) {
+      [['battle', '⚔️', '戰鬥', 'view'], ['config', '👥', '隊伍', 'view'], ['bag', '🎒', '背包', 'view'], ['log', '📜', '日誌', 'log'], ['world', '🌐', '世界', 'log'], ['logout', '🚪', '登出', 'logout']].forEach(function (it) {
         var b = document.createElement('button');
         b.type = 'button';
         b.setAttribute('data-nav', it[0]);
         b.innerHTML = '<span style="font-size:20px;line-height:1">' + it[1] + '</span><span style="font-size:11px;line-height:1.2">' + it[2] + '</span>';
         if (it[3] === 'view') { b.setAttribute('data-v', it[0]); b.addEventListener('click', function () { setView(it[0]); }); }
         else if (it[3] === 'logout') { b.addEventListener('click', doLogout); }
-        else { b.addEventListener('click', function () { toggleLog(); }); }
+        else { (function (tab) { b.addEventListener('click', function () { toggleLogPanel(tab); }); })(it[0]); }   // it[0] = 'log' | 'world'
         n.appendChild(b);
       });
       return n;
     }
 
-    // --- 底部浮動日誌面板(只有內容容器;切換/關閉做成小鈕注入原本的 panel 標題列)------
+    // --- 底部浮動面板(日誌／世界頻道各自一個插槽,靠 body class 決定顯示哪一個;關閉做成小鈕注入原本的 panel 標題列)------
     function buildLogSheet() {
       var sheet = document.createElement('div');
       sheet.id = 'm-log-sheet';
       var body = document.createElement('div');
       body.id = 'm-log-body';
+      body.className = 'm-log-slot';
+      var worldBody = document.createElement('div');
+      worldBody.id = 'm-world-body';
+      worldBody.className = 'm-log-slot';
       sheet.appendChild(body);
+      sheet.appendChild(worldBody);
       return sheet;
     }
 
-    // 把「⇆ 切換 / ✕ 關閉」兩顆小鈕注入原本的日誌標題列(整合進原列,不再另開一排)。
-    // otherType:點 ⇆ 要切到的另一種日誌(看戰鬥就切系統,反之亦然)。
-    function decorateLogHeader(panel, otherType) {
+    // 把「✕ 關閉」鈕注入原本的標題列(整合進原列,不再另開一排)。
+    // 戰鬥/系統切換已改走面板自己內建的分頁鈕(logtab-btn-combat/sys),這裡不用再自己包一組⇆。
+    function decorateLogHeader(panel) {
       var hdr = panel.querySelector('.panel-header');
       if (!hdr || hdr.querySelector('.m-log-ctrls')) return;
       hdr.classList.add('m-log-hdr');
       var ctrls = document.createElement('span');
       ctrls.className = 'm-log-ctrls';
-      var sw = document.createElement('button');
-      sw.type = 'button'; sw.className = 'm-log-sw'; sw.textContent = '⇆'; sw.title = '切換戰鬥/系統日誌';
-      // 村莊(mlog-nocombat)時戰鬥日誌不存在 → 不給切
-      sw.addEventListener('click', function (e) { e.stopPropagation(); if (document.body.classList.contains('mlog-nocombat')) return; setLog(otherType); });
       var x = document.createElement('button');
       x.type = 'button'; x.className = 'm-log-x'; x.textContent = '✕'; x.title = '關閉';
       x.addEventListener('click', function (e) { e.stopPropagation(); closeLog(); });
-      ctrls.appendChild(sw); ctrls.appendChild(x);
+      ctrls.appendChild(x);
       hdr.appendChild(ctrls);
     }
   }
@@ -1573,36 +1624,37 @@
       'body.m-mobile #m-nav button.m-active{color:#fcd34d;background:#1e293b;}',
       'body.m-mobile #m-nav button:active{background:#334155;}',
 
-      /* 戰鬥/系統日誌:底部浮動面板。切換/關閉做成 ⇆/✕ 兩顆小鈕注入原本標題列,不再另開一排。
+      /* 🔧(2026-07-21)日誌／世界頻道:各自一個底部浮動面板插槽,靠 body class(mlog-tab-log/mlog-tab-world)
+         決定顯示哪一個,關閉做成 ✕ 小鈕注入原本標題列(戰鬥/系統切換已改走面板自己內建的分頁鈕,不用⇆)。
          原標題列半透明(讓血條透出),日誌內文(.log-bg 自帶深色底)維持不透明保持可讀。 */
       '#m-log-sheet{display:none;}',
       'body.m-mobile #m-log-sheet{display:none;position:fixed;left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));height:45dvh;height:45vh;z-index:50;flex-direction:column;background:transparent;border-top:2px solid #475569;box-shadow:0 -12px 34px rgba(0,0,0,.6);}',
       'body.m-mobile.mlog-open #m-log-sheet{display:flex !important;}',
-      'body.m-mobile #m-log-body{flex:1 1 auto;min-height:0;display:flex;overflow:hidden;background:transparent;}',
-      'body.m-mobile #m-log-body #combat-log-panel,body.m-mobile #m-log-body .m-syslog{flex:1 1 auto !important;width:100%;height:auto !important;min-height:0 !important;margin:0 !important;border-radius:0 !important;background:transparent !important;border:none !important;box-shadow:none !important;}',
-      // 🔧 2026-07-20(使用者回報「置頂的收購訊息背景是透明」):上面那行把整塊系統日誌面板背景強制
-      //   設成 transparent,#sys-log 本身有 .log-bg class 撐著不透明底色沒事,但「釘選列」#sys-log-pins
+      'body.m-mobile .m-log-slot{display:none;flex:1 1 auto;min-height:0;overflow:hidden;background:transparent;}',
+      'body.m-mobile.mlog-tab-log #m-log-body{display:flex !important;}',
+      'body.m-mobile.mlog-tab-world #m-world-body{display:flex !important;}',
+      'body.m-mobile #m-log-body #combat-log-panel,body.m-mobile #m-world-body #syslog-panel{flex:1 1 auto !important;width:100%;height:auto !important;min-height:0 !important;margin:0 !important;border-radius:0 !important;background:transparent !important;border:none !important;box-shadow:none !important;}',
+      // 🔧 2026-07-20(使用者回報「置頂的收購訊息背景是透明」):上面那行把整塊面板背景強制設成
+      //   transparent,#sys-log 本身有 .log-bg class 撐著不透明底色沒事,但「釘選列」#sys-log-pins
       //   (原作叫賣訊息常駐列,見 css/style.css)跟本檔自己插入的分類篩選按鈕列 #afk-syslog-filter-row
       //   都沒有 .log-bg,兩者原本各自的半透明底色(css/style.css 裡 rgba(74,60,30,.26) 那種)在桌機是疊在
       //   面板本身不透明底色上才好看,手機這裡面板底色被強制透明後,兩者就變成直接透出畫面底層內容
       //   (戰鬥畫面/特效數字),看起來像破圖。補一個跟面板同色系的不透明底色蓋掉。
-      'body.m-mobile #m-log-body #sys-log-pins,body.m-mobile #m-log-body #afk-syslog-filter-row{background:#2a2932 !important;}',
-      /* 原標題列:半透明 + 模糊(血條透出),右側留位放控制鈕 */
-      'body.m-mobile #m-log-body .panel-header.m-log-hdr{position:relative;background:rgba(15,23,42,0.45) !important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);padding-right:86px !important;}',
+      'body.m-mobile #m-log-body #sys-log-pins,body.m-mobile #m-log-body #afk-syslog-filter-row,body.m-mobile #m-world-body #sys-log-pins{background:#2a2932 !important;}',
+      /* 原標題列:半透明 + 模糊(血條透出),右側留位放關閉鈕 */
+      'body.m-mobile .m-log-hdr{position:relative;background:rgba(15,23,42,0.45) !important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);padding-right:50px !important;}',
       '.m-log-ctrls{display:none;}',
-      'body.m-mobile #m-log-body .panel-header.m-log-hdr .m-log-ctrls{display:flex;position:absolute;right:6px;top:50%;transform:translateY(-50%);gap:6px;}',
+      'body.m-mobile .m-log-hdr .m-log-ctrls{display:flex;position:absolute;right:6px;top:50%;transform:translateY(-50%);gap:6px;}',
       'body.m-mobile .m-log-ctrls button{width:34px;height:30px;border:1px solid rgba(51,65,85,0.85);background:rgba(30,41,59,0.7);color:#e2e8f0;border-radius:7px;font-size:15px;line-height:1;cursor:pointer;font-family:inherit;padding:0;touch-action:manipulation;}',
       'body.m-mobile .m-log-ctrls button:active{background:rgba(71,85,105,0.9);}',
-      /* 村莊:沒有戰鬥日誌可切 → 藏起「⇆ 切換」鈕(只剩 ✕ 關閉) */
-      'body.m-mobile.mlog-nocombat .m-log-sw{display:none !important;}',
-      'body.m-mobile.mlog-sys #m-log-body #combat-log-panel{display:none !important;}',
-      'body.m-mobile.mlog-combat #m-log-body .m-syslog{display:none !important;}',
       /* 系統日誌標題列右側「黑市拍賣中:商品名」(原作 #syslog-pandora,帶 truncate):
-         手機浮動面板寬度窄,扣掉標題與右側 ⇆/✕ 鈕後剩沒幾字 → 商品名被 truncate 切掉顯示不完整。
+         手機浮動面板寬度窄,扣掉標題與右側 ✕ 鈕後剩沒幾字 → 商品名被 truncate 切掉顯示不完整。
          有商品時(:not(:empty))讓它換到標題下方整行、正常折行不截斷;沒商品(:empty)維持原樣不佔行高。
          scope 在手機浮動日誌的 .m-log-hdr,桌機與原作改版皆不受影響。 */
-      'body.m-mobile #m-log-body .panel-header.m-log-hdr{flex-wrap:wrap !important;row-gap:0 !important;}',
-      'body.m-mobile #m-log-body .panel-header.m-log-hdr #syslog-pandora:not(:empty){flex:1 1 100% !important;white-space:normal !important;overflow:visible !important;text-overflow:clip !important;text-align:left !important;line-height:1.2 !important;margin-top:0 !important;}',
+      'body.m-mobile .m-log-hdr{flex-wrap:wrap !important;row-gap:0 !important;}',
+      'body.m-mobile .m-log-hdr #syslog-pandora:not(:empty){flex:1 1 100% !important;white-space:normal !important;overflow:visible !important;text-overflow:clip !important;text-align:left !important;line-height:1.2 !important;margin-top:0 !important;}',
+      /* 世界頻道輸入列在手機浮動面板裡要固定貼底、不被壓縮(同桌機邏輯,見 css/style.css #world-input-row) */
+      'body.m-mobile #m-world-body #syslog-panel{display:flex !important;flex-direction:column !important;}',
 
       /* 地圖標題列:手機隱藏「冒險地圖」文字,控制項靠左不撐開 */
       'body.m-mobile .m-maptitle{display:none !important;}',
@@ -1737,7 +1789,10 @@
          單行不換行(超出裁切+刪節號),點擊開叫賣選單 */
       // 🏴 收購NPC固定按鈕:position:fixed 不受 #game-screen 版面流程/縮放重算影響(修「橫幅縮放後消失」問題);
       //   置於導覽列上方、右側,不擋內容也不跟導覽列衝突;沒有收購NPC在線時 JS 會設 display:none 隱藏。
-      '#m-wander-btn{position:fixed;right:12px;bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:70;width:44px;height:44px;border-radius:9999px;background:linear-gradient(135deg,#78350f,#92400e);border:1px solid #d97706;box-shadow:0 2px 10px rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:0;}',
+      '#m-wander-btn{position:fixed;right:12px;bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:70;width:44px;height:44px;border-radius:9999px;background:linear-gradient(135deg,#78350f,#92400e);border:1px solid #d97706;box-shadow:0 2px 10px rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:0;transition:transform .18s ease;}',
+      /* 收合狀態(預設):平移大半個按鈕寬度貼到畫面邊緣外,只留一小截+紅點數字可見,點一下展開回原位 */
+      '#m-wander-btn.m-wbtn-collapsed{transform:translateX(50%);opacity:.7;}',
+      '#m-wander-btn.m-wbtn-collapsed:active{opacity:.9;}',
       '#m-wander-btn .m-wbtn-ic{font-size:20px;line-height:1;}',
       '#m-wander-btn .m-wbtn-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#dc2626;color:#fef2f2;font-size:11px;font-weight:700;line-height:18px;text-align:center;}',
       '#m-wander-btn .m-wbtn-badge:empty{display:none;}',

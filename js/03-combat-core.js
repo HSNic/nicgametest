@@ -183,84 +183,35 @@ function gameLoop() {
     // 🛡️ 反盜用：非官方網域時橫幅若被移除則自動重掛（官方/本機為快取布林值判定，成本可忽略）
     if (typeof _origEnforce === 'function') _origEnforce();
     let now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    if(_loopLast == null) _loopLast = now;
+    if (_loopLast == null) {
+        _loopLast = now;
+        _tickDebt = 0;
+        return;
+    }
     let elapsed = now - _loopLast;
     _loopLast = now;
 
-    // 遊戲未進行 / 角色死亡：不累積也不補跑（丟棄這段時間）
-    if(!state.running || player.dead) { _tickDebt = 0; return; }
-
-    if(elapsed < 0) elapsed = 0;
-    if(elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS; // 上限保護
-    _tickDebt += elapsed;
-
-    // 補跑排程：owed = 目前積欠的 tick 數。即時遊玩恆為 1；切分頁/背景降速回來時可能累積上千。
-    let owed = Math.floor(_tickDebt / TICK_MS);
-    if(owed <= 0) return;
-
-    if(owed === 1) {           // 正常情況：每 100ms 跑一個 tick
-        _tickDebt -= TICK_MS;
-        // 🔧 前景即時遊玩不顯示金幣（金幣不逐殺輸出，也不在即時累積）；金幣僅於背景補跑回來時由 flushAwaySummary 彙整顯示。
-        flushAwaySummary(); // 回到即時：若先前累積了補跑所得，於此統一輸出一次
-        state.inTick = true;   // 🔧 架構#2：tick 期間的擊殺只標記，結束後統一清算
-        try { tick(); } finally { state.inTick = false; settleDeadMobs(); }
-        flushTickRender();   // 🚀 重繪合併：把本 tick 內累積的 updateUI/renderMobs 統一重繪一次
+    // 背景分頁、尚未進行或角色死亡時直接丟棄經過時間。
+    if ((typeof document !== 'undefined' && document.hidden) || !state.running || player.dead) {
+        _tickDebt = 0;
         return;
     }
 
-    // 需要補跑多個 tick：期間關閉逐 tick 的畫面刷新與戰鬥訊息，跑完再統一刷新一次
-    // 補跑期間 logSys 被靜音，先記錄背包與金幣，補跑後把增量「累積」起來（不立即輸出，
-    // 避免計時抖動/背景降速造成每次小補跑都洗一行訊息）。達門檻並回到即時後由 flushAwaySummary 統一輸出。
-    // 🚀 v3.2.78 補跑改「計算時間預算」榨乾：因 state.ff 期間已完全壓掉重繪/動畫/特效，每個 tick 很便宜，
-    //   不再硬性 100 tick/次上限（舊制會讓長時間離開回來後每次迴圈只補 100 tick、要慢慢跑好幾秒甚至十幾秒）。
-    //   改成一路補到本次呼叫累計花掉 ~CATCHUP_BUDGET_MS 才讓步，剩下的留給下一個 100ms 迴圈。
-    //   掛機收益一格不少（不裁切 _tickDebt，只扣真正跑掉的 tick），只是追平得更快、且 UI 仍保持回應。
-    const CATCHUP_BUDGET_MS = 40;   // 每次呼叫最多花在補跑的主執行緒時間（其餘留給點擊/存檔/瀏覽器繪製）
-    const HARD_TICK_CAP = 6000;     // 單次呼叫保底硬上限（防極端情況一次迴圈跑過久）
-    const _catchStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    const _invBefore = {};
-    player.inv.forEach(i => { _invBefore[i.id] = (_invBefore[i.id] || 0) + i.cnt; });
-    const _goldBefore = player.gold;
+    if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = 0;
+    _tickDebt += Math.min(elapsed, TICK_MS);
+    if (_tickDebt < TICK_MS) return;
 
-    state.ff = true;
-    state.ffSmall = owed <= 20;   // 🩹 v3.4.49 「小補跑」旗標(≤2秒)：前景微卡頓(GC/存檔LZ壓縮/開大面板)也會觸發 owed>=2 補跑，該批擊殺原本被 vfxKill 的 ff 閘全部瞬消（用戶回報「死亡動畫有時不播」主因）。小批次放行死亡殘影(仍受 _deathGhostCount<12 節流)；長背景補跑維持全靜音免回前景爆量。
-    state.inTick = true;   // 🔧 架構#2：補跑期間同樣每個 tick 結束才清算死亡
-    let ran = 0;
+    // 每次排程最多吸收並執行一個 tick；前次不足 100ms 的正常計時餘量仍保留。
+    // 即使瀏覽器節流數分鐘或主執行緒長時間卡頓，也不會在恢復後高速追跑。
+    _tickDebt -= TICK_MS;
+    state.inTick = true;
     try {
-        while(ran < owed && ran < HARD_TICK_CAP) {
-            if(!state.running || player.dead) break;
-            tick();
-            settleDeadMobs();   // 每個 tick 結束即清算，下一個 tick 以遞補完成的場面開始
-            ran++;
-            if((ran & 15) === 0) {   // 每 16 tick 量一次時間（省 performance.now 呼叫成本）；達預算即讓步
-                let _el = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - _catchStart;
-                if(_el >= CATCHUP_BUDGET_MS) break;
-            }
-        }
+        tick();
     } finally {
-        state.ff = false;   // 保證即使 tick() 拋例外也會解除補跑旗標，避免畫面/出怪永久凍結
-        state.ffSmall = false;   // 🩹 v3.4.49 小補跑旗標一併復位
         state.inTick = false;
-        settleDeadMobs();   // 保底：例外中斷時也完成清算
-        _tickDebt -= ran * TICK_MS;   // 只扣真正跑掉的 tick；未跑完的留待下一個迴圈繼續補
-        //   ⚠️ 必須在 finally 內：若 tick() 拋例外（如某傭兵技能的程式錯誤），這行原本會被跳過→已跑掉的 tick 沒從時間帳扣掉
-        //   → _tickDebt 只增不減、owed 越滾越大，每次迴圈都重跑一次巨量補跑再度拋例外＝遊戲時間永遠追不平、畫面卡住。
+        settleDeadMobs();
     }
-
-    // 將這次補跑的淨增量併入累積（以前後數量差計算，含被消耗者的負值，最終只輸出淨正值）
-    const _invAfter = {};
-    player.inv.forEach(i => { _invAfter[i.id] = (_invAfter[i.id] || 0) + i.cnt; });
-    let _ids = new Set([...Object.keys(_invBefore), ...Object.keys(_invAfter)]);
-    _ids.forEach(id => {
-        let delta = (_invAfter[id] || 0) - (_invBefore[id] || 0);
-        if (delta !== 0) _awayAcc.items[id] = (_awayAcc.items[id] || 0) + delta;
-    });
-    let _goldGain = player.gold - _goldBefore;
-    if (_goldGain > 0) _awayAcc.gold += _goldGain;
-    _awayAcc.ticks += ran;
-
-    // 補跑結束，統一刷新畫面（累積所得於下一個即時 tick 開頭由 flushAwaySummary 統一輸出）
-    updateUI(); renderMobs(); renderTabs();
+    flushTickRender();
 }
 
 // 🛡️ 絕對屏障：與世界隔絕——無法攻擊/施法/用道具、不自然恢復、不受任何傷害（持續期間 player.buffs.sk_abs_barrier>0）
@@ -362,6 +313,8 @@ function tick() {
         if (_mpDue) _regenMP();
         if ((_hpDue || _mpDue) && typeof updateUI === 'function') updateUI();
     }
+    if (state.ticks % 50 === 0 && player._hardSkinPool != null && player._hardSkinPool < 20) player._hardSkinPool++;   // 🏺 v3.6.44 守護獸的難題：硬皮池每 5 秒恢復 1（上限 20·初始 30 可超過上限不再回）
+    if (player._crushFuryUntil && state.ticks >= player._crushFuryUntil) { player._crushFuryUntil = 0; calcStats(); }   // 🔨 v3.6.47 粉碎鎚即死攻速buff到期：清除並重算攻速（比照切割到期）
     if (state.ticks % 10 === 0) {
         siegeTick();   // 攻城戰：每秒檢查時限
         pvpPostKillWhisperTick();   // PVP：擊敗玩家後的一小時限時密語
@@ -497,6 +450,9 @@ function tick() {
                     if (player.buffs.sk_sunlight > 0) _mv *= 0.8;                     // ☀️ v3.4.26 日光術：重生延遲 ×0.8（原「固定 −1 秒」→乘算）
                     if (sherineWorldActive() && !isSiegeArea(mapState.current)) _mv *= 0.8;   // 🔮 v3.4.26 席琳的世界：重生延遲 ×0.8（與日光術相乘疊加）
                     delay = Math.max(5, Math.round(50 * _mv));                       // 🚧 下限 5 tick＝0.5 秒
+                    if (isSiegeArea(mapState.current) && typeof npcClanSiegeRespawnMultiplier === 'function') {
+                        delay = Math.max(1, Math.round(delay * npcClanSiegeRespawnMultiplier()));
+                    }
                 }
                 if(mapState.spawnAt[i] == null) mapState.spawnAt[i] = nowT + delay; // 空格剛出現：排程 delay 後（一般／純BOSS房／軍王之室皆 5 秒）
                 if(nowT >= mapState.spawnAt[i]) {
@@ -864,6 +820,7 @@ function pvpEnsureState() {
     if (!player || !player.cls) return;
     player.alignmentValue = pvpClampAlignment(player.alignmentValue);
     if (player.pvpOn === undefined) player.pvpOn = false;
+    if (typeof npcClanWarActive === 'function' && npcClanWarActive(player)) player.pvpOn = true;
     if (!Array.isArray(player.pvpRevengeList)) player.pvpRevengeList = [];
     player.pvpRevengeList = player.pvpRevengeList.filter(r => r && r.n).slice(0, PVP_REVENGE_MAX).map(r => ({
         n: String(r.n).slice(0, 24),
@@ -946,25 +903,38 @@ function pvpChangeAlignment(delta) {
     player.alignmentValue = pvpClampAlignment(before + delta);
     return player.alignmentValue - before;
 }
-function pvpRandomName() {
+function _pvpNameRand(rand) {
+    let n = (typeof rand === 'function') ? Number(rand()) : Math.random();
+    if (!Number.isFinite(n)) n = Math.random();
+    return Math.max(0, Math.min(0.999999999, n));
+}
+function _pvpNamePick(list, rand) {
+    if (!list || !list.length) return '';
+    return list[Math.floor(_pvpNameRand(rand) * list.length)];
+}
+function pvpRandomNameWith(rand) {
+    rand = (typeof rand === 'function') ? rand : Math.random;
     let name;
-    if (Math.random() < 0.45) {
-        name = PVP_NAME_SHORT[Math.floor(Math.random() * PVP_NAME_SHORT.length)];
+    if (_pvpNameRand(rand) < 0.45) {
+        name = _pvpNamePick(PVP_NAME_SHORT, rand);
     } else {
-        let h = PVP_NAME_HEAD[Math.floor(Math.random() * PVP_NAME_HEAD.length)];
-        let c = PVP_NAME_CORE[Math.floor(Math.random() * PVP_NAME_CORE.length)];
-        let t = PVP_NAME_TAIL[Math.floor(Math.random() * PVP_NAME_TAIL.length)];
-        let style = Math.floor(Math.random() * 4);
+        let h = _pvpNamePick(PVP_NAME_HEAD, rand);
+        let c = _pvpNamePick(PVP_NAME_CORE, rand);
+        let t = _pvpNamePick(PVP_NAME_TAIL, rand);
+        let style = Math.floor(_pvpNameRand(rand) * 4);
         name = style === 0 ? `${h}${c}`
             : style === 1 ? `${c}${t}`
             : style === 2 ? `${h}${c}${t}`
             : `${c}oO${h}`;
     }
-    if (Math.random() < 0.4) {
-        let wrapper = PVP_NAME_WRAPPERS[Math.floor(Math.random() * PVP_NAME_WRAPPERS.length)];
+    if (_pvpNameRand(rand) < 0.15) {
+        let wrapper = _pvpNamePick(PVP_NAME_WRAPPERS, rand);
         name = wrapper[0] + name + wrapper[1];
     }
     return name;
+}
+function pvpRandomName() {
+    return pvpRandomNameWith(Math.random);
 }
 function pvpRandomAlignment() {
     return pvpClampAlignment(Math.floor(PVP_ALIGN_MIN + Math.random() * (PVP_ALIGN_MAX - PVP_ALIGN_MIN + 1)));
@@ -979,16 +949,21 @@ function pvpResolveLevelOffset(entry) {
     if (entry) entry.levelOffset = offset;
     return offset;
 }
-function pvpCreateRandomOpponent(onFieldNames) {
+function pvpCreateRandomOpponent(onFieldNames, clanOptions) {
     let tries = 0, n = '';
     do { n = pvpRandomName(); tries++; } while (onFieldNames && onFieldNames.includes(n) && tries < 8);
-    return {
+    let entry = {
         n: n,
         avatar: PVP_AVATARS[Math.floor(Math.random() * PVP_AVATARS.length)] || '男戰士',
         alignmentValue: pvpRandomAlignment(),
         levelOffset: pvpRandomLevelOffset(),
         pvpRandom: true
     };
+    if (!(clanOptions && clanOptions.skipClanAssign) && typeof npcClanAssignOpponent === 'function') {
+        let opts = Object.assign({}, clanOptions || {}, { onFieldNames:onFieldNames || [] });
+        entry = npcClanAssignOpponent(entry, opts) || entry;
+    }
+    return entry;
 }
 function pvpMarkForChase(entry) {
     if (!entry || !entry.n) return;
@@ -1013,10 +988,14 @@ function pvpMarkForChase(entry) {
 }
 function pvpTrollLevelOverride(entry) {
     let siegeLevel = Number(entry && entry.siegeLevel);
-    if (Number.isFinite(siegeLevel)) return siegeLevel;
     let revengeCount = Math.max(0, Math.min(PVP_KILL_WHISPER_REVENGE_MAX, Math.floor(Number(entry && entry.revengeCount) || 0)));
     let playerLevel = Math.max(1, Math.round(Number(player.lv) || 1));
-    return Math.max(1, playerLevel + pvpResolveLevelOffset(entry) + revengeCount * 3);
+    let baseLevel = Number.isFinite(siegeLevel)
+        ? siegeLevel
+        : playerLevel + pvpResolveLevelOffset(entry) + revengeCount * 3;
+    let clanWarBonus = entry && entry.clanAtWar ? 5 : 0;
+    let groupBattleBonus = entry && entry._npcClanBattle ? 3 : 0;
+    return Math.max(1, baseLevel + clanWarBonus + groupBattleBonus);
 }
 function pvpRegisterKillWhisper(mob) {
     if (!mob || !mob.trollPlayer || mob._siegePlayer || !mob.n || !player || !player.cls) return;
@@ -1082,17 +1061,20 @@ function pvpAddRevengeFromMob(mob) {
 }
 function pvpOnPlayerDeath(killers) {
     if (!Array.isArray(killers) || !killers.length) return;
+    if (typeof npcClanOnPlayerKilledBy === 'function') npcClanOnPlayerKilledBy(killers);
     killers.forEach(m => pvpAddRevengeFromMob(m));
     try { if (typeof renderPvpTab === 'function') renderPvpTab(); } catch (e) {}
 }
 function pvpOnKillMob(mob) {
     if (!mob || !player || !player.cls) return;
     pvpEnsureState();
+    if (mob.trollPlayer && mob._npcClanId && typeof npcClanOnNpcKilled === 'function') npcClanOnNpcKilled(mob);
     if (mob.pledgeEnemy || mob.siegeEnemy || mob.race === '血盟' || (typeof isSiegeArea === 'function' && typeof mapState !== 'undefined' && mapState && isSiegeArea(mapState.current))) return;
     if (mob.trollPlayer) {
+        if (typeof npcClanKillIgnoresAlignment === 'function' && npcClanKillIgnoresAlignment(mob)) return;
         let a = pvpClampAlignment(mob._pvpAlignment || 0);
-        if (a >= PVP_ALIGN_JUSTICE) pvpChangeAlignment(-6000);
-        else if (a > PVP_ALIGN_EVIL) pvpChangeAlignment(-3000);
+        if (a >= PVP_ALIGN_JUSTICE) pvpChangeAlignment(-10000);
+        else if (a > PVP_ALIGN_EVIL) pvpChangeAlignment(-5000);
         pvpRegisterKillWhisper(mob);
         if (player.pvpRevengeList && player.pvpRevengeList.length) {
             let _n0 = player.pvpRevengeList.length;
@@ -1102,6 +1084,7 @@ function pvpOnKillMob(mob) {
         return;
     }
     pvpChangeAlignment(1);
+    if (typeof npcClanMaybeStartGroupBattle === 'function') npcClanMaybeStartGroupBattle(mob);
 }
 const TROLL_ENCOUNTER_PLAYER_TAUNTS = [
     '剛剛不是很會喊？出來講啊', '別躲安全區，現在換我找你', '你不是要 PK？我到門口了', '座標不用報，我自己來了', '剛剛嘴很快，手有跟上嗎', '少裝路過，看到你了',
@@ -1194,20 +1177,22 @@ function _trollEncounterEsc(s) {
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[c]);
 }
-function logTrollEncounterTrashTalk(name) {
-    if (typeof logSys !== 'function' || !name) return;
-    let _name = _trollEncounterEsc(name);
-    logSys(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${_name}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_PLAYER_TAUNTS))}</span>`);
-    logSys(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${_name}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_NPC_TAUNTS))}</span>`);
+function logTrollEncounterTrashTalk(entry) {
+    let name = entry && entry.n ? entry.n : entry;
+    if (typeof logWorld !== 'function' || !name) return;
+    let align = entry && entry.alignmentValue != null ? pvpClampAlignment(entry.alignmentValue) : 0;
+    let nameHtml = pvpNameHtml(name, align, 'font-bold');
+    logWorld(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_PLAYER_TAUNTS))}</span>`);
+    logWorld(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(TROLL_ENCOUNTER_NPC_TAUNTS))}</span>`);
 }
 function logPvpRevengeTrashTalk(entry) {
-    if (typeof logSys !== 'function') return;
+    if (typeof logWorld !== 'function') return;
     let name = entry && entry.n ? entry.n : entry;
     if (!name) return;
     let align = entry && entry.alignmentValue != null ? pvpClampAlignment(entry.alignmentValue) : 0;
     let nameHtml = pvpNameHtml(name, align, 'font-bold');
-    logSys(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_PLAYER_REPLIES))}</span>`);
-    logSys(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_REVENGE_REPLIES))}</span>`);
+    logWorld(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_PLAYER_REPLIES))}</span>`);
+    logWorld(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_REVENGE_REPLIES))}</span>`);
 }
 function _pvpKillWhisperRecord(name) {
     pvpEnsureState();
@@ -1228,11 +1213,11 @@ function _pvpKillWhisperPickThree() {
     return pool.slice(0, 3);
 }
 function _pvpKillWhisperLog(rec) {
-    if (!rec || typeof logSys !== 'function') return;
+    if (!rec || typeof logWorld !== 'function') return;
     let arg = _pvpKillWhisperArg(rec.n);
     let name = pvpNameHtml(rec.n, rec.alignmentValue, 'font-bold');
     let line = _trollEncounterPick(PVP_KILL_WHISPER_LINES);
-    logSys(
+    logWorld(
         `<span class="wander-chat-in"><button type="button" class="pvp-kill-whisper-name" ` +
         `onclick="openPvpKillWhisperMenu(decodeURIComponent('${arg}'),${rec.whisperSeq},event)">[${name}]</button> ` +
         `${_trollEncounterEsc(line)}</span>`
@@ -1332,7 +1317,7 @@ function pvpReplyToKillWhisper(name, whisperSeq, choiceIndex) {
     rec.updatedAt = now;
     let nameHtml = pvpNameHtml(rec.n, rec.alignmentValue, 'font-bold');
     if (typeof logSys === 'function') {
-        logSys(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${nameHtml}]</span> ${_trollEncounterEsc(line)}</span>`);
+        logWorld(`<span class="wander-chat-out"><span class="wander-chat-arrow">-&gt;</span> <span class="wander-chat-target">[${nameHtml}]</span> ${_trollEncounterEsc(line)}</span>`);
     }
     let seeksRevenge = _pvpKillWhisperTestBuild() || Math.random() < PVP_KILL_WHISPER_REVENGE_CHANCE;
     if (seeksRevenge) {
@@ -1342,12 +1327,12 @@ function pvpReplyToKillWhisper(name, whisperSeq, choiceIndex) {
         rec.nextCheckAt = 0;
         pvpMarkForChase(rec);
         if (typeof logSys === 'function') {
-            logSys(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_REVENGE_REPLIES))}</span>`);
+            logWorld(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_REVENGE_REPLIES))}</span>`);
             let last = rec.revengeCount >= PVP_KILL_WHISPER_REVENGE_MAX;
-            logSys(`<span class="text-rose-400 font-bold">${last ? '這是對方第 3 次也是最後一次尋仇；之後不再密語。' : `對方再次開始追殺你（尋仇 ${rec.revengeCount} / ${PVP_KILL_WHISPER_REVENGE_MAX}）。`}</span>`);
+            logSys(`<span class="text-rose-400 font-bold">${last ? '這是對方第 3 次也是最後一次尋仇；之後不再密語。' : '對方再次開始追殺你。'}</span>`);
         }
     } else if (typeof logSys === 'function') {
-        logSys(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_DISMISS_REPLIES))}</span>`);
+        logWorld(`<span class="wander-chat-in"><span class="wander-chat-speaker">[${nameHtml}]</span> ${_trollEncounterEsc(_trollEncounterPick(PVP_KILL_WHISPER_DISMISS_REPLIES))}</span>`);
     }
     try { if (typeof saveGame === 'function') saveGame(); } catch (e) {}
 }
@@ -1481,6 +1466,7 @@ function spawnMob(idx) {
     let normalPool = pool.filter(id => DB.mobs[id] && !DB.mobs[id].boss);
     let mobId;
     let siegeArea = isSiegeArea(mapState.current);
+    let npcClanBattle = typeof npcClanGroupBattleActive === 'function' && npcClanGroupBattleActive();
     let allowMultiBoss = backSlotsActive() && !siegeArea;   // 🆕 一般5格地圖可同時出現多隻頭目；攻城雖改為5格，仍維持單一城門／守護塔
     // 🏛️ 長老之室 BOSS 節流：場上最多同時 2 隻長老 BOSS；已有 1 隻時須該 BOSS 存活滿 3 分鐘才可能出現第 2 隻
     let _elderRoom = mapState.current === 'elder_room';
@@ -1490,7 +1476,7 @@ function spawnMob(idx) {
         if (_ab.length >= 2) _elderBossOk = false;
         else if (_ab.length === 1) _elderBossOk = (Date.now() - (_ab[0]._bornMs || Date.now())) >= 180000;
     }
-    let wantBoss = (allowMultiBoss || !bossInBattle) && bossPool.length > 0 && (!_elderRoom || _elderBossOk) && (mapState.forceBoss || (siegeArea ? (!mapState.suppressSiegeBoss && Math.random() < 0.10) : (_elderRoom ? Math.random() < 0.05 : Math.random() < 0.01)));
+    let wantBoss = !npcClanBattle && (allowMultiBoss || !bossInBattle) && bossPool.length > 0 && (!_elderRoom || _elderBossOk) && (mapState.forceBoss || (siegeArea ? (!mapState.suppressSiegeBoss && Math.random() < 0.10) : (_elderRoom ? Math.random() < 0.05 : Math.random() < 0.01)));
     if(mapState.forceBoss) mapState.forceBoss = false;   // 強制旗標只作用於下一次生怪
     if(wantBoss) {
         // 🔧 同名BOSS限制：場上已有同名BOSS時不再抽到該名→需地圖池有 2 種以上「不同名」BOSS 才可能同時出現多隻；若無不同名可出則退回一般怪
@@ -1509,20 +1495,36 @@ function spawnMob(idx) {
         mobId = safePool[Math.floor(Math.random() * safePool.length)];
         if (siegeArea) {
             let _onF = mapState.mobs.filter(m => m).map(m => m.n);
-            let _siegePvp = pvpCreateRandomOpponent(_onF);
+            let _defClanId = typeof npcClanSiegeDefenderId === 'function' ? npcClanSiegeDefenderId() : null;
+            let _siegePvp = pvpCreateRandomOpponent(_onF, _defClanId ? {
+                defenderClanId:_defClanId,
+                defenderChance:0.5
+            } : null);
             _siegePvp.siegePlayer = true;
             _siegePvp.siegeLevel = Math.max(1, player.lv + Math.floor(Math.random() * 21) - 10);
             mobId = trollPickClassMob(_siegePvp.avatar);   // 😤 v3.6.20 70%/30% 模板抽選
             mapState._trollSpawn = _siegePvp;
         }
-        // PVP：玩家開啟後，野外一般出怪有 1% 機率遭遇隨機玩家 NPC。
+        // PVP／NPC 血盟宣戰：依宣戰方向決定野外遭遇率與敵盟占比。
         if (typeof pvpEnsureState === 'function') pvpEnsureState();
-        if (player.pvpOn && typeof MAP_CATEGORIES !== 'undefined' && MAP_CATEGORIES.wild
+        let _clanEncounter = typeof npcClanEncounterProfile === 'function'
+            ? npcClanEncounterProfile(player)
+            : null;
+        let _wildPvpChance = _clanEncounter && _clanEncounter.active
+            ? _clanEncounter.chance
+            : PVP_WILD_CHANCE;
+        let _wildPvpAllowed = !!player.pvpOn || !!(_clanEncounter && _clanEncounter.npcInitiated);
+        if (_wildPvpAllowed && typeof MAP_CATEGORIES !== 'undefined' && MAP_CATEGORIES.wild
             && MAP_CATEGORIES.wild.some(m => m.v === mapState.current)
             && !PURE_BOSS_MAPS.includes(mapState.current) && !isSiegeArea(mapState.current)
-            && Math.random() < PVP_WILD_CHANCE) {
+            && Math.random() < _wildPvpChance) {
             let _onF = mapState.mobs.filter(m => m).map(m => m.n);
-            let _pvp = pvpCreateRandomOpponent(_onF);
+            let _clanOpts = _clanEncounter && _clanEncounter.active ? {
+                warEncounter:true,
+                encounterClanIds:_clanEncounter.clanIds,
+                enemyClanChance:_clanEncounter.enemyClanChance
+            } : null;
+            let _pvp = pvpCreateRandomOpponent(_onF, _clanOpts);
             if (_pvp && !_onF.includes(_pvp.n)) {
                 mobId = trollPickClassMob(_pvp.avatar);   // 😤 v3.6.20 70%/30% 模板抽選
                 mapState._trollSpawn = _pvp;
@@ -1574,6 +1576,14 @@ function spawnMob(idx) {
         && Math.random() < 0.01) {
         mobId = 'lindvior';
     }
+    if (npcClanBattle && typeof npcClanCreateGroupBattleOpponent === 'function') {
+        let _battle = mapState.npcClanBattle;
+        let _groupPvp = npcClanCreateGroupBattleOpponent(_battle && _battle.clanId);
+        if (_groupPvp) {
+            mobId = trollPickClassMob(_groupPvp.avatar);
+            mapState._trollSpawn = _groupPvp;
+        }
+    }
     if (mapState._trollSpawn && (!DB.mobs[mobId] || !DB.mobs[mobId].trollPlayer)) delete mapState._trollSpawn;
     let base = DB.mobs[mobId];
     if(!base) return;
@@ -1585,6 +1595,10 @@ function spawnMob(idx) {
     if(base.pledgeEnemy) applyPledgeEnemyScaling(mapState.mobs[idx]);   // 血盟敵人：依玩家等級縮放
     if(base.trollPlayer) {   // 😤 白目玩家：等級縮放＋名稱=叫賣NPC本人＋戰鬥動態=玩家職業動畫（v3.5.64·assets/anim/玩家<avatar>·從職業動畫產出·idle/attack/hurt/death/skill＋_s 影子全套·動態註冊 MOB_ANIM_ALIAS 真共用）
         let _t = mapState._trollSpawn;
+        if (_t && !_t._npcClanAssigned && typeof npcClanAssignOpponent === 'function') {
+            _t = npcClanAssignOpponent(_t) || _t;
+            mapState._trollSpawn = _t;
+        }
         applyTrollScaling(mapState.mobs[idx], pvpTrollLevelOverride(_t));
         if (_t) {
             mapState.mobs[idx].n = _t.n;
@@ -1593,6 +1607,13 @@ function spawnMob(idx) {
             mapState.mobs[idx]._pvpLevelOffset = pvpResolveLevelOffset(_t);
             mapState.mobs[idx]._pvpRandom = !!_t.pvpRandom;
             mapState.mobs[idx]._pvpRevenge = !!_t.pvpRevenge;
+            mapState.mobs[idx]._npcClanId = _t.clanId || null;
+            mapState.mobs[idx]._npcClanName = _t.clanName || '';
+            mapState.mobs[idx]._npcClanLeader = !!_t.clanLeader;
+            mapState.mobs[idx]._npcClanAtWar = !!_t.clanAtWar;
+            mapState.mobs[idx]._npcClanConflict = !!_t.clanConflict;
+            mapState.mobs[idx]._npcClanHasCastle = !!_t.clanHasCastle;
+            mapState.mobs[idx]._npcClanBattle = !!_t._npcClanBattle;
             if (_t.siegePlayer) {
                 mapState.mobs[idx].siegeEnemy = true;
                 mapState.mobs[idx]._siegePlayer = true;
@@ -1611,7 +1632,7 @@ function spawnMob(idx) {
                 MOB_ANIM_NAMES.add(_t.n);
                 if (typeof MOB_ANIM_SPRITE_SHADOW !== "undefined") MOB_ANIM_SPRITE_SHADOW.add(_t.n);   // 16 職業資料夾皆含 _s 影子層
             }
-            logTrollEncounterTrashTalk(_t.n);
+            logTrollEncounterTrashTalk(_t);
         }
         delete mapState._trollSpawn;
     }
@@ -2197,6 +2218,7 @@ function procCombo(t, fullDmg) {
     t.justHit = getWpnEle(player.eq.wpn, wpn);
     mobWake(t);
     if (t.curHp > 0) wearHardSkin(t, player.eq.wpn ? player.eq.wpn.id : null, res.heavy, false, true, player.classicMode);   // 連擊亦為一般攻擊：依武器消磨硬皮
+    if (fullDmg && wpn && wpn.mpOnComboHit && player.d) player.mp = Math.min(player.d.mmp || player.mmp || player.mp, player.mp + wpn.mpOnComboHit);   // 🏺 v3.6.44 嗜血騎士的雙刀：雙擊追擊命中恢復 MP
     let mark = (res.heavy && res.crit) ? '會心一擊' : (res.crit ? '爆擊' : (res.heavy ? '重擊' : ''));
     logCombat(`<span class="font-bold" style="color:#c4b5fd;text-shadow:0 0 6px #8b5cf6;">【雙擊】</span>追擊 <span class="${getMobColor(t.lv)}">${t.n}</span>，造成 ${dmg} 點傷害${mark?'（'+mark+'!）':''}。`, 'player');
     let idx = mapState.mobs.findIndex(m => m && m.uid === t.uid);

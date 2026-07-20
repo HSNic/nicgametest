@@ -709,16 +709,16 @@ function loadFrameSrc(key, frame){
     if(key === 'none') return `assets/start/none/${frame}.png`;
     return `assets/start/${key}/${frame}.png`;
 }
+function loadFirstFrame(key){
+    if(key === 'none') return LOAD_NONE_ANIM_FRAMES[0];
+    const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
+    return range[0];
+}
 // 🎨(加掛版客製,creation-layout-v2)創角預覽立繪改用去背透明版素材,跟桌機疊在背景圖上才不會露出原圖的實心背景色;
 //   此函式與呼叫點每次原作同步整份覆蓋本體都會被沖掉,要記得比照這次做法重新套用。
 function creationFrameSrc(key, frame){
     if(key === 'none') return 'assets/start/0.png';
     return `assets/start-transparent/${key}/${frame}.png`;
-}
-function loadFirstFrame(key){
-    if(key === 'none') return LOAD_NONE_ANIM_FRAMES[0];
-    const range = CREATION_CLASS_ANIM_FRAMES[key] || CREATION_CLASS_ANIM_FRAMES.prince;
-    return range[0];
 }
 function openLoadSelect(){
     const main = document.getElementById('main-menu');
@@ -1365,19 +1365,22 @@ function saveGame() {
 }
 
 // 合併同一性物品堆疊（相容舊存檔：修復前被拆分的相同卷軸/物品會重新合併）。
-// 僅合併未強化(en===0)的物品；強化品(+N)維持獨立。鎖定不列入同一性比對（與 gainItem 一致），
-// 但合併後只要其中任一原堆疊為鎖定，即保留鎖定狀態（保護不被誤賣；鎖定仍可用於強化）。
+// 僅合併未強化(en===0)的物品；強化品(+N)維持獨立。
+// 🔒 v3.6.57 鎖定狀態改為「同一性的一部分」：鎖定疊與未鎖定疊各自成堆、載入時不再互相吸收。
+//    原本是「合併後只要任一原堆疊鎖定就整疊鎖定」，等於每次載入都把 gainItem 刻意分開的兩疊(v3.5.84)
+//    重新黏回去，並讓新獲得的同名物品連帶變成鎖定 → 製作/任務扣料會跳過它們（「看得到卻扣不到」）。
+// 🏺 巨靈的三個願望(gw)每只戒指的願望各自獨立，永不合併（sameItemSig 不含 gw，須顯式排除）。
 function consolidateInventory() {
     if (!player.inv) return;
     let seen = {};
     let out = [];
     player.inv.forEach(it => {
         if ((it.en || 0) !== 0) { out.push(it); return; }   // 強化品不合併
-        let key = itemSig(it);   // 🔧 架構#3：統一簽章（祝福/詛咒/遠古變體/屬性/en 全部入鍵）
+        if (it.gw) { out.push(it); return; }                // 巨靈願望戒指：逐只獨立
+        let key = itemSig(it) + '|' + (it.lock ? 1 : 0);   // 🔧 架構#3：統一簽章（祝福/詛咒/遠古變體/屬性/en 全部入鍵）＋鎖定狀態
         if (seen[key]) {
             let base = seen[key];
-            base.cnt += (it.cnt || 1);
-            if (it.lock) base.lock = true;
+            base.cnt += (it.cnt || 1);   // 鎖定狀態已在 key 內 → 同 key 必同鎖定狀態，無須再合併旗標
         } else {
             seen[key] = it;
             out.push(it);

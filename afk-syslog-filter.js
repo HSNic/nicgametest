@@ -83,14 +83,22 @@
     applyFilter();
   }
 
+  // 🔧(2026-07-21 同步 v3.6.80 後修正)原作把「戰鬥／系統日誌」合併成同一塊面板(#combat-log-panel)
+  //   內部分頁切換,原本的 #syslog-panel 現在是「世界頻道」,不再是系統日誌——這組分類鈕要跟著改錨到
+  //   #combat-log-panel 的標題列,且只在「系統日誌」分頁顯示中時才露出(戰鬥分頁時比照原作 combat-filter-pills
+  //   的做法用 hidden 收起)。
+  // 🔧(2026-07-21 使用者回報)第一版插在標題列「下方另開一排」,位置跟戰鬥日誌那組(#combat-filter-pills,
+  //   插在標題列本身、右側對齊)不一致——改成直接塞進標題列裡、跟 #combat-filter-pills 同一個位置/同一種
+  //   排列方式(justify-end 靠右對齊),兩組鈕只是依分頁互斥顯示,視覺上完全疊在同一個位置,不佔額外高度。
   function ensureFilterRow() {
-    if (document.getElementById('afk-syslog-filter-row')) return;
-    var panel = document.getElementById('syslog-panel');
+    var panel = document.getElementById('combat-log-panel');
     var header = panel && panel.querySelector('.panel-header');
+    var row = document.getElementById('afk-syslog-filter-row');
+    if (row) { syncRowVisibility(row); return; }
     if (!panel || !header) return;
-    var row = document.createElement('div');
+    row = document.createElement('div');
     row.id = 'afk-syslog-filter-row';
-    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px;border-bottom:1px solid rgba(30,58,138,.25);';
+    row.style.cssText = 'display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end;';
     CATS.forEach(function (c) {
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -102,7 +110,33 @@
       btn.addEventListener('click', function () { toggle(c.key); });
       row.appendChild(btn);
     });
-    header.insertAdjacentElement('afterend', row);
+    header.appendChild(row);   // 跟 #combat-filter-pills 同層(header 的直接子元素),不是另開一排
+    syncRowVisibility(row);
+  }
+
+  // 依目前是不是在看系統日誌分頁,決定這排分類鈕要不要顯示(比照原作 combat-filter-pills 的顯示規則)。
+  // 🔧(2026-07-21 使用者回報「戰鬥日誌不用顯示」)原本用 classList.toggle('hidden',...),但這排本身
+  //   用 style.cssText 設了 inline display:flex——inline style 的優先權比 .hidden{display:none}
+  //   這種一般 class 規則高,toggle 上 hidden class 完全沒作用,兩排鈕會一直同時顯示。改成直接寫
+  //   row.style.display,不依賴 .hidden class。
+  function syncRowVisibility(row) {
+    var sysLog = document.getElementById('sys-log');
+    var onSys = !!sysLog && !sysLog.classList.contains('hidden');
+    row.style.display = onSys ? 'flex' : 'none';
+  }
+
+  function wrapSwitchLogTab() {
+    if (typeof window.switchLogTab !== 'function') return false;
+    if (window.switchLogTab.__afkSyslogFilterWrapped) return true;
+    var orig = window.switchLogTab;
+    var wrapped = function () {
+      var r = orig.apply(this, arguments);
+      try { var row = document.getElementById('afk-syslog-filter-row'); if (row) syncRowVisibility(row); } catch (e) {}
+      return r;
+    };
+    wrapped.__afkSyslogFilterWrapped = true;
+    window.switchLogTab = wrapped;
+    return true;
   }
 
   function wrapLogSys() {
@@ -124,10 +158,11 @@
 
   function init() {
     if (!wrapLogSys()) { console.warn('[AFK-syslog-filter] 找不到 logSys,外掛停用'); return; }
+    wrapSwitchLogTab();
     injectStyle();
     ensureFilterRow();
     applyFilter();
-    setInterval(ensureFilterRow, 2000);   // 保險:面板萬一被重建,按鈕列自動補回(目前觀察 #syslog-panel 不會重建,純防禦)
+    setInterval(ensureFilterRow, 2000);   // 保險:面板萬一被重建,按鈕列自動補回(也順便同步顯示/隱藏狀態)
     console.log('[AFK-syslog-filter] hooks OK');
   }
 
