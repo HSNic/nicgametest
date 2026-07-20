@@ -1084,7 +1084,10 @@ function pvpOnKillMob(mob) {
         return;
     }
     pvpChangeAlignment(1);
-    if (typeof npcClanMaybeStartGroupBattle === 'function') npcClanMaybeStartGroupBattle(mob);
+    // 🩹 [FB5-CUSTOM] 離線快算(state.ff)期間不觸發新的NPC血盟團戰：團戰是「線上社交演出」，玩家離線時開打了也看不到、也無法推進，
+    //    卻會讓 spawnMob()/settleDeadMobs() 之後每一拍都重新填滿團戰對手直到擊殺數達標——離線快算跑上萬拍時等於全速空轉整場團戰。
+    //    只擋「新開戰」，不影響已在進行中的團戰邏輯本身（見同段落 spawnMob()/settleDeadMobs() 的說明）。
+    if (typeof npcClanMaybeStartGroupBattle === 'function' && !state.ff) npcClanMaybeStartGroupBattle(mob);
 }
 const TROLL_ENCOUNTER_PLAYER_TAUNTS = [
     '剛剛不是很會喊？出來講啊', '別躲安全區，現在換我找你', '你不是要 PK？我到門口了', '座標不用報，我自己來了', '剛剛嘴很快，手有跟上嗎', '少裝路過，看到你了',
@@ -1507,6 +1510,11 @@ function spawnMob(idx) {
         }
         // PVP／NPC 血盟宣戰：依宣戰方向決定野外遭遇率與敵盟占比。
         if (typeof pvpEnsureState === 'function') pvpEnsureState();
+        // 🩹 [FB5-CUSTOM] 離線快算(state.ff)期間跳過「野外PVP遭遇」與「白目玩家復仇遭遇」這兩段整段判定：
+        //    這兩段是每次生怪都會重算的機率演出(呼叫 npcClanEncounterProfile/pvpCreateRandomOpponent/多次 Math.random)，
+        //    離線快算單一角色生怪動輒上萬次，玩家離線時看不到這些遭遇、也不影響經驗/金幣/掉落，跳過純屬效能優化。
+        //    範圍限定：只包住這兩段，不動同函式內攻城區PVP守衛生成、軍王之室、BOSS、追蹤、試煉限定怪等其他既有出怪分支。
+        if (!state.ff) {
         let _clanEncounter = typeof npcClanEncounterProfile === 'function'
             ? npcClanEncounterProfile(player)
             : null;
@@ -1540,6 +1548,7 @@ function spawnMob(idx) {
                 let _cand = _tl.filter(t => !_onF.includes(t.n));
                 if (_cand.length) { let _t = _cand[Math.floor(Math.random() * _cand.length)]; mobId = trollPickClassMob(_t.avatar); mapState._trollSpawn = _t; }   // 😤 v3.6.20 70%/30% 模板抽選
             }
+        }
         }
     }
     
