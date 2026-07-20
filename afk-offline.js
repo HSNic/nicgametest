@@ -463,16 +463,38 @@
       }
     } catch (e) {}
 
-    // 🎯 魔物追蹤:until 是牆鐘時間,離線中過期的話補跑時 spawnMob 的「until > Date.now()」整段不成立
-    //   → 明明關遊戲時追蹤還有效,離線收益卻完全吃不到追蹤。使用者決定(2026-07-07):離線當下追蹤仍有效
-    //   → 整段離線時間都視為有效——補跑期間暫時把 until 撐到結算之後,結束時還原原值
-    //   (過期的照樣過期、沒過期的剩餘時數不變,線上行為零影響)。
-    //   offStart=離線起點:真實離線用心跳 closeTs;debug forceCatchup 無 timing → 視同「剛剛過去 totalTicks」。
+    // 🎯 [FB5-CUSTOM] 魔物追蹤(2026-07-21 改版):until 是牆鐘時間,離線中過期的話補跑時 spawnMob 的「until > Date.now()」整段不成立
+    //   → 明明關遊戲時追蹤還有效,離線收益卻完全吃不到追蹤。offStart=離線起點:真實離線用心跳 closeTs;debug forceCatchup 無 timing → 視同「剛剛過去 totalTicks」。
+    //   catchupEndAt=這次補跑實際涵蓋到的虛擬終點時間(可能因 CAP_MS 而短於真實關閉時長)。
+    //   舊版做法(整段離線一律視為有效)是免費、無條件維持追蹤,即使沒開自動續約也吃得到——已改成:
+    //   一次性算完「原到期時間 → catchupEndAt」這段期間會到期幾次,每次到期依「自動續約」開關+金幣是否足夠決定是否續約(比照
+    //   afk-track-autorenew.js 的真實續約規則,同一把 localStorage key、同樣 100,000 金幣/次),不呼叫原作 obelStartTracking()
+    //   本身(它會操作 DOM/跳 alert(),批次結算連續處理多角色時絕不能跑到)。迴圈次數最多 3~4 次(24h上限÷8h/次),
+    //   純數學運算,不碰 fastAdvance()/取樣批次那段效能核心迴圈,不影響批次結算速度。
     var offStart = (timing && timing.closeTs) || (Date.now() - totalTicks * TICK_MS);
-    var trackUntil0 = null;
-    if (player.tracking && player.tracking.until && player.tracking.until > offStart) {
+    var TRACK_DURATION_MS = 8 * 3600 * 1000;   // 與 js/11-world-map.js obelStartTracking() 的 8 小時同步維護
+    var TRACK_GOLD_COST = 100000;              // 與 js/11-world-map.js TRACKING_GOLD_COST 同步維護
+    var trackUntil0 = null;        // 補跑期間暫時撐大的「假到期時間」,結束時要還原
+    var trackFinalUntil = null;    // 這次補跑真正該落地的到期時間(可能是未來=仍在追蹤,也可能是過去=已失效)
+    var trackRenewCount = 0;
+    if (player.tracking && player.tracking.until) {
       trackUntil0 = player.tracking.until;
-      player.tracking.until = Date.now() + totalTicks * TICK_MS + 3600000;   // 撐過整段補跑(含結算本身的真實耗時)綽綽有餘
+      var catchupEndAt = offStart + totalTicks * TICK_MS;
+      var trackAutorenewOn = false;
+      try { trackAutorenewOn = localStorage.getItem('afk_track_autorenew_' + currentSlot) === '1'; } catch (e) {}
+      var trackStillActive = true;
+      trackFinalUntil = trackUntil0;
+      while (trackFinalUntil <= catchupEndAt) {
+        if (!trackAutorenewOn || (player.gold || 0) < TRACK_GOLD_COST) { trackStillActive = false; break; }
+        player.gold -= TRACK_GOLD_COST;
+        trackRenewCount++;
+        trackFinalUntil += TRACK_DURATION_MS;
+      }
+      if (trackStillActive) {
+        player.tracking.until = Date.now() + totalTicks * TICK_MS + 3600000;   // 撐過整段補跑(含結算本身的真實耗時)綽綽有餘,結束時還原
+      } else {
+        player.tracking.until = Date.now() - 1;   // 這段補跑期間就已經真的失效(續約條件不滿足),讓 spawnMob 立刻視為過期
+      }
     }
 
     var sliceMs = sliceFor(totalTicks);   // 依補跑長短決定畫面更新間隔:短→順、長→快
@@ -978,7 +1000,11 @@
       gotoMap(homeTown());
     }
     if (state.ff !== prevFf0) { state.ff = prevFf0; state.inTick = prevInTick0; }   // 還原 ff(攀登存活分支上面已還原 → 此處不動作)
-    if (trackUntil0 !== null && player.tracking) player.tracking.until = trackUntil0;   // 🎯 還原魔物追蹤原到期時間(見補跑開頭;一定要在下方 saveGame 之前,免得撐長的假 until 被存進存檔)
+    // 🎯 [FB5-CUSTOM] 落地魔物追蹤真正的到期時間(見補跑開頭;一定要在下方 saveGame 之前,免得撐長的假 until 被存進存檔)
+    if (trackUntil0 !== null && player.tracking) {
+      player.tracking.until = trackFinalUntil;
+      if (trackRenewCount > 0) { try { logSys('🔁 離線期間自動續約魔物追蹤 ' + trackRenewCount + ' 次,共花費 ' + (trackRenewCount * TRACK_GOLD_COST).toLocaleString() + ' 金幣。'); } catch (e) {} }
+    }
 
     // 重啟 live loop(startGameTimers 內含去重,且重設 _loopLast=null → 不會把結算花掉的真實秒數再補一次)
     try { startGameTimers(); } catch (e) {}
