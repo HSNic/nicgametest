@@ -1,6 +1,6 @@
 {
-  "reconciledIndexCommit": "6e21ebe1df2a8f8e866391860f7d1ea0249e21d2",
-  "reconciledIndexBlob": "9ac101e94a17251e7ed173b8fb3fa72dd230ad9f",
-  "reconciledAt": "2026-07-19 23:45 (UTC+8)",
-  "note": "合併原作v3.5.76→v3.6.03(約30小版號)後跑的小百科比對:主要新增是全新「血盟系統」(js/25-clan-system.js,帳號內共用、非玩家對戰),已整段重寫afk-wiki.js的renderPledge分頁(原內容是舊版「王族搜索狀/依詩蒂特羅斯陣營戰」,已查證該套機制大部分被移除/改造,不能只補充要整段重寫);其餘改動(雙手武器攻速分離/反射反殺補完/死碼清除/離線NPC閒聊/寵物隨機減傷)不影響小百科既有內容,無需調整。5個直接改本體客製(創角UI/能力分頁舊表格/首頁公告橫幅/強化無事訊息+新確認的slot-select-panel移除)已於同步後對照歷史commit補回。"
+  "reconciledIndexCommit": "b8b38946686fb8f896a228b7e2ab089a20d43c78",
+  "reconciledIndexBlob": "45f3badcf970bfad9d57dfacac749095acc79edd",
+  "reconciledAt": "2026-07-20 19:20 (UTC+8)",
+  "note": "合併原作v3.6.03→v3.6.36(約30小版號,已於commit b5efc36ca套用本體)後逐檔對過diff(js/00/03/04/05/06/07/08/09/10/11/12/22/24,css/style.css)。之前(commit b5efc36ca)已補的5項:白目玩家第二模板(反擊屏障/汙濁之水/生命的祝福/究極光裂術)、PVP性向懲罰值加倍、血盟城主稱號改王冠圖示、袋鼠系穿甲35%、傲慢之塔支配符可設定魔物追蹤例外。這輪逐檔對照diff額外補了4項先前漏掉的機制(皆非新增資料定義、屬於「既有機制被改/新增」不會被純掃新增抓到的類型):①假玩家/白目玩家死亡掉裝備機率依對方性向值3~10%(原以為固定10%)+獨立0.001%遺物掉率(js/04 playerNpcDropRate/playerNpcRelicDrop,v3.6.11/16)→補進PVP分頁+afk-dex.js的SPECIAL_BLOCKS(此前搜不到);②寵物回村不只倒地的免費復活,改成全體出戰寵物補滿HP/MP+清異常(js/22 petsReviveAtTown,v3.6.29)→補進帶寵物分頁;③攻城獲勝後直接傳送到奪下的城堡,不再送回家鄉村莊(js/11,v3.6.32)→補進血盟分頁攻城戰表格;④潘朵拉黑市「嘲諷」選單記仇機率依對方性向值(邪惡100%/中立50%/正義20%)+新增「封鎖」狀態(js/24 _tauntChaseRate/_blockPlayerForWanderer,無版號註解)→補進潘朵拉黑市分頁。js/09(王冠圖示錨點表)、js/10(5行)、css/style.css(王冠CSS)純美術/樣式改動,已於前次同步對照確認無需額外補充。全部改動已Playwright無頭實測render正確、可被統一搜尋命中、無漏翻英文/JS error。"
 }
