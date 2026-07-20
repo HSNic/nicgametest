@@ -294,6 +294,17 @@
   // 地圖 id → 中文名：統一委派 afk-extradata 共用解析(離線收益摘要 + 選角掛機地點 afk-slotinfo 委派此函式都走這份)。
   //   afk-offline 雖比 afk-extradata 早載入,但本函式在「執行期」才被呼叫,屆時 AFK_EXTRA 已就緒;缺了則退回 id。
   function mapName(id) { try { return (window.AFK_EXTRA && AFK_EXTRA.mapName) ? AFK_EXTRA.mapName(id) : (id || '?'); } catch (e) { return id || '?'; } }
+  // 🎨 離線收益清單裡的物品名稱補上跟線上掉落一致的品質顏色(傳說金/遺物藍等)。
+  //   離線結算只有 before/after 庫存數量差(id+count),沒有詞綴/強化等實例資訊,
+  //   所以只呼叫 getItemColor({id}) 拿「基礎品質色」,不呼叫 getItemFullName(那個要完整item實例才準)。
+  function itemLogEntry(id, delta) {
+    var d = (typeof DB !== 'undefined' && DB.items && DB.items[id]) || null;
+    var nm = d ? d.n : id;
+    var cls = '';
+    try { if (typeof getItemColor === 'function') cls = getItemColor({ id: id }) || ''; } catch (e) {}
+    return { n: nm, d: delta, cls: cls };
+  }
+  function itemLogHTML(it) { return (it.cls ? ('<span class="' + it.cls + '">' + it.n + '</span>') : it.n) + '×' + it.d; }
   // 累積總經驗(等級已過的各級需求總和 + 目前這級經驗)。player.exp 是「當級經驗」升級會歸零,
   // 直接相減在升級時會變負;改用累積值相減才正確(getExpReq=每級所需經驗,核心遊戲全域函式)。
   function expTotal(lv, exp) {
@@ -308,7 +319,7 @@
     var exp = expTotal(a.lv, a.exp) - expTotal(b.lv, b.exp); if (exp < 0) exp = 0;
     var items = [], ids = {};
     for (var k in b.inv) ids[k] = 1; for (var k2 in a.inv) ids[k2] = 1;
-    for (var id in ids) { var d = (a.inv[id] || 0) - (b.inv[id] || 0); if (d > 0) items.push({ n: (typeof DB !== 'undefined' && DB.items && DB.items[id]) ? DB.items[id].n : id, d: d }); }
+    for (var id in ids) { var d = (a.inv[id] || 0) - (b.inv[id] || 0); if (d > 0) items.push(itemLogEntry(id, d)); }
     items.sort(function (x, y) { return y.d - x.d; });
     return { floor: floor, exp: exp, gold: (a.gold || 0) - (b.gold || 0), lv: (a.lv || 0) - (b.lv || 0), items: items };
   }
@@ -326,7 +337,7 @@
       if (s.gold > 0) parts.push(`<span class="text-yellow-400 font-bold">${fmt(s.gold)} 金幣</span>`);
       if (s.lv   > 0) parts.push(`<span class="text-green-400 font-bold">升 ${s.lv} 級</span>`);
       if (s.exp  > 0) parts.push(`<span class="text-purple-400 font-bold">${fmt(s.exp)} 經驗</span>`);
-      if (s.items.length) parts.push(s.items.map(function (it) { return it.n + '×' + it.d; }).join('、'));
+      if (s.items.length) parts.push(s.items.map(itemLogHTML).join('、'));
       if (!parts.length) return;   // 該樓沒收益就省略
       shown++;
       var ln = `<span class="text-rose-200">傲慢之塔 ${s.floor} 樓</span>：` + parts.join('、') + '。';
@@ -349,14 +360,13 @@
     for (var id in ids) {
       var delta = (after.inv[id] || 0) - (before.inv[id] || 0);
       if (delta > 0) {
-        var nm = (typeof DB !== 'undefined' && DB.items && DB.items[id]) ? DB.items[id].n : id;
-        items.push({ n: nm, d: delta });
+        items.push(itemLogEntry(id, delta));
         var cat = (typeof whCategory === 'function') ? whCategory(id) : 'item';
         itemCats[cat] = (itemCats[cat] || 0) + 1;
       }
     }
     items.sort(function (a, b) { return b.d - a.d; });
-    var itemStr = items.map(function (it) { return it.n + '×' + it.d; }).join('、');
+    var itemStr = items.map(itemLogHTML).join('、');
 
     window.__afk.last = { mins: mins, gold: dGold, exp: dExp, lv: dLv, died: !!died, ticks: doneTicks, items: items.length, itemCats: itemCats };
 
@@ -812,7 +822,10 @@
     }
     function doCheckpoint() {
       try {
-        if (typeof saveGame === 'function') saveGame();          // ff 下 logSys 靜音,不會洗「進度已儲存」;saveGame 尾端呼叫的 stamp() 被 catchingUp 擋掉,不影響下面這行的錨點
+        if (typeof saveGame === 'function') {                     // ff 下 logSys 靜音,不會洗「進度已儲存」;saveGame 尾端呼叫的 stamp() 被 catchingUp 擋掉,不影響下面這行的錨點
+          if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('save');
+          try { saveGame(); } finally { if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('save'); }
+        }
         stampCore(timing.closeTs + done * TICK_MS);               // 錨點=已結算到的時間點(絕不用 now,剩餘離線時間才不會被吃掉)
         recordHistory(buildHistRec());                            // 已結算部分先寫進離線紀錄(同 closeTs 覆寫,不會多筆)
       } catch (eCk) {}
@@ -971,7 +984,12 @@
     try { startGameTimers(); } catch (e) {}
 
     // 持久化離線收益(否則玩家在下次自動存檔前重載會丟失);saveGame 同時會蓋上新時間戳
-    try { if (typeof saveGame === 'function') saveGame(); } catch (e) {}
+    try {
+      if (typeof saveGame === 'function') {
+        if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.startSection('save');
+        try { saveGame(); } finally { if (window.AFKOfflineProfiler) window.AFKOfflineProfiler.endSection('save'); }
+      }
+    } catch (e) {}
 
     var kingInfo = null;
     if (isKing) {
@@ -1224,12 +1242,19 @@
   //   把取樣窗的「庫存淨變化」還原成「真實消耗」(消耗 = 期初 + 期間獲得 − 期末)。線上 gainTally=null → 零開銷。
   //   ⏱️ 順便供 profiler 統計「Drop」:_profBuying 為 true 時(fastRefill 自動補貨呼叫的 gainItem)不計入,
   //   避免把「快速結算自動買藥水/卷軸」誤算成掉落件數(定義見 afk-offline-profiler.js)。
+  //   ⏱️ 2026-07-20:這裡本來就是 afk-offline.js 自己包的唯一一層 gainItem wrapper(早於 Hook 架構),
+  //   量測 gainItemMs 直接沿用這層計時即可,不需要再另外疊一層 AFK_HOOK.wrap(避免無謂的多層包裝)。
   if (typeof window.gainItem === 'function') {
     var _gainItem = window.gainItem;
     window.gainItem = function (id, cnt) {
       if (gainTally && id) { try { gainTally[id] = (gainTally[id] || 0) + (cnt == null ? 1 : cnt); } catch (e) {} }
       if (catchingUp && !_profBuying && window.AFKOfflineProfiler) {
         try { window.AFKOfflineProfiler.increment('dropCount', cnt == null ? 1 : cnt); } catch (e) {}
+      }
+      if (catchingUp && window.AFKOfflineProfiler) {
+        window.AFKOfflineProfiler.startSection('gainItem');
+        try { return _gainItem.apply(this, arguments); }
+        finally { window.AFKOfflineProfiler.endSection('gainItem'); }
       }
       return _gainItem.apply(this, arguments);
     };

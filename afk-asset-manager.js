@@ -284,8 +284,14 @@
       return html;
     }
 
+    // 🔧 2026-07-20(使用者要求比照手機版寵物管理):點任何按鈕(展開背包/搬物品/換分類)都會整塊
+    //   innerHTML 重畫,原本完全沒有保存捲動位置,重畫後一律跳回最頂端。這裡補上「重畫前記位置、
+    //   重畫後立刻同步還原」,#m-asset-body 本身就是可捲動容器(overflow-y:auto),直接記它的 scrollTop。
     function refresh() {
-      document.getElementById('m-asset-body').innerHTML = renderBody();
+      var body = document.getElementById('m-asset-body');
+      var pos = body ? body.scrollTop : 0;
+      body.innerHTML = renderBody();
+      body.scrollTop = Math.min(pos, Math.max(0, body.scrollHeight - body.clientHeight));
     }
 
     function onBodyClick(e) {

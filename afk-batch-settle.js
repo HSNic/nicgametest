@@ -305,33 +305,44 @@
       try { if (window.AFKOfflineProfiler && typeof window.AFKOfflineProfiler.beginBatch === 'function') window.AFKOfflineProfiler.beginBatch(); } catch (e) {}
 
       var totals = { gold: 0, exp: 0, lv: 0, slots: 0 };
+      // ⏱️ 批次額外耗時分析用:整批總牆鐘時間 − 各格 profiler report 的 totalMs 加總 = 切格/loadGame/UI 這類批次層開銷。
+      var _batchWallStart = Date.now();
+      var _slotWallMs = {};
       try {
         for (var n = 1; n <= SLOT_COUNT; n++) {
           var sum = slotSummary(n);
           if (!sum) { setRow(n, sum, { kind: 'skip-empty' }); continue; }
           var t0 = Date.now();
-          setRow(n, sum, { kind: 'running', elapsed: 0 });
-          currentSlot = n;
-          try { loadGame(); } catch (e) { setRow(n, sum, { kind: 'error', msg: String(e && e.message || e) }); continue; }
-          if (!window.__afk.busy) { setRow(n, sum, { kind: 'skip-none' }); continue; }
-          var timedOut = false;
-          while (window.__afk.busy) {
-            await sleep(POLL_MS);
-            if (Date.now() - t0 > MAX_WAIT_MS) { timedOut = true; break; }
-            setRow(n, sum, { kind: 'running', elapsed: Date.now() - t0 });
+          try {
+            setRow(n, sum, { kind: 'running', elapsed: 0 });
+            currentSlot = n;
+            try { loadGame(); } catch (e) { setRow(n, sum, { kind: 'error', msg: String(e && e.message || e) }); continue; }
+            if (!window.__afk.busy) { setRow(n, sum, { kind: 'skip-none' }); continue; }
+            var timedOut = false;
+            while (window.__afk.busy) {
+              await sleep(POLL_MS);
+              if (Date.now() - t0 > MAX_WAIT_MS) { timedOut = true; break; }
+              setRow(n, sum, { kind: 'running', elapsed: Date.now() - t0 });
+            }
+            if (timedOut) { setRow(n, sum, { kind: 'timeout' }); continue; }
+            var last = window.__afk.last || {};
+            totals.gold += last.gold || 0;
+            totals.exp += last.exp || 0;
+            totals.lv += last.lv || 0;
+            totals.slots++;
+            setPending(n);   // 標記「待補記」:這個角色下次真正登入時,把這筆結算結果重新顯示在系統日誌裡(現在只有批次視窗看得到)
+            setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
+          } finally {
+            _slotWallMs[n] = Date.now() - t0;
           }
-          if (timedOut) { setRow(n, sum, { kind: 'timeout' }); continue; }
-          var last = window.__afk.last || {};
-          totals.gold += last.gold || 0;
-          totals.exp += last.exp || 0;
-          totals.lv += last.lv || 0;
-          totals.slots++;
-          setPending(n);   // 標記「待補記」:這個角色下次真正登入時,把這筆結算結果重新顯示在系統日誌裡(現在只有批次視窗看得到)
-          setRow(n, sum, { kind: 'done', last: last, elapsed: Date.now() - t0 });
         }
       } finally {
         restorePrefs(origPrefs);   // 不論成功/中途出例外,都要把音樂/音效/特效/傷害數字/省電模式還原成使用者原本的值
-        try { if (window.AFKOfflineProfiler && typeof window.AFKOfflineProfiler.endBatch === 'function') window.AFKOfflineProfiler.endBatch(); } catch (e) {}
+        try {
+          if (window.AFKOfflineProfiler && typeof window.AFKOfflineProfiler.endBatch === 'function') {
+            window.AFKOfflineProfiler.endBatch({ slotWallMs: _slotWallMs, totalWallMs: Date.now() - _batchWallStart });
+          }
+        } catch (e) {}
       }
 
       document.getElementById('m-bs-foot').innerHTML =

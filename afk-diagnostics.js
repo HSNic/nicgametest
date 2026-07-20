@@ -270,6 +270,8 @@
       ['Batch', t.batchMs + ' ms'],
       ['UI', t.uiMs + ' ms'],
       ['全模擬', t.fullSimMs + ' ms'],
+      ['gainItem', (t.gainItemMs || 0) + ' ms'],
+      ['saveGame', (t.saveGameMs || 0) + ' ms'],
       ['擊殺數', c.monsterKills],
       ['Boss數', c.bossKills]
     ];
@@ -299,9 +301,13 @@
           rowsToHtml(reportRows(report))
         );
       }).join('');
+      var overheadLine = (typeof picked.batch.batchOverheadMs === 'number')
+        ? ('<div class="m-diag-desc">批次額外耗時(切格/loadGame/UI等,不算在任何單一角色裡)：<b>' + picked.batch.batchOverheadMs + ' ms</b></div>')
+        : '';
       return (
         '<div class="m-diag-offline">' +
           '<div class="m-diag-offline-title">🕒 離線結算效能(最近一次批次結算,共 ' + picked.batch.reports.length + ' 格)</div>' +
+          overheadLine +
           body +
           '<button id="m-diag-offline-copy-btn" type="button">📋 複製離線結算JSON</button>' +
         '</div>'
@@ -339,7 +345,7 @@
   function offlineProfileJson() {
     var picked = pickOfflineData();
     if (!picked) return null;
-    var note = 'ticks/tickMs/settleDeadMobsMs/gainItemMs/saveGameMs 尚未實作(需改afk-offline.js本體,見交接待辦第二階段)。';
+    var note = 'ticks/tickMs/settleDeadMobsMs 尚未實作;lootMs 即為 settleDeadMobs 花費(命名沿用既有分段,等同settleDeadMobsMs)。totalHits 已移除(從未接上實際計數,避免誤導)。';
     if (picked.mode === 'batch') {
       return {
         generatedAt: new Date().toISOString(),
@@ -347,6 +353,8 @@
         batchId: picked.batch.batchId,
         batchStartedAt: picked.batch.startedAt,
         batchFinishedAt: picked.batch.finishedAt,
+        batchOverheadMs: (typeof picked.batch.batchOverheadMs === 'number') ? picked.batch.batchOverheadMs : null,
+        slotWallMs: picked.batch.slotWallMs || null,
         slots: picked.batch.reports.map(reportToJsonEntry),
         note: note
       };

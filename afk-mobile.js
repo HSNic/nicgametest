@@ -62,13 +62,15 @@
   //   DOM 節點(不重新產生 HTML,只搬動節點順序+包一層可點擊收合的外框)。收合狀態存在模組層變數,
   //   換頁/重繪(存/取/出戰等操作都會觸發整段重繪)後記得住,不會每次操作都跳回展開。
   //   只在手機(body.m-mobile)套用,桌機版面完全不受影響、也不重排。
-  var _petGroupCollapsed = { out: false, locked: false };
+  //   2026-07-20(使用者要求):預設全部收合(不管是 out/locked 還是依名字分組),點了才展開——
+  //   物件裡沒登記過的 key 一律視為「收合」,只有使用者親手點開過(值被寫成 false)才展開。
+  var _petGroupCollapsed = {};
 
   function buildPetCollapsibleGroup(key, label, colorClass, rows) {
     if (!rows.length) return null;
     var wrap = document.createElement('div');
     wrap.className = 'flex flex-col gap-1';
-    var collapsed = !!_petGroupCollapsed[key];
+    var collapsed = (key in _petGroupCollapsed) ? !!_petGroupCollapsed[key] : true;
     var hdr = document.createElement('div');
     hdr.className = 'afk-pet-group-hdr flex items-center justify-between bg-slate-800/60 border border-slate-600 rounded px-2 py-1.5 text-sm';
     hdr.innerHTML = '<span class="font-bold ' + colorClass + '">' + label + '（' + rows.length + '）</span><span class="afk-pet-arrow">' + (collapsed ? '▶' : '▼') + '</span>';
@@ -77,7 +79,8 @@
     body.style.display = collapsed ? 'none' : '';
     rows.forEach(function (r) { body.appendChild(r); });
     hdr.addEventListener('click', function () {
-      _petGroupCollapsed[key] = !_petGroupCollapsed[key];
+      var cur = (key in _petGroupCollapsed) ? !!_petGroupCollapsed[key] : true;   // 沒登記過的 key 視為目前是「收合」,點一下要變展開
+      _petGroupCollapsed[key] = !cur;
       body.style.display = _petGroupCollapsed[key] ? 'none' : '';
       var arrow = hdr.querySelector('.afk-pet-arrow');
       if (arrow) arrow.textContent = _petGroupCollapsed[key] ? '▶' : '▼';
@@ -97,7 +100,13 @@
       if (petUi.children[i].classList && petUi.children[i].classList.contains('overflow-y-auto')) { listWrap = petUi.children[i]; break; }
     }
     if (!listWrap) return;
-    // 放生二次確認的那一列(bg-red-950)是暫時性 UI,不參與重排,避免弄丟這一列導致確認按鈕消失。
+    // 🔧 2026-07-20(使用者回報「點按鈕畫面會跳來跳去」):js/22-pets.js 的 renderPetStorageNPC 本身
+    //   已經有捲動位置還原機制(先同步還原一次、再用 requestAnimationFrame 還原第二次),但下面
+    //   listWrap.innerHTML='' 是在那之後才執行,會把 listWrap 的 scrollTop 重置成 0——中間那一格畫面
+    //   會先閃一下「回到頂端」,下一格才又跳回原位,使用者看到的「跳動」就是這個時間差造成的。
+    //   解法:自己在清空重建前記錄、重建完立刻同步還原(不等 rAF),讓整段在同一次事件循環內完成,
+    //   瀏覽器不會有機會畫出中間歸零的那一格。
+    var _preScrollTop = listWrap.scrollTop;
     var hasConfirmRow = false;
     for (var j = 0; j < listWrap.children.length; j++) {
       var cls = listWrap.children[j].className || '';
@@ -140,6 +149,7 @@
         listWrap.appendChild(groupRows[0]);
       }
     });
+    listWrap.scrollTop = Math.min(_preScrollTop, Math.max(0, listWrap.scrollHeight - listWrap.clientHeight));   // 同步立刻還原,不等 rAF
   }
 
   (function wrapRenderPetStorageForMobile() {
@@ -561,71 +571,109 @@
       container.classList.remove('hidden');
     }
 
-    // ---- 收購玩家「叫賣」橫幅(手機) ---------------------------------------
-    // 原作叫賣廣播(js/24-pandora-relic-market.js 的 _announceWanderer)只是每 3 分鐘寫一則
-    // 系統日誌訊息,手機版系統日誌預設收合成浮動面板,玩家幾乎看不到「有人在別的城鎮收購」。
-    // 這裡攔截 logSys,偵測到叫賣廣播的訊息(帶固定 class wander-broadcast-name)時,
-    // 在畫面最上方顯示一條常駐單行橫幅;點擊橫幅直接重用原作既有的
-    // openWanderingShoutMenu(wandererId, ev)(「吵死了」/「馬上到」兩顆按鈕,
-    // 「馬上到」內部呼叫的 hurryToWanderingBuyer 就是瞬移邏輯),不重寫任何遊戲邏輯。
-    // 只包 logSys、不改原作程式碼;找不到 logSys 或不是手機版就安靜不生效。
-    var WANDER_BANNER_ID = 'm-wander-banner';
-    var _wanderBannerTimer = null;
-    function ensureWanderBannerEl() {
-      var b = document.getElementById(WANDER_BANNER_ID);
-      if (b) return b;
-      b = document.createElement('div');
-      b.id = WANDER_BANNER_ID;
-      // 使用者要求:不要浮在畫面最上層蓋住東西,要當成 #game-screen(手機版整個畫面的 flex 直欄容器)
-      // 排版流程裡「真正排最前面」的第一個元素——插進去之後,原本置頂的狀態列/畫面內容會被往下推開,
-      // 不是疊在上面的浮動遮罩。
-      gs.insertBefore(b, gs.firstChild);
-      return b;
+    // ---- 收購玩家(流浪商人)手機版:固定位置按鈕+浮動選單(2026-07-20 重新設計) --------------
+    // 舊做法(單一橫幅、置頂排版流元素、logSys攔截觸發)有兩個使用者回報的問題:
+    //   ①橫幅是 #game-screen 排版流內的第一個元素,手機縮放(pinch zoom)後版面高度重新計算
+    //     (trackAppHeight)可能把它擠出畫面或跟量測邏輯打架,再縮回去也不會自己復原;
+    //   ②同時有多位收購NPC時,新的一位廣播會直接覆蓋掉舊的,只看得到最新一位、其餘完全看不到。
+    // 改法:固定位置(position:fixed,不受 #game-screen 版面流程/縮放影響)小圖示按鈕,有人在線
+    //   時顯示數字角標;點擊跳出浮動選單列出「目前所有」活躍的收購NPC(不只最新一位),點某一位
+    //   才開原作既有的 openWanderingShoutMenu(嘲諷/吵死了/馬上到),不重寫任何遊戲互動邏輯。
+    // 資料來源:原作已曝露的 window.getWanderingBuyersForTown(townId)——逐一對每個城鎮查詢,純
+    //   讀取、不碰任何私有狀態或存檔格式(該狀態本身有額外的壓縮/簽章包裝,外掛拿不到也不該碰)。
+    var WANDER_BTN_ID = 'm-wander-btn';
+    var WANDER_MENU_ID = 'm-wander-menu';
+    var _wanderPollTimer = null;
+    var _wanderMenuDocHandler = null;
+
+    function collectAllWanderers() {
+      try {
+        if (typeof DB === 'undefined' || !DB.towns || typeof window.getWanderingBuyersForTown !== 'function') return [];
+        var out = [];
+        Object.keys(DB.towns).forEach(function (townId) {
+          var list = window.getWanderingBuyersForTown(townId);
+          if (list && list.length) out = out.concat(list);
+        });
+        return out;
+      } catch (e) { return []; }
     }
-    function hideWanderBanner() {
-      var b = document.getElementById(WANDER_BANNER_ID);
-      if (b) b.classList.remove('show');
+    function wandererOfferText(w) {
+      var d = (typeof DB !== 'undefined' && DB.items && DB.items[w.itemId]) || null;
+      var reqName = d ? d.n : (w.itemId || '?');
+      var reqText = (w.en != null ? ('+' + w.en + ' ') : '') + reqName;
+      if (w.currency === 'gold') return '收 ' + reqText + ' ' + Math.max(1, Math.floor(Number(w.price) || 1)).toLocaleString() + ' 金幣';
+      return '鑽收 ' + reqText;
     }
-    function showWanderBanner(wandererId, name, itemText, townText) {
+    function wandererTownName(w) {
+      return (typeof DB !== 'undefined' && DB.towns && DB.towns[w.townId]) ? DB.towns[w.townId].n : (w.townId || '?');
+    }
+    function ensureWanderButton() {
+      if (document.getElementById(WANDER_BTN_ID)) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = WANDER_BTN_ID;
+      btn.title = '收購玩家(流浪商人)';
+      btn.innerHTML = '<span class="m-wbtn-ic">🏴</span><span id="m-wander-badge" class="m-wbtn-badge"></span>';
+      btn.addEventListener('click', function (ev) { ev.stopPropagation(); toggleWanderMenu(ev); });
+      document.body.appendChild(btn);
+    }
+    function closeWanderMenu() {
+      var m = document.getElementById(WANDER_MENU_ID);
+      if (m) m.remove();
+      if (_wanderMenuDocHandler) { document.removeEventListener('click', _wanderMenuDocHandler); _wanderMenuDocHandler = null; }
+    }
+    function toggleWanderMenu(ev) {
+      if (document.getElementById(WANDER_MENU_ID)) { closeWanderMenu(); return; }
+      var list = collectAllWanderers();
+      var menu = document.createElement('div');
+      menu.id = WANDER_MENU_ID;
+      menu.innerHTML = list.length ? list.map(function (w) {
+        return '<button type="button" class="m-wmenu-row" data-wid="' + w.id + '">' +
+          '<span class="m-wmenu-title">' + (w.title || '') + '</span>' +
+          '<span class="m-wmenu-name">' + (w.n || '') + '</span>' +
+          '<span class="m-wmenu-offer">' + wandererOfferText(w) + '，人在 ' + wandererTownName(w) + '</span>' +
+          '</button>';
+      }).join('') : '<div class="m-wmenu-empty">目前沒有收購玩家在線。</div>';
+      document.body.appendChild(menu);
+      var btn = document.getElementById(WANDER_BTN_ID);
+      var rect = btn ? btn.getBoundingClientRect() : { left: window.innerWidth - 60, top: window.innerHeight - 120, bottom: window.innerHeight - 76, width: 44, height: 44 };
+      var mrect = menu.getBoundingClientRect();
+      var left = Math.max(8, Math.min(rect.left, window.innerWidth - mrect.width - 8));
+      var top = rect.top - mrect.height - 8;
+      if (top < 8) top = Math.min(rect.bottom + 8, window.innerHeight - mrect.height - 8);
+      menu.style.left = left + 'px';
+      menu.style.top = Math.max(8, top) + 'px';
+      menu.addEventListener('click', function (e) {
+        var row = e.target.closest('.m-wmenu-row');
+        if (!row) return;
+        var wid = row.getAttribute('data-wid');
+        closeWanderMenu();
+        if (typeof window.openWanderingShoutMenu === 'function') window.openWanderingShoutMenu(wid, e);
+      });
+      setTimeout(function () {
+        _wanderMenuDocHandler = function (e) { if (!menu.contains(e.target) && e.target !== btn) closeWanderMenu(); };
+        document.addEventListener('click', _wanderMenuDocHandler);
+      }, 0);
+    }
+    function refreshWanderBadge() {
       if (!document.body.classList.contains('m-mobile')) return;
-      var b = ensureWanderBannerEl();
-      b.innerHTML =
-        '<span class="m-wb-ic">🏴</span>' +
-        '<span class="m-wb-txt">' + name + ' 收「' + itemText + '」，人在 ' + townText + '，意者密</span>' +
-        '<span class="m-wb-x">✕</span>';
-      b.classList.add('show');
-      b.onclick = function (ev) {
-        if (ev.target && ev.target.classList && ev.target.classList.contains('m-wb-x')) {
-          ev.stopPropagation();
-          hideWanderBanner();
-          return;
-        }
-        if (typeof openWanderingShoutMenu === 'function') openWanderingShoutMenu(wandererId, ev);
-      };
-      // 橫幅存續時間跟叫賣廣播週期(3分鐘)同步:同一位玩家還在賣,下一輪廣播會再次觸發、
-      // 重新蓋掉這個 timeout;沒有續播(玩家離開/被兌換完)橫幅就自然收掉,不用額外偵測下線。
-      if (_wanderBannerTimer) clearTimeout(_wanderBannerTimer);
-      _wanderBannerTimer = setTimeout(hideWanderBanner, 3 * 60 * 1000);
+      var btn = document.getElementById(WANDER_BTN_ID);
+      if (!btn) return;
+      var count = collectAllWanderers().length;
+      var badge = document.getElementById('m-wander-badge');
+      if (badge) badge.textContent = count > 0 ? String(count) : '';
+      btn.style.display = count > 0 ? 'flex' : 'none';
+      if (!count) closeWanderMenu();   // 全部離場時選單也一併收起,避免殘留操作到已消失的NPC
     }
-    function initWanderBanner() {
-      if (typeof window.logSys !== 'function') return;
-      if (window.logSys.__afkWanderWrapped) return;
-      var orig = window.logSys;
-      var wrapped = function (msg) {
-        var r = orig.apply(this, arguments);
-        if (typeof msg === 'string' && msg.indexOf('wander-broadcast-name') >= 0) {
-          try {
-            var idm = msg.match(/openWanderingShoutMenu\('([^']+)'/);
-            var namem = msg.match(/wander-broadcast-name[^>]*>([^<]+)</);
-            var itemm = msg.match(/收 ([^，]+)，人在/);
-            var townm = msg.match(/text-amber-200">([^<]+)</);
-            if (idm) showWanderBanner(idm[1], namem ? namem[1] : '', itemm ? itemm[1] : '', townm ? townm[1] : '');
-          } catch (e) {}
-        }
-        return r;
-      };
-      wrapped.__afkWanderWrapped = true;
-      window.logSys = wrapped;
+    function initWanderButton() {
+      if (typeof window.getWanderingBuyersForTown !== 'function' || typeof window.openWanderingShoutMenu !== 'function') {
+        console.warn('[AFK-mobile] 找不到收購NPC相關函式,浮動選單停用');
+        return;
+      }
+      ensureWanderButton();
+      refreshWanderBadge();
+      if (_wanderPollTimer) clearInterval(_wanderPollTimer);
+      _wanderPollTimer = setInterval(refreshWanderBadge, 10000);
     }
 
     // ---- 選角畫面(手機):素質表下方 8 顆存檔位按鈕(4個一排×兩排)---------------
@@ -792,7 +840,7 @@
 
     window.__afkm = { version: '1.0.0', apply: apply, setView: setView, setLog: setLog, openLog: openLog, closeLog: closeLog, toggleLog: toggleLog, isMobile: detectMobile };
 
-    initWanderBanner();
+    initWanderButton();
 
     console.log('[AFK-mobile] hooks OK — 手機版面已啟用(目前:' + (detectMobile() ? '手機' : '桌機') + ')。');
 
@@ -1524,6 +1572,13 @@
       'body.m-mobile.mlog-open #m-log-sheet{display:flex !important;}',
       'body.m-mobile #m-log-body{flex:1 1 auto;min-height:0;display:flex;overflow:hidden;background:transparent;}',
       'body.m-mobile #m-log-body #combat-log-panel,body.m-mobile #m-log-body .m-syslog{flex:1 1 auto !important;width:100%;height:auto !important;min-height:0 !important;margin:0 !important;border-radius:0 !important;background:transparent !important;border:none !important;box-shadow:none !important;}',
+      // 🔧 2026-07-20(使用者回報「置頂的收購訊息背景是透明」):上面那行把整塊系統日誌面板背景強制
+      //   設成 transparent,#sys-log 本身有 .log-bg class 撐著不透明底色沒事,但「釘選列」#sys-log-pins
+      //   (原作叫賣訊息常駐列,見 css/style.css)跟本檔自己插入的分類篩選按鈕列 #afk-syslog-filter-row
+      //   都沒有 .log-bg,兩者原本各自的半透明底色(css/style.css 裡 rgba(74,60,30,.26) 那種)在桌機是疊在
+      //   面板本身不透明底色上才好看,手機這裡面板底色被強制透明後,兩者就變成直接透出畫面底層內容
+      //   (戰鬥畫面/特效數字),看起來像破圖。補一個跟面板同色系的不透明底色蓋掉。
+      'body.m-mobile #m-log-body #sys-log-pins,body.m-mobile #m-log-body #afk-syslog-filter-row{background:#2a2932 !important;}',
       /* 原標題列:半透明 + 模糊(血條透出),右側留位放控制鈕 */
       'body.m-mobile #m-log-body .panel-header.m-log-hdr{position:relative;background:rgba(15,23,42,0.45) !important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);padding-right:86px !important;}',
       '.m-log-ctrls{display:none;}',
@@ -1672,11 +1727,20 @@
 
       /* 收購玩家叫賣橫幅:插在 #game-screen 排版流程最前面(非 fixed 浮動遮罩),出現時把下方內容往下推;
          單行不換行(超出裁切+刪節號),點擊開叫賣選單 */
-      '#m-wander-banner{flex:0 0 auto;display:none;align-items:center;gap:8px;padding:6px 12px;background:linear-gradient(90deg,#78350f,#92400e);color:#fef3c7;font-size:12px;line-height:1.4;box-shadow:0 2px 8px rgba(0,0,0,.45);cursor:pointer;width:100%;box-sizing:border-box;}',
-      '#m-wander-banner.show{display:flex;}',
-      '#m-wander-banner .m-wb-ic{flex:0 0 auto;}',
-      '#m-wander-banner .m-wb-txt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-      '#m-wander-banner .m-wb-x{flex:0 0 auto;opacity:.85;padding:2px 6px;font-size:13px;}',
+      // 🏴 收購NPC固定按鈕:position:fixed 不受 #game-screen 版面流程/縮放重算影響(修「橫幅縮放後消失」問題);
+      //   置於導覽列上方、右側,不擋內容也不跟導覽列衝突;沒有收購NPC在線時 JS 會設 display:none 隱藏。
+      '#m-wander-btn{position:fixed;right:12px;bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:70;width:44px;height:44px;border-radius:9999px;background:linear-gradient(135deg,#78350f,#92400e);border:1px solid #d97706;box-shadow:0 2px 10px rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:0;}',
+      '#m-wander-btn .m-wbtn-ic{font-size:20px;line-height:1;}',
+      '#m-wander-btn .m-wbtn-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#dc2626;color:#fef2f2;font-size:11px;font-weight:700;line-height:18px;text-align:center;}',
+      '#m-wander-btn .m-wbtn-badge:empty{display:none;}',
+      // 浮動選單:列出目前所有活躍收購NPC,點一列開原作既有的嘲諷/吵死了/馬上到選單。
+      '#m-wander-menu{position:fixed;z-index:71;min-width:220px;max-width:min(320px,calc(100vw - 16px));max-height:60vh;overflow-y:auto;background:#0f172a;border:1px solid #475569;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.55);padding:6px;display:flex;flex-direction:column;gap:4px;}',
+      '#m-wander-menu .m-wmenu-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;border-radius:8px;background:rgba(71,85,105,.25);border:1px solid transparent;text-align:left;}',
+      '#m-wander-menu .m-wmenu-row:active{background:rgba(217,119,6,.28);border-color:#d97706;}',
+      '#m-wander-menu .m-wmenu-title{font-size:11px;color:#fcd34d;font-weight:700;}',
+      '#m-wander-menu .m-wmenu-name{font-size:13px;color:#e2e8f0;font-weight:700;}',
+      '#m-wander-menu .m-wmenu-offer{font-size:12px;color:#cbd5e1;}',
+      '#m-wander-menu .m-wmenu-empty{padding:10px;font-size:12px;color:#94a3b8;}',
 
       /* 倉庫(warehouse NPC):金幣存取列 + 分類/一鍵列在手機窄寬下擠成一團 → 重排成整齊兩行。
          用倉庫專屬 id/onclick(#wh-gold-amt、whOneClickDeposit)定位,只命中倉庫;原作改版即失效不影響別頁。 */

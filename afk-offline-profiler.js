@@ -39,8 +39,10 @@
         map: (character && character.map) || null
       },
       offlineSeconds: Math.max(0, Math.round(offlineSeconds || 0)),
-      timings: { fastModeMs: 0, bossMs: 0, lootMs: 0, batchMs: 0, uiMs: 0, fullSimMs: 0, totalMs: 0 },
-      counts: { monsterKills: 0, bossKills: 0, dropCount: 0, skillCount: 0, buffCount: 0, totalHits: 0 },
+      timings: { fastModeMs: 0, bossMs: 0, lootMs: 0, batchMs: 0, uiMs: 0, fullSimMs: 0, gainItemMs: 0, saveGameMs: 0, totalMs: 0 },
+      // 🚫 totalHits 2026-07-20 移除:這個欄位從沒有任何地方呼叫 increment('totalHits',...),
+      //   要準確統計得改到原作攻擊判定核心(分散多處、不像技能/擊殺有單一函式可包),風險過高,不做半套留著誤導人。
+      counts: { monsterKills: 0, bossKills: 0, dropCount: 0, skillCount: 0, buffCount: 0 },
       rewards: { exp: 0, gold: 0 },
       averages: { hitsPerKill: 0, dps: 0 },
       flags: { fastModeUsed: false, fallbackToFullSimulation: false, dpsAvailable: false },
@@ -55,9 +57,21 @@
     return _batchId;
   }
 
-  function endBatch() {
+  // extra(選填,afk-batch-settle.js 傳入):{ slotWallMs: {存檔位:各格總牆鐘毫秒}, totalWallMs: 整個批次總牆鐘毫秒 }。
+  //   有 totalWallMs 才會算 batchOverheadMs = 整批總耗時 − 各格 report.timings.totalMs 加總,
+  //   抓出「切格/loadGame/UI」這種不在任何單一report裡的批次額外耗時。
+  function endBatch(extra) {
     if (_batchId == null) return null;
-    var doc = { batchId: _batchId, startedAt: new Date(_batchStartedAt).toISOString(), finishedAt: new Date().toISOString(), reports: _batchReports };
+    var reports = _batchReports || [];
+    var doc = { batchId: _batchId, startedAt: new Date(_batchStartedAt).toISOString(), finishedAt: new Date().toISOString(), reports: reports };
+    if (extra && typeof extra === 'object') {
+      for (var k in extra) { if (extra.hasOwnProperty(k)) doc[k] = extra[k]; }
+      if (typeof extra.totalWallMs === 'number') {
+        var sumMs = 0;
+        for (var i = 0; i < reports.length; i++) sumMs += (reports[i].timings && reports[i].timings.totalMs) || 0;
+        doc.batchOverheadMs = round2(extra.totalWallMs - sumMs);
+      }
+    }
     try { localStorage.setItem(LAST_BATCH_KEY, JSON.stringify(doc)); } catch (e) {}
     _lastBatchCache = doc;
     _batchId = null;
@@ -119,6 +133,8 @@
     report.timings.batchMs    = round2(_sections.batch ? _sections.batch.total : 0);
     report.timings.uiMs       = round2(_sections.ui ? _sections.ui.total : 0);
     report.timings.fullSimMs  = round2(_sections.fullSim ? _sections.fullSim.total : 0);
+    report.timings.gainItemMs = round2(_sections.gainItem ? _sections.gainItem.total : 0);
+    report.timings.saveGameMs = round2(_sections.save ? _sections.save.total : 0);
   }
 
   function finish(context) {
@@ -155,6 +171,8 @@
         'Batch 花費：' + report.timings.batchMs + ' ms\n' +
         'UI 花費：' + report.timings.uiMs + ' ms\n' +
         '全模擬花費：' + report.timings.fullSimMs + ' ms（規格書未定義的補充欄位,供法師離線慢的專案分析用)\n' +
+        'gainItem 花費：' + report.timings.gainItemMs + ' ms\n' +
+        'saveGame 花費：' + report.timings.saveGameMs + ' ms\n' +
         '總耗時：' + report.timings.totalMs + ' ms\n\n' +
         '怪物數：' + report.counts.monsterKills + '\n' +
         'Boss數：' + report.counts.bossKills + '\n' +
