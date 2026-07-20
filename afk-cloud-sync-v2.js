@@ -168,7 +168,7 @@
       if (obj.wh) warehouses[key] = obj.wh;
       slots[String(n)] = { slot: obj.slot, save: obj.save, afk: obj.afk, packedAt: obj.packedAt };
     });
-    return { slots: slots, warehouses: warehouses, clan: payload.readClan() };
+    return { slots: slots, warehouses: warehouses, clan: payload.readClan(), pets: payload.readPets() };
   };
 
   // 血盟資料（js/25-clan-system.js，2026-07-19 隨 v3.6.03 新增）是「帳號共用桶」，不屬於任何
@@ -239,6 +239,102 @@
     return out;
   }
 
+  // 寵物保管（js/22-pets.js）也是「帳號共用桶」——不屬於任何單一存檔位，分「一般模式/經典模式」
+  // 兩個桶（key 分別是 fb5_pet_roster、fb5_pet_roster_classic）。2026-07-20 發現整包同步一直漏掉
+  // 這塊，換裝置下載後寵物保管會整個是空的（本機從沒有這兩把 key，跟血盟資料先前漏掉是同一類問題）。
+  // 直接重用 js/22-pets.js 已有的桶讀寫函式（純 key 參數、不依賴目前是否已登入角色），不用自己重寫存讀邏輯；
+  // 讀取失敗/舊版外掛(還沒有寵物系統)一律安全回傳 null，視為「沒有寵物資料」，不影響其餘同步流程。
+  var PET_MODE_SUFFIXES = ['', '_classic'];
+  payload.readPets = function () {
+    if (typeof _petRosterRead !== 'function') return null;
+    var buckets = {}; var any = false;
+    PET_MODE_SUFFIXES.forEach(function (sfx) {
+      var key = 'fb5_pet_roster' + sfx;
+      var arr = _petRosterRead(key);
+      if (arr === null) return;   // 桶毀損/不存在：這個模式沒有資料可帶
+      var tombs = (typeof _petTombsRead === 'function') ? _petTombsRead(key) : {};
+      buckets[sfx] = { roster: arr, tombs: tombs };
+      any = true;
+    });
+    return any ? { buckets: buckets } : null;
+  };
+  payload.writePets = function (state) {
+    if (!state || !state.buckets) return;
+    Object.keys(state.buckets).forEach(function (sfx) {
+      var key = 'fb5_pet_roster' + sfx;
+      var b = state.buckets[sfx];
+      try {
+        _lzSet(key, _saveWrap(JSON.stringify(b.roster || [])));
+        if (typeof _petTombsWrite === 'function') _petTombsWrite(key, b.tombs || {});
+      } catch (e) { console.warn('[AFK-cloud-sync-v2] writePets 失敗:', e); }
+    });
+    // 🔧 2026-07-20 修正：寵物系統把讀出來的名冊快取在記憶體(_petRoster/_petRosterKey)，
+    // 只有「桶 key 字串變了」(切換一般/經典模式)才會強制重讀，直接改硬碟內容它感覺不到。
+    // 若這台裝置這次瀏覽器分頁曾經載入過角色(即使已回到主選單，記憶體不會自動清掉)，
+    // 剛寫進硬碟的合併結果會被晾在一邊，玩家看到的還是下載前的舊名單、出戰狀態也對不上——
+    // 呼叫遊戲既有的「重新同步」函式強制丟掉快取、下次讀取保證從硬碟重讀最新資料。
+    try { if (typeof _petRosterResync === 'function') _petRosterResync(); } catch (e) {}
+  };
+
+  // 寵物合併(不是覆蓋)：每隻寵物用自己的 uid 比對，不是整桶比時間戳二選一——否則輸的那台裝置
+  // 這段時間新捕到的寵物會憑空消失。邏輯簡化自 js/22-pets.js 的 _petMergeFromBucket(那支是即時
+  // 修改記憶體中的 _petRoster，這裡兩份都只是純資料快照，改寫成不依賴目前是否已登入角色的版本)：
+  //   - 只有一邊有的 uid：整隻保留(外來新捕獲的寵物，不因為對方沒有就當作要刪除)。
+  //   - 兩邊都有：先比「進化階級→等級→經驗」哪邊比較領先當作基準(絕不讓進度倒退；進化過的
+  //     一律採用進化後的形態，避免進化前的舊副本因等級數字比較大反而被誤判領先)，
+  //     裝備(eq)/出戰狀態(outOwner/outSlot)則各自獨立比對版本戳(eqV/outV)，採較新的一側。
+  //   - 放生墓碑(tombs)兩邊取聯集：任一裝置放生過的 uid，合併結果一律不留(不會讓已放生的寵物復活)。
+  function _petFormTier(form) { try { return (typeof PET_BOOK !== 'undefined' && PET_BOOK[form] && PET_BOOK[form].tier) || 0; } catch (e) { return 0; } }
+  function _petRankGt(a, b) {
+    var at = _petFormTier(a.form), bt = _petFormTier(b.form);
+    if (at !== bt) return at > bt;
+    var al = a.lv || 1, bl = b.lv || 1;
+    if (al !== bl) return al > bl;
+    return (a.exp || 0) > (b.exp || 0);
+  }
+  function _petMergeOne(l, r) {
+    var base = _petRankGt(r, l) ? r : l;
+    var out = JSON.parse(JSON.stringify(base));
+    var lEqV = Number(l.eqV) || 0, rEqV = Number(r.eqV) || 0;
+    var eqSrc = rEqV > lEqV ? r : l;
+    out.eqV = Math.max(lEqV, rEqV);
+    if (eqSrc.eq && (eqSrc.eq.wpn || eqSrc.eq.arm)) out.eq = JSON.parse(JSON.stringify(eqSrc.eq)); else delete out.eq;
+    var lOutV = Number(l.outV) || 0, rOutV = Number(r.outV) || 0;
+    var outSrc = rOutV > lOutV ? r : l;
+    out.outV = Math.max(lOutV, rOutV);
+    out.outOwner = outSrc.outOwner ? String(outSrc.outOwner) : null;
+    out.outSlot = outSrc.outSlot == null ? null : String(outSrc.outSlot);
+    return out;
+  }
+  function petsMergeStates(local, remote) {
+    if (!remote) return null;    // 雲端沒有寵物資料(舊文件/從沒上傳過)，沒東西可合併
+    if (!local) return remote;   // 本機沒有(剛裝上寵物系統/讀取失敗)，直接採用雲端
+    var out = { buckets: {} };
+    var sfxs = {};
+    Object.keys(local.buckets || {}).forEach(function (k) { sfxs[k] = 1; });
+    Object.keys(remote.buckets || {}).forEach(function (k) { sfxs[k] = 1; });
+    Object.keys(sfxs).forEach(function (sfx) {
+      var lb = (local.buckets || {})[sfx] || { roster: [], tombs: {} };
+      var rb = (remote.buckets || {})[sfx] || { roster: [], tombs: {} };
+      var tombs = {};
+      Object.keys(lb.tombs || {}).forEach(function (u) { tombs[u] = 1; });
+      Object.keys(rb.tombs || {}).forEach(function (u) { tombs[u] = 1; });
+      var byUid = {};
+      (lb.roster || []).forEach(function (p) { if (p && p.uid) { byUid[p.uid] = byUid[p.uid] || {}; byUid[p.uid].l = p; } });
+      (rb.roster || []).forEach(function (p) { if (p && p.uid) { byUid[p.uid] = byUid[p.uid] || {}; byUid[p.uid].r = p; } });
+      var merged = [];
+      Object.keys(byUid).forEach(function (uid) {
+        if (tombs[uid]) return;
+        var e = byUid[uid];
+        if (e.l && !e.r) { merged.push(e.l); return; }
+        if (e.r && !e.l) { merged.push(e.r); return; }
+        merged.push(_petMergeOne(e.l, e.r));
+      });
+      out.buckets[sfx] = { roster: merged, tombs: tombs };
+    });
+    return out;
+  }
+
   // ===========================================================================
   // api：呼叫後端(配對碼) — 全部用 fetch，帶逾時保護；不做背景重試/排隊，失敗直接回錯給呼叫端
   // ===========================================================================
@@ -299,7 +395,7 @@
     return { ok: false, err: err };
   }
 
-  function emptyDoc() { return { slots: {}, warehouses: {}, clan: null }; }
+  function emptyDoc() { return { slots: {}, warehouses: {}, clan: null, pets: null }; }
 
   // 上傳本機所有有資料的存檔位。雲端既有、本機沒有的存檔位（別台裝置的進度）保留不動，不會被誤刪。
   // 遇到「同一個存檔位在本機與雲端都有、但內容不同」才視為衝突，跳批次視窗讓玩家逐格選；
@@ -335,6 +431,10 @@
       var mergedClan = clanMergeStates(localDoc.clan, remoteDoc.clan);
       if (mergedClan) { merged.clan = mergedClan; payload.writeClan(mergedClan); }
       else if (localDoc.clan) { merged.clan = localDoc.clan; }
+      // 寵物保管同血盟資料：獨立於各存檔位衝突之外，逐隻合併(取不倒退)一次，結果一併寫回本機。
+      var mergedPets = petsMergeStates(localDoc.pets, remoteDoc.pets);
+      if (mergedPets) { merged.pets = mergedPets; payload.writePets(mergedPets); }
+      else if (localDoc.pets) { merged.pets = localDoc.pets; }
       function finalize() {
         if (typeof onProgress === 'function') onProgress(78, '套用衝突選擇並重新上傳…');
         return api.putSave(cfg.getCode(), merged, r.remote.version).then(function (r2) {
@@ -394,6 +494,8 @@
       // 直接安全套用(取不倒退的合併結果),不需要跳視窗問——覆蓋掉不會有「選錯導致進度消失」的風險。
       var mergedClan = clanMergeStates(payload.readClan(), remoteDoc.clan);
       if (mergedClan) payload.writeClan(mergedClan);
+      var mergedPets = petsMergeStates(payload.readPets(), remoteDoc.pets);
+      if (mergedPets) payload.writePets(mergedPets);
       var conflicts = [];
       var applied = 0;
       Object.keys(remoteSlots).forEach(function (k) {
