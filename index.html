@@ -190,7 +190,7 @@
                         <div class="bar-bg compact-vital-bar" title="MP"><div id="bar-mp" class="bar-fill bg-blue-600" style="width:100%"></div><div id="txt-mp" class="bar-text text-white">1/1</div></div>
                     </div>
                     <div class="bar-bg status-exp-bar" title="EXP"><div id="bar-exp" class="bar-fill bg-yellow-500" style="width:0%"></div><div id="txt-exp" class="bar-text font-normal">0.00%</div></div>
-                    <div id="castle-guard-row" class="flex items-center gap-3 mt-1 hidden"><span id="cg-name" class="text-amber-300 font-bold w-16 text-right text-xs leading-tight whitespace-nowrap">護衛</span><div class="bar-bg flex-1 !h-4"><div id="cg-bar" class="bar-fill bg-amber-500" style="width:100%"></div><div id="cg-txt" class="bar-text text-white !text-xs !line-height-[16px]">0/0</div></div></div>
+                    <div id="castle-guard-row" class="flex items-center gap-3 mt-1 hidden"><span id="cg-name" class="text-amber-300 font-bold w-16 text-right text-xs leading-tight whitespace-nowrap">護衛</span><div class="bar-bg compact-team-bar flex-1" title="HP"><div id="cg-bar" class="bar-fill bg-red-600" style="width:100%"></div><div id="cg-txt" class="bar-text text-white">0/0</div></div></div>
                 </div>
             </div>
 
@@ -545,20 +545,20 @@
     </script>
 
     <script src="js/anim-manifest.js?v=92a56e237d"></script>
-    <script src="js/00-data.js?v=799a639062"></script>
+    <script src="js/00-data.js?v=2adfc6ff25"></script>
 <script src="js/01-drops-config.js?v=4a471bdd50"></script>
 <script src="js/02-stats-recompute.js?v=5f848d1c07"></script>
-    <script src="js/03-combat-core.js?v=97d3bf1223"></script>
-    <script src="js/04-combat-attack.js?v=a59bda7393"></script>
-<script src="js/05-kill-progression.js?v=b403f08a68"></script>
+    <script src="js/03-combat-core.js?v=285a701ed4"></script>
+    <script src="js/04-combat-attack.js?v=6f8c3f204e"></script>
+<script src="js/05-kill-progression.js?v=89fb4db628"></script>
     <script src="js/06-status-allies.js?v=6b0f60a9c2"></script>
     <script src="js/07-skills-cast.js?v=26b2dd522b"></script>
 <script src="js/08-items-equip.js?v=2f07f7d807"></script>
 <script src="js/09-vfx-render.js?v=5550c6b723"></script>
 <script src="js/10-ui-tabs.js?v=457c1d964e"></script>
-<script src="js/11-world-map.js?v=4be412b81f"></script>
+<script src="js/11-world-map.js?v=d3dee95f79"></script>
 <script src="js/12-npc-quests.js?v=ce3014b2fe"></script>
-<script src="js/13-shop-save.js?v=af1a356e4c"></script>
+<script src="js/13-shop-save.js?v=b85a141d94"></script>
 <script src="js/14-craft-pandora.js?v=93361ad4d0"></script>
 <script src="js/15-cards.js?v=1937e5996c"></script>
 <script src="js/16-equip-book.js?v=b33a18a2d7"></script>
@@ -568,10 +568,11 @@
 <script src="js/20-warehouse-window.js?v=f0ce1aeb02"></script>
 <script src="js/21-relic-book.js?v=bdeff66680"></script>
     <script src="js/23-summons.js?v=b73dd78865"></script>
-    <script src="js/22-pets.js?v=b68f5e36a5"></script>
-    <script src="js/24-pandora-relic-market.js?v=bd5ce35ea9"></script>
+    <script src="js/22-pets.js?v=87b6483a19"></script>
+    <script src="js/24-pandora-relic-market.js?v=311c5bdf85"></script>
     <script src="js/25-clan-system.js?v=6498a9eff4"></script>
-    <script src="js/26-world-channel.js?v=577ec38c31"></script>
+    <script src="js/26-world-channel.js?v=ba5e383d82"></script>
+    <script src="js/28-pvp-arena.js?v=9a813bcf1e"></script>
 <!-- 外掛事件匯流排(階段1,純工具物件,不掛接本體;必須排在所有其他 afk-*.js 之前;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-hook.js?v=20260719a"></script>
 <!-- 離線結算效能日誌(純觀測,預設關閉;需排在 afk-offline.js 之前,供其呼叫 window.AFKOfflineProfiler;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -587,7 +588,7 @@
 <!-- 選角畫面掛機資訊提供者(📍掛機地點/⏱已掛機時間;桌機附加渲染+手機共用資料源 AFK_SLOTINFO.read;可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-slotinfo.js?v=20260719a"></script>
 <!-- 共用補充資料(掉落查詢+小百科共用的手動清單;純資料無 DOM,需先於 dex/wiki 載入) -->
-<script src="afk-extradata.js?v=20260714a"></script>
+<script src="afk-extradata.js?v=20260721c"></script>
 <!-- 怪物/掉落查詢外掛(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-dex.js?v=20260720b"></script>
 <!-- 小百科外掛(專精/武器特性/職業魔法;可獨立維護,原作者更新後重新加回此行即可) -->
@@ -623,7 +624,7 @@
 <!-- PWA:安裝成免網路遊玩 + 自動/手動更新 + 觸發素材對帳(可獨立維護;原作者更新後重新加回此行即可) -->
 <script src="afk-pwa.js?v=20260719a"></script>
 <!-- 首頁「📢 最新公告」按鈕+彈窗:白話摘要最近更新,可連結跳小百科詳情(可獨立維護,原作者更新後重新加回此行即可) -->
-<script src="afk-whatsnew.js?v=20260721d"></script>
+<script src="afk-whatsnew.js?v=20260721e"></script>
 <!-- 冒險地圖「黑市」按鈕旁新增「魔物追蹤」快捷鈕,等同主城奧貝勒/赫特/帝倫NPC功能(可獨立維護,原作者更新後重新加回此行即可) -->
 <script src="afk-track-shortcut.js?v=20260718a"></script>
 <!-- 魔物追蹤視窗內加「自動續約」開關,到期自動用同樣目標續約(可獨立維護,原作者更新後重新加回此行即可) -->

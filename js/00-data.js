@@ -2493,6 +2493,16 @@ const DB = {
 				{ id: "npc_mother", n: "迷幻森林之母", title: "試煉", type: "quest", d: "迷幻森林的守護之母，她的恩賜只賜予能洗淨黑暗之人。主持妖精的 30 級試煉：達等級後接取任務，淨化受詛咒的書，一次完成領取全部恩賜。" }
             ]
         },
+		"town_gludin": {
+            n: "古魯丁村莊",
+            npcs: [
+                { id: "npc_arena", n: "巴魯特", title: "鬥技場管理者", type: "arena", d: "古魯丁港口的退役鬥士，如今替往來的冒險者安排決鬥。可產生你的「對戰名片」交給其他玩家，或貼上對方的名片後由他安排場地——決鬥不給經驗與金幣，只記錄勝負戰績；落敗方完全無損失——不扣經驗、不掉裝備、不影響性向值，也無須祈求復活。任一方倒下即分出勝負，接著可自行選擇留在競技場再戰，或回古魯丁村莊。" },
+                { id: "npc_wh_gludin", n: "凱倫", title: "倉庫", type: "warehouse", d: "凱倫在港邊的庫房裡清點著往來的貨物，替你存放物品與金幣，四個存檔角色共用。" },
+                { id: "npc_lucy", n: "露西", title: "雜貨商人", type: "shop", d: "露西的攤子就擺在通往碼頭的路上，出海遠行前該備的東西一樣不缺。販售各種日常消耗品。" },
+                { id: "npc_ally_gludin", n: "傭兵公會", title: "協力", type: "ally", d: "傭兵公會替你牽起命運的絲線，召喚其他存檔位的角色一起作戰。" },
+                { id: "npc_austin", n: "奧斯丁", title: "寵物保管", type: "petstore", d: "看慣了碼頭來去的旅人，奧斯丁願替他們照看捕獲的寵物。最多保管 32 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上「一般型態」的寵物進化——用進化果實→對應高等，或用勝利果實→黃金龍（兩種果實都帶著時可自選）；高等型態與黃金龍皆為最終型態。" }
+            ]
+        },
 		"town_gludio": {
             n: "燃柳村",
             npcs: [
@@ -2545,7 +2555,7 @@ const DB = {
                 { id: "npc_upni", n: "烏普尼", title: "製作", type: "craft", d: "通曉禁忌符文的烏普尼，能將塔之力封入一紙。以 傲慢之塔傳送符 與 移動卷軸 製作 傲慢之塔支配符。" },
                 { id: "npc_norse", n: "諾斯", title: "寵物裝備製作", type: "craft", d: "獸語匠人諾斯，懂得讓忠犬之牙更加銳利。鍛造寵物裝備，強化你的寵物。" },
                 { id: "npc_baowu", n: "包武", title: "寵物保管", type: "petstore", d: "和善的看護人包武，願替遠行的旅人照看捕獲的寵物。最多保管 32 隻（同模式角色共通）；可在此讓寵物出戰、鎖定、放生，或讓等級 30 以上「一般型態」的寵物進化——用進化果實→對應高等，或用勝利果實→黃金龍（兩種果實都帶著時可自選）；高等型態與黃金龍皆為最終型態。" },
-                { id: "npc_arkata", n: "聖使阿卡塔", title: "死亡經驗買回", type: "pray", classicOnly: true, d: "聖使阿卡塔能以聖光凝聚你死亡時散逸的經驗。每次死亡的實際經驗損失都會被記錄（最多 10 筆），可花費「死亡時等級×等級×1000」金幣，買回該筆損失經驗的 50%。" }   // 🕊️ v3.4.73 經典限定（classicOnly·一般模式死亡不損失經驗故不顯示）
+                { id: "npc_arkata", n: "聖使阿卡塔", title: "經驗買回・裝備贖回", type: "pray", d: "聖使阿卡塔能以聖光凝聚你死亡時散逸的事物。【裝備贖回】邪惡（紅名）狀態下死亡遺失的裝備會被記錄（最多 5 件），可花費 1000 龍之鑽石指定贖回其中一件。【死亡經驗買回】經典模式限定：每次死亡的實際經驗損失都會被記錄（最多 10 筆），可花費「死亡時等級×等級×1000」金幣，買回該筆損失經驗的 50%。" }   // 🕊️ v3.4.73 起經驗買回；v3.6.84 加裝備贖回並取消 classicOnly（紅名噴裝兩模式皆會發生·經驗買回段落內部仍限經典）
             ]
         },
         "town_elder_council": {   // 🌑 黑暗妖精聖地樞紐（依《黑暗妖精聖地.md》·v3.3.33）
@@ -2908,6 +2918,9 @@ const DB = {
     },
 
     maps: {
+        // ⚔️ 決鬥競技場（js/28 存檔 PvP）：出怪池刻意留空＝不會自動出怪，只有按下「挑戰」才由 pvpArenaStart 生成對手。
+        //    spawn 路徑取到 undefined base 會在 js/03 早退（if(!base) return;），故空池安全無副作用。
+        "arena_pvp": [],
         "pirate_wild": ["nm_035", "nm_003", "doberman", "pirate_wildpoison", "pirate_lizardrage", "pirate_wildfang", "pirate_wilddemon", "pirate_lizardhigh", "pirate_bluetail", "pirate_parrot", "pirate_chest", "wild_tiger", "wild_koreapup", "wild_raccoon"],
         "pirate_dungeon": ["pirate_lizardrage", "pirate_lizardhigh", "pirate_skeleton", "pirate_lizardheavy", "pirate_skelsoldier", "pirate_skelblade", "pirate_skelchief", "pirate_drake"],
         "training": ["orc", "goblin", "orc_archer", "gremlin"],

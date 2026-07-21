@@ -588,7 +588,12 @@ function tick() {
         if(m.curHp <= 0) continue;   // 反擊使該怪在自己回合內死亡 → 跳過後續魔法施放
         if(m.st && (m.st.vacuum > 0 || m.st.magicseal > 0)) continue; // 真空 / 魔法封印：無法施放技能
         if(!m._magCd) m._magCd = {};
-        _dpsReactWrap(() => ['mag','mag2','mag3','mag4','mag5'].forEach(mk => {   // 🌑 v3.3.33 mag4：吉爾塔斯第四技（血壁空間）；😤 v3.6.20 mag5：二模板法師第五技（究極光裂術）；🎯 DPS：怪物施法引發的玩家受擊反應（鏡反射等）歸玩家
+        // 🔮 v3.7.16 決鬥法師對手：先問 js/28「本 tick 已就緒的法術中傷害最高的是哪一招」→ 那一招必放且先放。
+        //   ⚠️ 只有 `_pvpDuelFoe` 且職業為法師會拿到非 null，其餘怪物 _magBest 恆 null＝完全照舊。
+        let _magBest = (m._pvpDuelFoe && typeof pvpDuelBestSpellKey === 'function') ? pvpDuelBestSpellKey(m) : null;
+        let _magKeys = ['mag','mag2','mag3','mag4','mag5'];
+        if (_magBest) _magKeys = [_magBest].concat(_magKeys.filter(k => k !== _magBest));   // 最高傷害排最前（玩家若被這招打死，後面的就不用放了）
+        _dpsReactWrap(() => _magKeys.forEach(mk => {   // 🌑 v3.3.33 mag4：吉爾塔斯第四技（血壁空間）；😤 v3.6.20 mag5：二模板法師第五技（究極光裂術）；🎯 DPS：怪物施法引發的玩家受擊反應（鏡反射等）歸玩家
             if(!m[mk]) return;
             if(m[mk].reqAlign != null && pvpClampAlignment(m._pvpAlignment || 0) < m[mk].reqAlign) return;   // ⚖️ v3.6.20 性向門檻技（究極光裂術≥500）：未達＝視同沒有此技（不進冷卻）
             // 檢查發動機率
@@ -597,7 +602,7 @@ function tick() {
                  m._magCd[mk]--;
                  if(m._magCd[mk] <= 0) {
                      m._magCd[mk] = m[mk].cd;
-                     if(Math.random() <= m[mk].chance) {
+                     if(mk === _magBest || Math.random() <= m[mk].chance) {   // 🔮 v3.7.16 決鬥法師的「本輪最高傷害法術」跳過發動機率＝必放（其餘技能照原機率）
                          if(!player.dead) castMobMagic(m, m[mk]);   // 🤝 Phase4：攻擊型魔法可依全體名單/仇恨權重打玩家或傭兵
                      }
                  }
@@ -807,6 +812,7 @@ function _pvpNormalizeKillWhisperRecord(raw) {
         avatar: TROLL_CLASS_BY_AVATAR[raw.avatar] ? raw.avatar : '男戰士',
         alignmentValue: pvpClampAlignment(raw.alignmentValue),
         levelOffset: Number.isFinite(Number(raw.levelOffset)) ? Math.max(-10, Math.min(10, Math.round(Number(raw.levelOffset)))) : undefined,
+        clanId: raw.clanId == null ? null : String(raw.clanId).slice(0, 64),
         revengeCount: revengeCount,
         awaitingRevenge: revengeCount < PVP_KILL_WHISPER_REVENGE_MAX && !!raw.awaitingRevenge,
         expiresAt: Math.max(0, Math.floor(Number(raw.expiresAt) || 0)),
@@ -816,9 +822,117 @@ function _pvpNormalizeKillWhisperRecord(raw) {
         updatedAt: Math.max(0, Math.floor(Number(raw.updatedAt) || 0))
     };
 }
+// 🔒 同名 NPC 的性向值在世界頻道、追殺、復仇與有效密語期間共用同一份鎖。
+//   進入戰鬥不解鎖；只有相關追蹤全部結束後才允許釋放。NPC 擊殺非邪惡玩家而轉紅時，
+//   會透過 pvpSetNpcAlignment 同步所有紀錄，不屬於隨機重抽。
+const PVP_ALIGN_LOCK_MAX = 200;   // 世界頻道會不斷產生新名字 → 上限保護；淘汰最舊且未凍結者
+function pvpAlignLockAll() {
+    if (!player.pvpAlignLock || typeof player.pvpAlignLock !== 'object' || Array.isArray(player.pvpAlignLock)) player.pvpAlignLock = {};
+    return player.pvpAlignLock;
+}
+// 宣戰凍結：鎖上記的血盟目前「與玩家」交戰中。
+// ⚠️ 必須走 npcClanWarIds（有 2 秒快取）而非 npcClanGetById——後者每次都 _clanReadState() 重讀＋解壓 localStorage，
+//    淘汰迴圈逐筆呼叫會變成 O(n²) 次儲存讀取，實測 230 筆就把分頁卡死。
+function pvpAlignLockFrozen(rec) {
+    if (!rec || !rec.c) return false;
+    try {
+        if (typeof npcClanWarIds !== 'function') return false;
+        return npcClanWarIds(player).indexOf(rec.c) >= 0;
+    } catch (e) { return false; }
+}
+function pvpAlignmentInUse(name) {
+    if (!player || !player.cls || !name) return false;
+    let key = String(name).slice(0, 24);
+    let same = rec => rec && String(rec.n || '').slice(0, 24) === key;
+    if (Array.isArray(player.trollPlayers) && player.trollPlayers.some(same)) return true;
+    if (Array.isArray(player.pvpRevengeList) && player.pvpRevengeList.some(same)) return true;
+    let now = Date.now();
+    return Array.isArray(player.pvpKillWhispers) && player.pvpKillWhispers.some(rec =>
+        same(rec) && (!!rec.awaitingRevenge || Math.max(0, Number(rec.expiresAt) || 0) > now)
+    );
+}
+function pvpLockAlignment(name, align, clanId) {
+    if (!player || !player.cls || !name) return pvpClampAlignment(align);
+    let all = pvpAlignLockAll(), key = String(name).slice(0, 24);
+    if (all[key]) {
+        if (clanId) all[key].c = String(clanId).slice(0, 64);
+        all[key].t = Date.now();
+        return pvpClampAlignment(all[key].v);
+    }
+    let keys = Object.keys(all);
+    if (keys.length >= PVP_ALIGN_LOCK_MAX) {
+        keys.sort((a, b) => (Number(all[a] && all[a].t) || 0) - (Number(all[b] && all[b].t) || 0));
+        for (let i = 0; i < keys.length && Object.keys(all).length >= PVP_ALIGN_LOCK_MAX; i++) {
+            if (!pvpAlignLockFrozen(all[keys[i]]) && !pvpAlignmentInUse(keys[i])) delete all[keys[i]];
+        }
+    }
+    all[key] = { v: pvpClampAlignment(align), t: Date.now(), c: clanId ? String(clanId).slice(0, 64) : null };
+    return all[key].v;
+}
+function pvpSetNpcAlignment(name, align, clanId) {
+    if (!player || !player.cls || !name) return pvpClampAlignment(align);
+    let key = String(name).slice(0, 24);
+    let value = pvpClampAlignment(align);
+    let all = pvpAlignLockAll();
+    let old = all[key];
+    let resolvedClanId = clanId ? String(clanId).slice(0, 64) : (old && old.c ? old.c : null);
+    all[key] = { v:value, t:Date.now(), c:resolvedClanId };
+    let sync = rec => {
+        if (!rec || String(rec.n || '').slice(0, 24) !== key) return;
+        rec.alignmentValue = value;
+        if (resolvedClanId && !rec.clanId) rec.clanId = resolvedClanId;
+    };
+    if (Array.isArray(player.trollPlayers)) player.trollPlayers.forEach(sync);
+    if (Array.isArray(player.pvpRevengeList)) player.pvpRevengeList.forEach(sync);
+    if (Array.isArray(player.pvpKillWhispers)) player.pvpKillWhispers.forEach(sync);
+    try {
+        if (typeof mapState !== 'undefined' && mapState && Array.isArray(mapState.mobs)) {
+            mapState.mobs.forEach(mob => {
+                if (mob && mob.trollPlayer && String(mob.n || '').slice(0, 24) === key) mob._pvpAlignment = value;
+            });
+        }
+    } catch (e) {}
+    try {
+        if (typeof _wcNpcs !== 'undefined' && _wcNpcs) {
+            Object.keys(_wcNpcs).forEach(id => {
+                let npc = _wcNpcs[id];
+                if (npc && String(npc.name || '').slice(0, 24) === key) npc.alignmentValue = value;
+            });
+        }
+    } catch (e) {}
+    try { if (typeof npcClanUpdateMemberAlignment === 'function') npcClanUpdateMemberAlignment(key, value, player); } catch (e) {}
+    try { if (typeof pandoraUpdateWandererAlignment === 'function') pandoraUpdateWandererAlignment(key, value); } catch (e) {}
+    return value;
+}
+function pvpLockedAlignment(name, fallback) {
+    if (!player || !player.cls || !name) return pvpClampAlignment(fallback);
+    let rec = pvpAlignLockAll()[String(name).slice(0, 24)];
+    return rec ? pvpClampAlignment(rec.v) : pvpClampAlignment(fallback);
+}
+function pvpIsAlignLocked(name) {
+    if (!player || !player.cls || !name) return false;
+    return !!pvpAlignLockAll()[String(name).slice(0, 24)];
+}
+function pvpReleaseAlignLock(name) {
+    if (!player || !player.cls || !name) return false;
+    let all = pvpAlignLockAll(), key = String(name).slice(0, 24), rec = all[key];
+    if (!rec || pvpAlignLockFrozen(rec) || pvpAlignmentInUse(key)) return false;
+    delete all[key];
+    return true;
+}
 function pvpEnsureState() {
     if (!player || !player.cls) return;
     player.alignmentValue = pvpClampAlignment(player.alignmentValue);
+    {   // 🔒 v3.6.81 性向值鎖正規化（舊存檔無此欄位／型別異常一律重建）
+        let all = pvpAlignLockAll();
+        for (let k in all) {
+            let r = all[k];
+            if (!r || typeof r !== 'object' || !Number.isFinite(Number(r.v))) { delete all[k]; continue; }
+            r.v = pvpClampAlignment(r.v);
+            r.t = Number(r.t) || Date.now();
+            r.c = r.c == null ? null : String(r.c).slice(0, 64);
+        }
+    }
     if (player.pvpOn === undefined) player.pvpOn = false;
     if (typeof npcClanWarActive === 'function' && npcClanWarActive(player)) player.pvpOn = true;
     if (!Array.isArray(player.pvpRevengeList)) player.pvpRevengeList = [];
@@ -827,9 +941,16 @@ function pvpEnsureState() {
         avatar: TROLL_CLASS_BY_AVATAR[r.avatar] ? r.avatar : '男戰士',
         alignmentValue: pvpClampAlignment(r.alignmentValue),
         levelOffset: Number.isFinite(Number(r.levelOffset)) ? Math.max(-10, Math.min(10, Math.round(Number(r.levelOffset)))) : undefined,
+        clanId: r.clanId == null ? null : String(r.clanId).slice(0, 64),
         deaths: Math.max(1, Number(r.deaths) || 1),
         t: Number(r.t) || Date.now()
     }));
+    player.pvpRevengeList.forEach(rec => {
+        rec.alignmentValue = pvpLockAlignment(rec.n, rec.alignmentValue, rec.clanId);
+    });
+    if (Array.isArray(player.trollPlayers)) player.trollPlayers.forEach(rec => {
+        if (rec && rec.n) rec.alignmentValue = pvpLockAlignment(rec.n, rec.alignmentValue, rec.clanId);
+    });
     let whisperByName = Object.create(null);
     (Array.isArray(player.pvpKillWhispers) ? player.pvpKillWhispers : []).forEach(raw => {
         let rec = _pvpNormalizeKillWhisperRecord(raw);
@@ -840,6 +961,9 @@ function pvpEnsureState() {
         .map(n => whisperByName[n])
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, PVP_KILL_WHISPER_RECORD_MAX);
+    player.pvpKillWhispers.forEach(rec => {
+        rec.alignmentValue = pvpLockAlignment(rec.n, rec.alignmentValue, rec.clanId);
+    });
 }
 function pvpAlignmentKind(v) {
     v = pvpClampAlignment(v);
@@ -963,6 +1087,9 @@ function pvpCreateRandomOpponent(onFieldNames, clanOptions) {
         let opts = Object.assign({}, clanOptions || {}, { onFieldNames:onFieldNames || [] });
         entry = npcClanAssignOpponent(entry, opts) || entry;
     }
+    if (!(clanOptions && clanOptions.skipClanAssign)) {
+        entry.alignmentValue = pvpLockAlignment(entry.n, entry.alignmentValue, entry.clanId);
+    }
     return entry;
 }
 function pvpMarkForChase(entry) {
@@ -973,11 +1100,14 @@ function pvpMarkForChase(entry) {
     if (!Number.isFinite(Number(entry.levelOffset)) && old && Number.isFinite(Number(old.levelOffset))) {
         entry.levelOffset = old.levelOffset;
     }
+    let clanId = entry.clanId || (old && old.clanId) || null;
+    let alignmentValue = pvpLockAlignment(entry.n, entry.alignmentValue, clanId);
     let rec = {
         n: String(entry.n).slice(0, 24),
         avatar: TROLL_CLASS_BY_AVATAR[entry.avatar] ? entry.avatar : '男戰士',
-        alignmentValue: pvpClampAlignment(entry.alignmentValue),
+        alignmentValue: alignmentValue,
         levelOffset: pvpResolveLevelOffset(entry),
+        clanId: clanId,
         revengeCount: Math.max(0, Math.min(PVP_KILL_WHISPER_REVENGE_MAX, Math.floor(Number(entry.revengeCount) || 0))),
         pvpRevenge: true,
         noExpire: true,
@@ -1019,7 +1149,9 @@ function pvpRegisterKillWhisper(mob) {
         };
     }
     rec.avatar = TROLL_CLASS_BY_AVATAR[mob._pvpAvatar] ? mob._pvpAvatar : '男戰士';
-    rec.alignmentValue = pvpClampAlignment(mob._pvpAlignment || 0);
+    rec.clanId = mob._npcClanId || rec.clanId || null;
+    rec.alignmentValue = pvpLockAlignment(mob.n, mob._pvpAlignment || 0, rec.clanId);
+    mob._pvpAlignment = rec.alignmentValue;
     if (Number.isFinite(Number(mob._pvpLevelOffset))) rec.levelOffset = pvpResolveLevelOffset({ levelOffset: mob._pvpLevelOffset });
     rec.awaitingRevenge = false;
     rec.repliedSeq = rec.whisperSeq;
@@ -1036,8 +1168,13 @@ function pvpRegisterKillWhisper(mob) {
 function pvpAddRevengeFromMob(mob) {
     if (!mob || !mob.trollPlayer || !mob.n) return;
     pvpEnsureState();
-    let align = pvpClampAlignment(mob._pvpAlignment || 0);
-    if (pvpClampAlignment(player.alignmentValue) > PVP_ALIGN_EVIL) align = Math.min(align, -12000);
+    let clanId = mob._npcClanId || null;
+    let align = pvpLockAlignment(mob.n, mob._pvpAlignment || 0, clanId);
+    if (pvpClampAlignment(player.alignmentValue) > PVP_ALIGN_EVIL) {
+        let evilAlignment = Math.min(align, -12000);
+        if (evilAlignment !== align) align = pvpSetNpcAlignment(mob.n, evilAlignment, clanId);
+    }
+    mob._pvpAlignment = align;
     let avatar = mob._pvpAvatar || '男戰士';
     let list = player.pvpRevengeList || [];
     let old = list.find(r => r && r.n === mob.n);
@@ -1045,6 +1182,7 @@ function pvpAddRevengeFromMob(mob) {
         old.avatar = avatar;
         old.alignmentValue = align;
         if (Number.isFinite(Number(mob._pvpLevelOffset))) old.levelOffset = pvpResolveLevelOffset({ levelOffset: mob._pvpLevelOffset });
+        old.clanId = clanId || old.clanId || null;
         old.deaths = (old.deaths || 1) + 1;
         old.t = Date.now();
     } else {
@@ -1053,6 +1191,7 @@ function pvpAddRevengeFromMob(mob) {
             avatar: avatar,
             alignmentValue: align,
             levelOffset: Number.isFinite(Number(mob._pvpLevelOffset)) ? pvpResolveLevelOffset({ levelOffset: mob._pvpLevelOffset }) : pvpRandomLevelOffset(),
+            clanId: clanId,
             deaths: 1,
             t: Date.now()
         });
@@ -1231,8 +1370,18 @@ function pvpPostKillWhisperTick() {
     pvpEnsureState();
     let now = Date.now();
     let changed = false;
-    (player.pvpKillWhispers || []).forEach(rec => {
-        if (!rec || rec.revengeCount >= PVP_KILL_WHISPER_REVENGE_MAX || rec.awaitingRevenge) return;
+    let list = player.pvpKillWhispers || [];
+    let kept = [];
+    let expiredNames = [];
+    list.forEach(rec => {
+        if (!rec) { changed = true; return; }
+        if (!rec.awaitingRevenge && rec.expiresAt && now >= rec.expiresAt) {
+            expiredNames.push(rec.n);
+            changed = true;
+            return;
+        }
+        kept.push(rec);
+        if (rec.revengeCount >= PVP_KILL_WHISPER_REVENGE_MAX || rec.awaitingRevenge) return;
         if (!rec.nextCheckAt || now < rec.nextCheckAt || now >= rec.expiresAt) return;
         let dueCount = 1 + Math.floor((now - rec.nextCheckAt) / PVP_KILL_WHISPER_INTERVAL_MS);
         let remainingChecks = Math.max(0, Math.ceil((rec.expiresAt - rec.nextCheckAt) / PVP_KILL_WHISPER_INTERVAL_MS));
@@ -1247,6 +1396,10 @@ function pvpPostKillWhisperTick() {
             _pvpKillWhisperLog(rec);
         }
     });
+    if (kept.length !== list.length) {
+        player.pvpKillWhispers = kept;
+        expiredNames.forEach(name => pvpReleaseAlignLock(name));
+    }
     if (changed) {
         try { if (typeof saveGame === 'function') saveGame(); } catch (e) {}
     }
@@ -1542,11 +1695,19 @@ function spawnMob(idx) {
         if (player.trollPlayers && player.trollPlayers.length) {
             let _now = Date.now();
             let _tl = player.trollPlayers.filter(t => t && (t.noExpire || t.pvpRevenge || t.until > _now));
-            if (_tl.length !== player.trollPlayers.length) player.trollPlayers = _tl;
+            if (_tl.length !== player.trollPlayers.length) {
+                let _keep = new Set(_tl.map(t => t && t.n));
+                let _expiredNames = player.trollPlayers.filter(t => t && t.n && !_keep.has(t.n)).map(t => t.n);
+                player.trollPlayers = _tl;
+                _expiredNames.forEach(n => { if (typeof pvpReleaseAlignLock === 'function') pvpReleaseAlignLock(n); });
+            }
             if (_tl.length && !PURE_BOSS_MAPS.includes(mapState.current) && !isSiegeArea(mapState.current) && Math.random() < ((typeof window !== 'undefined' && window.__FB5_TEST_BUILD) ? 1 : 0.05)) {   // 🧪 TEST版：野外重生必定遭遇（正式版 5%）
                 let _onF = mapState.mobs.filter(m => m).map(m => m.n);
                 let _cand = _tl.filter(t => !_onF.includes(t.n));
-                if (_cand.length) { let _t = _cand[Math.floor(Math.random() * _cand.length)]; mobId = trollPickClassMob(_t.avatar); mapState._trollSpawn = _t; }   // 😤 v3.6.20 70%/30% 模板抽選
+                if (_cand.length) {
+                    let _t = _cand[Math.floor(Math.random() * _cand.length)]; mobId = trollPickClassMob(_t.avatar); mapState._trollSpawn = _t;   // 😤 v3.6.20 70%/30% 模板抽選
+                    if (typeof pvpLockAlignment === 'function') _t.alignmentValue = pvpLockAlignment(_t.n, _t.alignmentValue, _t.clanId);
+                }
             }
         }
         }
@@ -1607,6 +1768,9 @@ function spawnMob(idx) {
         if (_t && !_t._npcClanAssigned && typeof npcClanAssignOpponent === 'function') {
             _t = npcClanAssignOpponent(_t) || _t;
             mapState._trollSpawn = _t;
+        }
+        if (_t && typeof pvpLockAlignment === 'function') {
+            _t.alignmentValue = pvpLockAlignment(_t.n, _t.alignmentValue, _t.clanId);
         }
         applyTrollScaling(mapState.mobs[idx], pvpTrollLevelOverride(_t));
         if (_t) {

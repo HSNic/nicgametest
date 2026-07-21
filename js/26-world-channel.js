@@ -46,11 +46,15 @@ function _wcSpawnNpc() {
             entry = npcClanAssignOpponent(entry, { onFieldNames: Object.keys(_wcNpcs).map(k => _wcNpcs[k] && _wcNpcs[k].name).filter(Boolean) }) || entry;
         } catch (e) {}
     }
+    // 🔒 v3.6.81 初次在頻道發言＝記錄該名字的性向值（已有鎖則沿用舊值）→ 之後記仇／野外遭遇全程同一個顏色
+    let _lockedAlign = (typeof pvpLockAlignment === 'function')
+        ? pvpLockAlignment(entry.n, entry.alignmentValue, entry.clanId)
+        : _wcAlignmentValue(entry.alignmentValue);
     _wcNpcs[id] = {
         name: entry.n,
         persona: _wcPick(WC_PERSONAS),
         cls: _wcPick(clsKeys),
-        alignmentValue: entry.alignmentValue,
+        alignmentValue: _lockedAlign,
         clanName: entry.clanName || '',
         clanLeader: !!entry.clanLeader,
         thanked: false,
@@ -736,7 +740,8 @@ const WC_TOPICS = [
                 '寵物也能裝武器防具，諾斯那邊可以做，別讓牠白板上場。',
                 '寵物保管上限 32 隻，出戰、收回、裝備後會維持原本捲動位置，不用每次從頂端重找。',
                 '寵物也有隨機傷害減免：物理型看 AC/3、特殊型 AC/4、魔法型 AC/5；袋鼠跟高等袋鼠普攻還會穿透怪物減傷。',
-                '魔法娃娃商人那邊有合成／重組，也有全部合成／全部重組；鎖定的娃娃不會被動到。'
+                '魔法娃娃商人那邊有合成／重組，也有全部合成／全部重組；鎖定的娃娃不會被動到。',
+                '古魯丁村莊的奧斯丁也能保管寵物，跟亞丁包武是同一批，哪邊開都看得到同樣的寵物。'
             ];
         }
     },
@@ -749,7 +754,8 @@ const WC_TOPICS = [
                 '非王族可帶 3 名傭兵；王族也是從 3 名起算，每 15 點魅力多 1 名，60 魅時最多 7 名。',
                 '召喚物走另一套，召喚控制戒指可以指定要召什麼，別用預設的。',
                 '傭兵攻擊技能如果 MP/HP 不夠或條件不符，現在會回普攻節奏，不會假裝施法成功又吃冷卻卡住。',
-                '王族魅力夠可以帶到 7 名傭兵，場上都會顯示外觀；傭兵吃來源角色的等級、裝備、自動技能與變身能力快照。'
+                '王族魅力夠可以帶到 7 名傭兵，場上都會顯示外觀；傭兵吃來源角色的等級、裝備、自動技能與變身能力快照。',
+                '古魯丁村莊也開了傭兵公會，港口那邊就能招人，不用特地跑回海音或歐瑞。'
             ];
         }
     },
@@ -880,7 +886,9 @@ const WC_TOPICS = [
                 '經典模式死掉的經驗可以去亞丁找聖使阿卡塔花金幣買回一半，紀錄筆數有限，別拖太久。',
                 '一直死就是等級或裝備跟不上：退一張圖練、把自動喝水的門檻調高，比原地送頭有效。',
                 '攻城區不管是邪惡玩家還是敵人死亡，都不會噴裝備；經典模式在攻城區死亡也不扣經驗。',
-                '紅名低於很深的邪惡值才有死亡掉物品風險，攻城區不吃這條。'
+                '紅名低於很深的邪惡值才有死亡掉物品風險，攻城區不吃這條。',
+                '邪惡狀態噴掉的裝備別放棄：亞丁的聖使阿卡塔會記錄最近遺失的幾件，花龍之鑽石就能指定贖回其中一件，強化值跟詞綴都照原樣回來。',   // 🕊️ v3.6.86 裝備贖回
+                '阿卡塔的裝備贖回一般模式也能用，不用經典；只有「死亡經驗買回」那段才是經典限定。'
             ];
         }
     },
@@ -896,6 +904,28 @@ const WC_TOPICS = [
                 '復仇現在不用花金幣，按「嗆他」選一句話就會讓對方加入追殺；打贏才會從名單消失。',
                 '嘲諷玩家 NPC 時，中立 50%、正義 20%、邪惡 100% 會追殺；沒追殺也可能把你封鎖。',
                 '野外、黑市收購、世界頻道這些假玩家名字都走同一個名字池，顏色只看該 NPC 性向。'
+            ];
+        }
+    },
+    {
+        // ⚔️ v3.7.5 存檔 PvP 決鬥競技場（js/28）。⚠️關鍵字刻意避開 'PVP'／'紅名' 等 pvp 性向題的詞，
+        //    避免搶走上一則的題目；'對戰名片'(4字) 比 'PVP'(3字) 長，同時命中時本則會贏。
+        // ⚠️ 複合長詞是必要的：_wcMatchTopic 比「命中關鍵字長度加總」，'決鬥'(2) 會輸給 class 主題的 '怎麼玩'(3)、
+        //    'strong 嗎' 類問法同理 → 對每種常見問法補一個更長的專用詞，實測確認歸位後才算數。
+        key: 'arena', kw: ['決鬥', '競技場', '鬥技場', '對戰名片', '名片', '巴魯特', '單挑', '切磋', '跟朋友打', '玩家對打',
+                           '決鬥怎麼玩', '怎麼決鬥', '決鬥系統', '決鬥強嗎', '決鬥好玩嗎', '決鬥推薦', '決鬥獎勵'],
+        gen: function () {
+            return [
+                '古魯丁村莊那個叫巴魯特的鬥技場管理者，可以幫你產生「對戰名片」——把那串字丟給朋友，他就能挑戰你。',
+                '決鬥要找古魯丁村莊的巴魯特，他會直接把你送進競技場。名片貼上去就開打，不用自己找地圖。',
+                '名片只帶職業、等級、六維、裝備跟技能，背包倉庫金幣都不會外流，放心給人。',
+                '決鬥不給經驗金幣，就只是純比劃；輸了也完全沒損失，不扣經驗不掉裝備連性向值都不動，頂多面子掛不住。',
+                '對手的血量、AC、魔防是照他名片的真實練度算的，攻擊力則走等級平衡曲線，所以裝備有用但不會一拳秒人。',
+                '同一台電腦想試打，巴魯特那邊可以直接選自己其他存檔位的角色來對打，連名片都不用交換。',
+                '有人把名片改成滿等滿裝也沒用，進來會被夾回遊戲上限，而且贏了也沒獎勵可以撈。',
+                '一分出勝負就會跳結果視窗，自己選要「繼續」留在競技場再打一場，還是「回村莊」回古魯丁；輸的那邊也不用按祈求復活，兩個選項都會幫你把狀態補滿。',
+                '對手是法師的話要小心，他不會亂丟小法術——冷卻一好就先挑手上傷害最高的那招往你身上砸，被龍捲風、流星雨開場很痛。',
+                '決鬥場禁藥：進去以後治癒藥水一律喝不了，自動喝、手動點、連寵物都一樣，兩邊同一條規則，所以是真的比裝備跟操作。'
             ];
         }
     },
@@ -945,7 +975,8 @@ const WC_TOPICS = [
                 '存檔會自動進行，也可以手動點儲存；角色突然不見先確認瀏覽器沒清除網站資料，有匯出檔就能救回來。',
                 '倉庫搜尋輸入兩個字以上就會做模糊搜尋，名字記不完整也找得到。',
                 '匯出會帶角色、倉庫跟龍之鑽石；匯入時照選項還原倉庫與寵物資料，隊伍狀態會整理避免跨角色出戰錯亂。',
-                '多開很吃記憶體，正常單分頁不該一直膨脹到十幾 GB；遇到那種狀況先硬重載、關插件，再看是不是瀏覽器或快取問題。'
+                '多開很吃記憶體，正常單分頁不該一直膨脹到十幾 GB；遇到那種狀況先硬重載、關插件，再看是不是瀏覽器或快取問題。',
+                '古魯丁村莊現在有倉庫凱倫跟雜貨商人露西，倉庫本來就是四個存檔角色共用的，哪個村存都一樣。'
             ];
         }
     },
@@ -1754,7 +1785,7 @@ function worldChannelAsk() {
     input.value = '';
     let myName = (typeof player !== 'undefined' && player && player.name) ? player.name : '你';
     let myAlignment = (typeof player !== 'undefined' && player) ? player.alignmentValue : 0;
-    logWorld(`<span class="wc-ask">[${_wcStaticNameHtml(myName, myAlignment)}] ${_wcEsc(q)}</span>`);
+    logWorld(`<span class="wc-ask">${_wcStaticNameHtml(myName, myAlignment)}：${_wcEsc(q)}</span>`);
 
     let topic = _wcMatchTopic(q);
     let n = 1 + Math.floor(Math.random() * 3);             // 每次隨機 1~3 人回覆
@@ -1898,6 +1929,7 @@ function worldChannelThank(id) {
                 return !isWorldGrudge;
             });
             if (!removed) return;
+            if (typeof pvpReleaseAlignLock === 'function') pvpReleaseAlignLock(npc.name);   // 🔒 v3.6.81 消氣＝判定不會再追殺 → 解除性向值鎖（宣戰凍結者不解）
             logWorld(`<span class="wc-sys">${nameHtml} 好像沒那麼氣了。</span>`);
             if (typeof saveGame === 'function') saveGame();
         }
@@ -1918,7 +1950,7 @@ function _wcAddGrudge(npc) {
             avatar: avatarByCls[npc.cls] || (male ? '男戰士' : '女戰士'),
             source: 'worldChannel',
             wcGrudge: true,
-            alignmentValue: _wcAlignmentValue(npc.alignmentValue),
+            alignmentValue: (typeof pvpLockedAlignment === 'function') ? pvpLockedAlignment(npc.name, npc.alignmentValue) : _wcAlignmentValue(npc.alignmentValue),   // 🔒 v3.6.81 沿用初次發言鎖住的值
             until: Date.now() + 2 * 60 * 60 * 1000
         });
         logWorld(`<span class="text-rose-400 font-bold">[${_wcStaticNameHtml(npc.name, npc.alignmentValue)}] 惡狠狠地記住了你……</span>`);
