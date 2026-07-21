@@ -219,8 +219,11 @@ function renderAuditDrops(el) {
                 ? drops.map(id => `<span class="${getItemColor({ id })}">${DB.items[id].n}</span>`).join('、')
                 : '<span class="text-slate-500">（無掉落物）</span>';
             let _nameCls = mob.boss ? 'text-orange-400' : getMobColor(mob.lv);   // 🔧 BOSS：橘金色標註（不加呼吸光暈）
+            let _eleBadge = (mob.e && mob.e !== 'none')
+                ? ` <span class="text-xs font-bold" style="color:${(typeof RELIC_ELE_COLOR !== 'undefined' && RELIC_ELE_COLOR[mob.e]) || '#cbd5e1'}">${(typeof RELIC_ELE_LABEL !== 'undefined' && RELIC_ELE_LABEL[mob.e]) || ''}</span>`
+                : '';   // 🆕 2026-07-21 待辦:等級旁加屬性徽章(風/火/水/地),複用 js/01-drops-config.js 對照表
             return `<div class="bg-slate-800/60 rounded p-2">
-                <div class="font-bold ${_nameCls} mb-1">${mob.boss ? '👑 ' : ''}${mob.n} <span class="text-slate-500 text-xs">Lv.${mob.lv}</span></div>
+                <div class="font-bold ${_nameCls} mb-1">${mob.boss ? '👑 ' : ''}${mob.n} <span class="text-slate-500 text-xs">Lv.${mob.lv}</span>${_eleBadge}</div>
                 <div class="text-xs leading-relaxed">${dropHtml}</div>
             </div>`;
         }).join('');

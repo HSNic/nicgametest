@@ -67,6 +67,7 @@
 
   // --- 擊殺特效:在怪物最後所在的畫面座標放一個火花爆裂,自動清除 ---
   AFK_HOOK.on('mob:killed', (payload) => {
+    if (window.AFK_POWERSAVE && window.AFK_POWERSAVE.isOn()) return; // 省電模式:跳過金色火花(2026-07-21)
     if (isOfflineCatchup()) return;
     const uid = payload && payload.mob && payload.mob.uid;
     let rect = null;

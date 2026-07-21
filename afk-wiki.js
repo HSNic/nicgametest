@@ -973,6 +973,7 @@
     { k: 'mercskill', n: '傭兵可用技能' },
     { k: 'doll', n: '魔法娃娃' },
     { k: 'map', n: '地圖' },
+    { k: 'eleTraining', n: '屬性練功' },
     { k: 'sherine', n: '席琳' },
     { k: 'combat', n: '戰鬥機制' },
     { k: 'stats', n: '能力值' },
@@ -999,7 +1000,7 @@
     { k: 'gear', n: '裝備與製作', tabs: ['equip', 'relic', 'enhance', 'set', 'craft'] },
     { k: 'ally', n: '夥伴系統', tabs: ['ally', 'mercskill', 'pets', 'doll'] },
     { k: 'mechanic', n: '玩法與機制', tabs: ['combat', 'quest', 'weapon', 'mode', 'pandora', 'pvp'] },
-    { k: 'zone', n: '地圖與特殊地城', tabs: ['map', 'sherine', 'tower', 'oblivion', 'rift', 'kingroom', 'darkelf_sanct'] },
+    { k: 'zone', n: '地圖與特殊地城', tabs: ['map', 'eleTraining', 'sherine', 'tower', 'oblivion', 'rift', 'kingroom', 'darkelf_sanct'] },
     { k: 'other', n: '其他', tabs: ['pledge', 'worldchat', 'npc'] }
   ];
   function catOfTab(tabKey) {
@@ -1010,7 +1011,7 @@
     for (var i = 0; i < TAB_CATS.length; i++) { if (TAB_CATS[i].k === catKey) return TAB_CATS[i].tabs; }
     return TAB_CATS[0].tabs;
   }
-  var state = { tab: 'equipbook', cat: 'collection', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
+  var state = { tab: 'equipbook', cat: 'collection', cls: 'knight', q: '', magicCls: 'all', magicChar: '', collMode: null, equipCls: 'all', equipSlot: 'wpn', relicCls: 'all', relicSlot: 'all', eleTrainSel: 'fire', eleTrainLv: 'all' };   // 預設分頁=分頁列第一個(收藏-裝備)
 
   // 🆕 分頁「有更新」提示:每個分頁若有實質內容更新,在這裡登記日期(YYYY-MM-DD);沒登記的分頁不會顯示提示。
   //   跟內文自己寫的「最後更新:...」小字是同一份日期,兩處要保持一致——之後補內文日期時記得順手也補這裡一筆。
@@ -1039,6 +1040,19 @@
     return !seen || seen < upd;
   }
   function catHasUpdateBadge(catKey) { return tabsOfCat(catKey).some(tabHasUpdateBadge); }
+  // 🔧 2026-07-21 修正:「已看過還一直出現紅點」——原本只有「點分頁按鈕」那個 click handler 會呼叫
+  // _wikiMarkSeen(),但切換「大類」下拉(change 事件)會直接把 state.tab 設成該類第一個分頁並 render(),
+  // 完全繞過那個 click handler;若某分類的第一個分頁恰好有紅點(如「其他」類第一個是「血盟」),用下拉切過去
+  // 就會顯示內容卻永遠標記不到已讀,紅點怎麼看都不會消。改成集中在 render() 裡處理:不管 state.tab 是
+  // 從哪裡設定的(點擊分頁/切換大類下拉/網址還原/跨頁連結),只要畫面真的顯示了該分頁內容就標記已讀。
+  function markCurrentTabSeen() {
+    if (!tabHasUpdateBadge(state.tab)) return;
+    _wikiMarkSeen(state.tab);
+    var dot = document.querySelector('#m-wiki-tabs button[data-tab="' + state.tab + '"] .m-wiki-newdot');
+    if (dot) dot.remove();
+    var opt = document.querySelector('#m-wiki-catsel option[value="' + state.cat + '"]');
+    if (opt && !catHasUpdateBadge(state.cat)) opt.textContent = opt.textContent.replace(/ 🔴$/, '');
+  }
   // PWA(standalone/fullscreen)可能失去瀏覽器分頁的 JIT 加速,同步整包重繪更容易卡住輸入法組字,
   // 故 standalone 下拉長防抖,減少同步渲染的頻率。
   var _isStandalone = (function () {
@@ -1093,13 +1107,7 @@
       b.className = 'm-wiki-tab'; b.setAttribute('data-tab', t.k); b.textContent = t.n;
       if (tabHasUpdateBadge(t.k)) b.appendChild(Object.assign(document.createElement('span'), { className: 'm-wiki-newdot', title: '有新內容' }));
       b.addEventListener('click', function () {
-        state.tab = t.k;
-        if (tabHasUpdateBadge(t.k)) {
-          _wikiMarkSeen(t.k);
-          var dot = b.querySelector('.m-wiki-newdot'); if (dot) dot.remove();
-          var opt = document.querySelector('#m-wiki-catsel option[value="' + state.cat + '"]');
-          if (opt && !catHasUpdateBadge(state.cat)) opt.textContent = opt.textContent.replace(/ 🔴$/, '');
-        }
+        state.tab = t.k;   // 標記已讀集中在 render() 的 markCurrentTabSeen() 處理,這裡不用重複做
         render();
       });
       tabsEl.appendChild(b);
@@ -1193,6 +1201,11 @@
       // 收藏三分頁的「模式」切換(再點同一顆=收合)
       var cm = e.target.closest ? e.target.closest('[data-collmode]') : null;
       if (cm) { var cmv = cm.getAttribute('data-collmode'); state.collMode = (state.collMode === cmv) ? null : cmv; render(); return; }
+      // 屬性練功分頁的「屬性」篩選(2026-07-21)
+      var eleSelBtn = e.target.closest ? e.target.closest('[data-eletrainsel]') : null;
+      if (eleSelBtn) { state.eleTrainSel = eleSelBtn.getAttribute('data-eletrainsel'); render(); return; }
+      var eleLvBtn = e.target.closest ? e.target.closest('[data-eletrainlv]') : null;
+      if (eleLvBtn) { state.eleTrainLv = eleLvBtn.getAttribute('data-eletrainlv'); render(); return; }
       var b = e.target.closest ? e.target.closest('[data-magiccls]') : null;
       if (!b) return;
       state.magicCls = b.getAttribute('data-magiccls');
@@ -1247,6 +1260,7 @@
     if (key === 'poly') return renderPoly();
     if (key === 'mode') return renderMode();
     if (key === 'map') return renderMap();
+    if (key === 'eleTraining') return renderEleTraining();
     if (key === 'npc') return renderNpc();
     if (key === 'stats') return renderStats();
     if (key === 'magic') return renderMagic();
@@ -1318,6 +1332,7 @@
     { key: 'mercskill', cls: false, label: '傭兵可用技能' },
     { key: 'doll', cls: false, label: '魔法娃娃' },
     { key: 'map', cls: false, label: '地圖' },
+    { key: 'eleTraining', cls: false, label: '屬性練功' },
     { key: 'sherine', cls: false, label: '席琳' },
     { key: 'combat', cls: false, label: '戰鬥機制' },
     { key: 'stats', cls: false, label: '能力值' },
@@ -1348,6 +1363,15 @@
       if (!lvs.length) return null;
       var mn = Math.min.apply(null, lvs), mx = Math.max.apply(null, lvs);
       return mn === mx ? ('Lv' + mn) : ('Lv' + mn + '~' + mx);
+    } catch (e) { return null; }
+  }
+  // 該圖怪物最低等級(數字,無怪回 null)——供「屬性練功」的等級分組篩選當依據
+  function mapLvMin(v) {
+    try {
+      var ids = (typeof DB !== 'undefined' && DB.maps && DB.maps[v]) || [];
+      var lvs = [];
+      ids.forEach(function (id) { var m = DB.mobs && DB.mobs[id]; if (m && typeof m.lv === 'number') lvs.push(m.lv); });
+      return lvs.length ? Math.min.apply(null, lvs) : null;
     } catch (e) { return null; }
   }
   // 進入條件:從 MAP_CATEGORIES 的旗標翻成白話
@@ -1403,6 +1427,103 @@
         h += '<div class="m-wiki-kv"><b>' + wDexLink(mapTitleOf(v)) + '</b>' + bits.join('　') + '</div>';   // 🔗 地圖名可點→查該圖有哪些怪
       });
     }
+    return h;
+  }
+
+  // ===== 屬性練功（讀 DB.maps/DB.mobs 統計各圖對四種武器屬性的「平均剋制倍率」；作者新增地圖/怪物自動跟上）=====
+  //   剋制倍率複用戰鬥核心 js/08-items-equip.js 的 elementCounterMult(atkEle, defEle)(全域函式,單一真相);
+  //   無屬性怪(e 為空/none)排除在分母外,避免拉低平均值失去鑑別度;某圖某屬性「有屬性怪物數」為0則不列入該屬性榜單。
+  function mapEleCounterStats(v) {
+    var ids = (typeof DB !== 'undefined' && DB.maps && DB.maps[v]) || [];
+    var atkEles = ['fire', 'water', 'earth', 'wind'];
+    var result = {};
+    atkEles.forEach(function (atkEle) {
+      var sum = 0, expSum = 0, cnt = 0, noneCnt = 0, detail = [];
+      ids.forEach(function (id) {
+        var m = DB.mobs && DB.mobs[id];
+        if (!m) return;
+        if (!m.e || m.e === 'none') { noneCnt++; return; }
+        var mult = (typeof elementCounterMult === 'function') ? elementCounterMult(atkEle, m.e) : 1;
+        sum += mult; expSum += (m.exp || 0); cnt++;
+        detail.push({ id: id, n: m.n, e: m.e, mult: mult, exp: m.exp || 0 });
+      });
+      result[atkEle] = { avgMult: cnt ? (sum / cnt) : null, avgExp: cnt ? (expSum / cnt) : null, mobCount: cnt, noneCount: noneCnt, detail: detail };
+    });
+    return result;
+  }
+  // 地圖 v → 所屬領域中文名(讀 js/11-world-map.js 的 mapRegionOf + MAP_REGIONS,快取一份,作者新增地圖/領域自動跟上)
+  var _mapRegionLabelCache = null;
+  function mapRegionLabelOf(v) {
+    if (!_mapRegionLabelCache) {
+      _mapRegionLabelCache = {};
+      if (typeof MAP_REGIONS !== 'undefined') MAP_REGIONS.forEach(function (r) { _mapRegionLabelCache[r.key] = r.label; });
+    }
+    if (typeof mapRegionOf !== 'function') return '';
+    var rk = mapRegionOf(v);
+    return (rk && _mapRegionLabelCache[rk]) || '';
+  }
+  var ELE_TRAIN_ATKS = [
+    { k: 'fire', n: '🔥火' }, { k: 'water', n: '💧水' }, { k: 'earth', n: '🌍地' }, { k: 'wind', n: '🌪️風' }
+  ];
+  // 等級分組篩選(依地圖最低怪物等級歸類)——區段抓遊戲怪物等級分布(約1~99)大致均分,作者若拉高上限也還算合理
+  var ELE_TRAIN_LVS = [
+    { k: '1-20', n: 'Lv1~20', min: 1, max: 20 },
+    { k: '21-40', n: 'Lv21~40', min: 21, max: 40 },
+    { k: '41-60', n: 'Lv41~60', min: 41, max: 60 },
+    { k: '61-80', n: 'Lv61~80', min: 61, max: 80 },
+    { k: '81+', n: 'Lv81+', min: 81, max: 999 }
+  ];
+  function renderEleTraining() {
+    if (typeof DB === 'undefined' || !DB.maps) return '<div class="m-wiki-note">讀不到地圖資料。</div>';
+    var sel = ELE_TRAIN_ATKS.some(function (a) { return a.k === state.eleTrainSel; }) ? state.eleTrainSel : 'fire';
+    var lvSel = ELE_TRAIN_LVS.some(function (b) { return b.k === state.eleTrainLv; }) ? state.eleTrainLv : 'all';
+    var h = '<div class="m-wiki-note">依「練功評分」排序每種<b>武器屬性</b>最適合去哪張圖練功——剋制循環為<b>火&gt;地&gt;風&gt;水&gt;火</b>(剋制 ×1.4、被剋 ×0.6、其餘 ×1.0)。評分＝平均剋制倍率 × 平均經驗值,同時反映「打得順」與「練得快」;倍率本身<b>只算元素剋制</b>,不含玩家自身裝備的固定元素抗性(因人而異,無法從地圖資料算出),無屬性怪物不計入平均值。</div>';
+    h += '<div class="m-wiki-mfilter">' + ELE_TRAIN_ATKS.map(function (a) {
+      return '<button type="button" class="m-wiki-mfbtn' + (a.k === sel ? ' on' : '') + '" data-eletrainsel="' + a.k + '">' + a.n + '</button>';
+    }).join('') + '</div>';
+    h += '<div class="m-wiki-mfilter">' +
+      '<button type="button" class="m-wiki-mfbtn' + (lvSel === 'all' ? ' on' : '') + '" data-eletrainlv="all">建議等級：全部</button>' +
+      ELE_TRAIN_LVS.map(function (b) {
+        return '<button type="button" class="m-wiki-mfbtn' + (b.k === lvSel ? ' on' : '') + '" data-eletrainlv="' + b.k + '">' + b.n + '</button>';
+      }).join('') + '</div>';
+    var atk = ELE_TRAIN_ATKS.filter(function (a) { return a.k === sel; })[0];
+    var lvBucket = ELE_TRAIN_LVS.filter(function (b) { return b.k === lvSel; })[0];   // lvSel==='all' 時 lvBucket 為 undefined,不篩
+    var mapIds = Object.keys(DB.maps);
+    var rows = [];
+    mapIds.forEach(function (v) {
+      var ids = DB.maps[v] || [];
+      if (!ids.length) return;
+      if (lvBucket) {
+        var mn = mapLvMin(v);
+        if (mn === null || mn < lvBucket.min || mn > lvBucket.max) return;   // 不在所選等級分組,不列入
+      }
+      var stats = mapEleCounterStats(v)[atk.k];
+      if (!stats || stats.avgMult === null) return;   // 無有屬性怪物,不列入此屬性榜單
+      rows.push({ v: v, stats: stats, score: stats.avgMult * (stats.avgExp || 0) });
+    });
+    rows.sort(function (a, b) { return b.score - a.score; });
+    var color = (typeof RELIC_ELE_COLOR !== 'undefined' && RELIC_ELE_COLOR[atk.k]) || '#cbd5e1';
+    h += '<div class="m-wiki-sub">' + atk.n + '屬性武器推薦地圖</div>';
+    if (!rows.length) { h += '<div class="m-wiki-note" style="margin-top:0;">沒有符合的地圖。</div>'; return h; }
+    rows.forEach(function (r) {
+      var s = r.stats;
+      var eleCounts = {};
+      s.detail.forEach(function (d) { eleCounts[d.e] = (eleCounts[d.e] || 0) + 1; });
+      var eleLabelOf = function (e) { return (typeof RELIC_ELE_LABEL !== 'undefined' && RELIC_ELE_LABEL[e]) || e; };
+      var mixTxt = Object.keys(eleCounts).map(function (e) { return eleLabelOf(e) + '屬性×' + eleCounts[e]; }).join('、');
+      var noneTxt = s.noneCount ? ('、另有無屬性怪×' + s.noneCount) : '';
+      var region = mapRegionLabelOf(r.v);
+      var lv = mapLvRange(r.v);
+      var meta = [];
+      if (region) meta.push('📍 領域「' + esc(region) + '」');
+      if (lv) meta.push('建議等級 <b style="color:#86efac;">' + lv + '</b>');
+      h += '<div class="m-wiki-kv"><b>' + wDexLink(mapTitleOf(r.v)) + '</b>' +
+        (meta.length ? ('<span class="text-slate-400">' + meta.join('　') + '</span>') : '') +
+        '<span style="color:' + color + ';font-weight:800;">練功評分 ' + Math.round(r.score) + '</span>' +
+        '<span class="text-slate-500" style="margin-left:6px;">(平均剋制 ' + s.avgMult.toFixed(2) + 'x・平均經驗 ' + Math.round(s.avgExp) + ')</span>' +
+        '<span class="text-slate-400" style="margin-left:8px;">（' + esc(mixTxt) + esc(noneTxt) + '，共 ' + s.mobCount + ' 種有屬性怪）</span></div>';
+    });
+    h += '<div class="m-wiki-note" style="margin-top:8px;">最後更新:2026-07-21</div>';
     return h;
   }
 
@@ -1529,6 +1650,7 @@
     navRow.style.display = '';
     var catSel = document.getElementById('m-wiki-catsel'); if (catSel && catSel.value !== state.cat) catSel.value = state.cat;
     document.querySelectorAll('#m-wiki-tabs .m-wiki-tab').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === state.tab); });
+    markCurrentTabSeen();   // 畫面真的顯示這個分頁內容了,不管 state.tab 從哪裡被設定,都算已讀
     if (state.tab === 'mastery' && state.cls === 'all') state.cls = 'knight';   // 職業專精沒有「全職業」,退回真實職業
     var showCls = (state.tab === 'mastery' || state.tab === 'quest');
     clsRow.style.display = showCls ? 'flex' : 'none';

@@ -101,10 +101,15 @@
       rowIdx++;
       // 2026-07-18(修正倉庫「狀態(可用/不可用)」篩選在領物品後看起來被重置):
       // 倉庫清單的列本身就帶 data-tip-uid/data-tip-src,若 afk-warehouse-skill.js 已對這個
-      // uid 判定要隱藏(狀態篩選/只看席琳套裝命中),這裡也要交集進去,不能無條件清空 display。
+      // uid 判定要隱藏(狀態篩選/只看席琳套裝/只看遺物命中),這裡也要交集進去,不能無條件清空 display。
+      // ⚠️ 2026-07-21 修正:只在「共用倉庫清單」情境(呼叫時不帶 cat)才問這個 API——主背包
+      // 三分頁(武器/防具/道具,呼叫時帶 cat='weapon'/'armor'/'item')的物品列雖然也有
+      // data-tip-src="inv"(給 hover tooltip 共用),但那三顆篩選勾選框是共用倉庫視窗專屬,
+      // 不該外溢影響主背包分頁——之前沒分情境,導致在共用倉庫勾「只看遺物」後,切去主畫面
+      // 背包分頁也被同一份篩選狀態隱藏了非遺物裝備。
       var whOk = true;
       var whUid = el.getAttribute && el.getAttribute('data-tip-uid');
-      if (whUid && window.AFK_WH_SKILL_API) {
+      if (!cat && whUid && window.AFK_WH_SKILL_API) {
         whOk = !window.AFK_WH_SKILL_API.isFilteredOut(whUid, el.getAttribute('data-tip-src'));
       }
       var visible = kwOk && subOk && whOk;

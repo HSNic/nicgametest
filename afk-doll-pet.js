@@ -81,6 +81,12 @@
     var start = performance.now();
     var step = function (now) {
       if (!petEl || !petEl.classList.contains('active')) { bobRafId = null; return; }
+      // 省電模式:固定顯示在原本擺動中心點,不晃動;但仍排程下一輪,關閉省電模式後能立即接續動畫(2026-07-21)
+      if (window.AFK_POWERSAVE && window.AFK_POWERSAVE.isOn()) {
+        petEl.style.transform = 'translate(0,-17px)';
+        bobRafId = requestAnimationFrame(step);
+        return;
+      }
       var t = (now - start) / 1000;
       var x = Math.sin(t * 1.7) * 12;
       var y = -17 - Math.sin(t * 2.3 + 1) * 17; // 約在 0 ~ -34px 之間飄動
