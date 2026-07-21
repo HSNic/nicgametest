@@ -76,8 +76,10 @@
   // 蓋時間戳(=現在),順手記下「即時所在地圖」(changeMap 不會存檔,光看存檔 blob 會誤判還在村莊)。
   // ⚠ 補跑期間(catchingUp)一律跳過:錨點只能由下方檢查點以「已結算到的時間點」推進——
   //   否則心跳/存檔/落點 changeMap 會把錨點蓋成「現在」,結算一被中斷,整段離線時間就此蒸發。
+  var _inOrigLoad = false;   // 🐛 2026-07-21 修「批次結算物品拿不到/全部誤判成遺忘之島」根因見下方 loadGame wrapper 說明
   function stamp() {
     if (catchingUp) return;
+    if (_inOrigLoad) return;   // 原作 loadGame() 執行期間(currentSlot 已切新格,但 state/player 還沒換成新角色):中途任何 saveGame/changeMap 觸發的 stamp 都先跳過,避免「新存檔位編號＋舊角色殘留狀態」寫錯記錄,等 loadGame 真正跑完由 maybeCatchup 自己蓋一次準確的
     stampCore(Date.now());
   }
   function stampCore(ts) {
@@ -499,7 +501,13 @@
 
     var sliceMs = sliceFor(totalTicks);   // 依補跑長短決定畫面更新間隔:短→順、長→快
     var isClimb = !!(prePride && prePride.climb && !prePride.ranked && typeof enterPrideFloor === 'function');   // 排名挑戰不自動續
-    var isObl = !isClimb && !!(preObl && preObl.phase && typeof enterOblivionMap === 'function');   // 🏝️ 遺忘之島旅程:同攀登,還原 state.oblivion 後用 enterOblivionMap 進場(島地圖非選單地圖)
+    // 🐛 2026-07-21 修「殘留的遺忘之島污染會自我延續」:這裡本來只看 preObl.phase(磁碟上可能是被污染、跟角色實際
+    //   狀態不一致的舊值)就決定要不要走 enterOblivionMap();但 maybeCatchup() 已經用同一份 preObl 算出「真正該去的
+    //   地圖」(huntMap)並修正過──preObl 錯誤時 huntMap 不會是 oblivion_island/oblivion_travel。若這裡仍只信
+    //   preObl.phase,即使地圖本身(huntMap)已經是對的一般地圖,也會誤走 enterOblivionMap 分支(印出「遺忘之島
+    //   途中」的錯誤訊息、且把 state.oblivion 錯誤地設回去,污染又寫回存檔、下次繼續誤判,形成無限循環)。
+    //   改成同時要求 huntMap 真的是島嶼地圖,兩邊判斷才會一致。
+    var isObl = !isClimb && !!(preObl && preObl.phase && typeof enterOblivionMap === 'function') && (huntMap === 'oblivion_island' || huntMap === 'oblivion_travel');   // 🏝️ 遺忘之島旅程:同攀登,還原 state.oblivion 後用 enterOblivionMap 進場(島地圖非選單地圖)
     // ⚔ 軍王之室:選單地圖,走通用 gotoMap 即可重進;補跑時數「擊敗輪數/消耗鑰匙/是否因鑰匙用完被傳回村」供摘要顯示
     var isKing = !isClimb && !isObl && (typeof KING_ROOMS !== 'undefined') && !!KING_ROOMS[huntMap];
     var kingKeysBefore = isKing ? countKingKeys(huntMap) : 0;
@@ -1229,7 +1237,16 @@
     var preTs = readTs();
     var prePride = readPride();
     var preObl = readObl();
-    var r = _load.apply(this, arguments);
+    // 🐛 2026-07-21 修「批次結算物品拿不到/全部誤判成遺忘之島」:批次結算(afk-batch-settle.js)換角色時是先
+    //   currentSlot = n 再呼叫 loadGame()——但原作 loadGame() 內部在真正把 player/state 換成新角色「之前」,
+    //   會先自己呼叫到 saveGame()/changeMap()(替上一個角色收尾)。這些中途呼叫都會觸發 stamp(),而此時
+    //   currentSlot 已經是新的 n、但 state.oblivion 等全域狀態還是「上一個角色」殘留的——兩者兜起來,就把
+    //   上一個角色的遺忘之島/攀登狀態,錯誤地寫進了新角色 n 的 afk_obl_n/afk_pride_n(實測抓到:角色1在遺忘
+    //   之島,批次結算後角色2~8全部被誤判成在遺忘之島)。用 _inOrigLoad 旗標把這段「執行中」的窗口罩住,
+    //   讓 stamp() 全部跳過,等下面 maybeCatchup() 用「這次真正讀到的新角色狀態」蓋一次準確的紀錄。
+    _inOrigLoad = true;
+    var r;
+    try { r = _load.apply(this, arguments); } finally { _inOrigLoad = false; }
     try { maybeCatchup(preMap, preTs, prePride, preObl); } catch (e) { console.warn('[AFK] maybeCatchup error:', e); }
     return r;
   };
