@@ -280,6 +280,15 @@
   var _recordLayer = null;
   function hideRecordModal() { var m = document.getElementById('afk-record-modal'); if (m) m.classList.remove('open'); _recordLayer = null; }
   function closeRecordModal() { if (_recordLayer && window.AFK_UI) AFK_UI.closeLayer(_recordLayer); else hideRecordModal(); }
+  // 🩹 2026-07-24:點選單裡的項目(例如「離線掛機紀錄」)時,是「關掉這個小選單、換開它自己的彈窗」,
+  //   不是單純「關掉」——如果沿用 closeRecordModal()(會 history.back()),緊接著 it.onClick() 又立刻
+  //   openLayer()(pushState),一退一進同時發生容易讓瀏覽器歷史堆疊算錯,長期下來退回鍵可能退出遊戲
+  //   本身(見 afk-ui.js AFK_UI.dropLayer 說明)。改用 dropLayer 靜默關閉,不動歷史,讓子彈窗自己那次
+  //   openLayer() 的 pushState 抵銷掉這裡少做的 back(),兩邊互相打平。
+  function switchAwayFromRecordModal() {
+    if (_recordLayer && window.AFK_UI && AFK_UI.dropLayer) { AFK_UI.dropLayer(_recordLayer); hideRecordModal(); }
+    else closeRecordModal();
+  }
   function ensureRecordModal() {
     if (document.getElementById('afk-record-modal')) return;
     var modal = document.createElement('div');
@@ -301,7 +310,7 @@
       var b = document.createElement('button');
       b.type = 'button';
       b.textContent = OTHER_LABEL_OVERRIDE[it.label] || it.label;
-      b.addEventListener('click', function () { closeRecordModal(); it.onClick(); });
+      b.addEventListener('click', function () { switchAwayFromRecordModal(); it.onClick(); });
       body.appendChild(b);
     });
     document.getElementById('afk-record-modal').classList.add('open');

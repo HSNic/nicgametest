@@ -38,6 +38,20 @@
     suppress = true;
     try { history.back(); } catch (e) { suppress = false; }   // 退掉開啟時壓的那格歷史
   };
+  // 🩹 2026-07-24:「切換到另一個彈窗」專用——只把這層從堆疊移除、關掉它的 DOM,
+  //   完全不碰瀏覽器歷史(不 back()、不 pushState)。理由:closeLayer()(非同步 history.back())
+  //   接著馬上呼叫另一個 openLayer()(同步 pushState)這種「關一層又立刻開一層」的組合,
+  //   在同一輪事件循環內夾雜「非同步的 back」跟「同步的 push」,兩者順序在部分瀏覽器/情境下
+  //   可能沒有照預期完成,導致瀏覽器歷史堆疊多退/少退一格——長期累積後,退回鍵(含 PWA 的
+  //   系統手勢)可能一路退出遊戲本身(2026-07-24 使用者回報「離線掛機紀錄視窗按✕會關掉遊戲」)。
+  //   用 dropLayer 靜默移除舊層,讓接下來要開的新層自己 openLayer() 正常 push 一次,
+  //   兩邊史記錄剛好互相抵銷,不會有 back()+push() 同時發生的競態。
+  U.dropLayer = function (layer) {
+    var i = stack.indexOf(layer);
+    if (i < 0) return;
+    stack.splice(i, 1);
+    try { layer.close(); } catch (e) {}
+  };
   window.addEventListener('popstate', function () {
     if (suppress) { suppress = false; return; }   // 主動關自己 history.back() 觸發的,已處理過
     var layer = stack.pop();                       // 手機實體返回鍵:關掉最上層

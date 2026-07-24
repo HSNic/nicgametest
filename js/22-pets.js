@@ -1,7 +1,7 @@
-// ============================================================
+﻿// ============================================================
 // js/22-pets.js — 🐾 夥伴系統 v2（v3.2.17 依「夥伴更新.md」全面取代舊項圈系統）
 //   ・寵物＝獨立實體（等級/經驗/HP/MP/技能），非道具；捕捉入「寵物保管」（同模式全角色共通、上限＝PET_STORAGE_MAX·v3.6.37 用戶調整為 32）
-//   ・出戰上限 4 隻＋魅力門檻（6/12/15/20）；經驗＝玩家實得複製一份均分給出戰寵物；升級需求＝玩家表 1/10
+//   ・出戰上限 4 隻＋魅力門檻（6/12/15/20）；每隻未倒地寵物各得玩家完整經驗；升級需求＝玩家表 1/10
 //   ・死亡 5 秒後復活卷軸自動復活；返生術可立即復活；回到安全區（非野外）免費復活
 //   ・戰鬥：無敵人在狩獵區八方向閒晃；有敵人自動攻擊最近的敵人（受擊權重 物理4/特殊3/魔法2）
 //   ・進化（包武·Lv30+·僅一般型態·v3.2.63）：一般＋進化果實→對應高等；一般＋勝利果實→黃金龍（兩果實都有→可選）；高等/黃金龍皆最終型態；進化後 Lv1、HP/MP=進化前 50%
@@ -142,13 +142,13 @@ function petDerive(p) {
         drPierce: Math.max(0, Math.min(0.95, def.drPierce || 0)),
         damageMult: ((def.goldenAtk || def.goldenMagic) ? 1 : (t === 2 ? 1 : (PET_TIER_DMG_MULT[t] || 1) * survivalDmgMult)) * petMasteryDmgMult(),   // 🦎 四蜥蜴以黃金龍為基準，普攻／魔法各自套用角色倍率；👑 夥伴精通 ×1.5
         hit: Math.floor((g.hit0 + Math.floor(lv * g.hitG) + speedHit + t * 3 + elite.hit + PET_HIT_TUNE) * petMasteryHitMult()),   // 👑 夥伴精通 ×1.5
-        skillFlat: power.skillFlat + _gInt,
+        skillFlat: power.skillFlat + _gInt + (typeof petAuraSum === 'function' ? petAuraSum('petMdmgAll') : 0),   // 🏺 v3.7.20 蜥蜴領主的王冠 +3／珍藏的巨大胡蘿蔔 +1：寵物魔法（技能）傷害光環
         ac: 10 - Math.floor(lv / g.acDiv) - t * g.acTier + hpAc + elite.ac + (def.acMod || 0) - _gAc,
         dr: Math.floor(lv / g.drDiv) + t * g.drTier + hpDr + elite.dr,
         er: Math.min(g.erCap, Math.floor(lv / g.erDiv)),                // ER
         mr: Math.min(t === 2 ? 110 : g.mrCap, mr + (def.mrBonus || 0)) + (_ga ? (_ga.petMr || 0) : 0),
         mmpBonus: _gWis * 5,                                            // 精神：MP 上限 +5/點（regen/施放/顯示用有效上限）
-        mpRegBonus: _gWis,                                              // 精神：MP 恢復 +1/點
+        mpRegBonus: _gWis + (typeof petAuraSum === 'function' ? petAuraSum('petMpRAll') : 0),   // 精神：MP 恢復 +1/點；🏺 v3.7.20 蜥蜴領主的王冠：全寵物 MP 自然恢復 +5
         atkItv: Math.max(3, Math.round(600 / def.apm)),                 // 攻擊間隔（ticks·600=每分鐘tick數）
         castItv: def.capm > 0 ? Math.max(5, Math.round(600 / def.capm)) : 0,
         stunTicks: Math.round((def.stun || 0.58) * 10)
@@ -183,6 +183,15 @@ function petMasteryHitMult()   { return petMasteryOn() ? 1.5 : 1; }   // 折進 
 function petMasteryTakenMult() { return petMasteryOn() ? 0.5 : 1; }   // 受到傷害 −50%：掛怪物普攻／怪物魔法兩處（與 teamDmgReduceMult 同列；DoT 依既有設計為固定真傷·不受任何減免）
 // 🏺 遺物 馴獸師手做寵物專用盔甲：該寵物裝備的護甲（p.eq.arm）帶 petDmgReduce → 受到傷害 ×(1−petDmgReduce)。與 petMasteryTakenMult 同列乘算。
 function petArmorDmgReduceMult(p) { let a = p && p.eq && p.eq.arm; let d = a ? DB.items[a.id] : null; return (d && d.petDmgReduce) ? Math.max(0, 1 - d.petDmgReduce) : 1; }
+// 🏺 v3.7.20 蜥蜴領主的王冠等「全寵物光環」欄位加總：掃玩家＋未倒地傭兵全部裝備欄（範圍與 petGearBonus 的 petDmgAll 一致）
+function petAuraSum(field) {
+    let s = 0;
+    let _scan = function (c) { if (!c || !c.eq) return; for (let k in c.eq) { let e = c.eq[k]; if (!e) continue; let d = DB.items[e.id]; if (d && d[field]) s += d[field]; } };
+    if (typeof player !== 'undefined' && player) { _scan(player); (player.allies || []).forEach(a => { if (a && !a._downed) _scan(a); }); }
+    return s;
+}
+// 🏺 v3.7.20 寵物有效 HP 上限＝存檔 mhp ＋ 光環加成（petHpAll·蜥蜴領主的王冠 +100）。恢復/治癒/顯示皆以此為上限；不改寫存檔 p.mhp。
+function petMhpEff(p) { return Math.max(1, (p && p.mhp || 1) + petAuraSum('petHpAll')); }
 function petRandomPhysicalDr(p, d) {
     let k = (d && d.kind) || ((p && PET_BOOK[p.form]) || {}).kind || 'mag';
     let div = k === 'phys' ? 3 : (k === 'spec' ? 4 : 5);
@@ -537,7 +546,7 @@ function petReleaseSlotAssignments(slot) {
     return changed;
 }
 
-// ---------- 四、道具使用（誘捕/頑皮幼龍蛋）與擊殺捕捉 ----------
+// ---------- 四、道具使用（誘捕/幼龍蛋）與擊殺捕捉 ----------
 function petUseLureItem(d, silent) {   // eff:'petlure' → 掛 600 秒誘捕 buff（重複使用重置時間）
     let key = d.lure, cfg = PET_LURES[key];
     if (!cfg) return false;
@@ -546,10 +555,10 @@ function petUseLureItem(d, silent) {   // eff:'petlure' → 掛 600 秒誘捕 bu
     try { updateUI(); } catch (e) {}
     return true;   // 呼叫端 fallthrough 消耗道具
 }
-function petUseDragonEgg(item) {   // 頑皮幼龍蛋：保管未滿→消耗·隨機獲得 淘氣龍/頑皮龍（committed RNG）
+function petUseDragonEgg(item) {   // 🐉 v3.7.56 幼龍蛋定向孵化：保管未滿→消耗·依蛋種 eggPet 孵出（頑皮幼龍蛋→頑皮龍、淘氣幼龍蛋→淘氣龍）
     if (petRoster().length >= PET_STORAGE_MAX) { logSys(`<span class="text-red-400">寵物保管已滿（上限 ${PET_STORAGE_MAX} 隻），無法孵化。</span>`); return; }
     let snap = _petMutationSnapshot();
-    let form = lootRng('dragonEgg') < 0.5 ? '淘氣龍' : '頑皮龍';
+    let form = (DB.items[item.id] && DB.items[item.id].eggPet) || '頑皮龍';
     item.cnt--; if (item.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== item.uid);
     let added = petStoreAdd(form, null, true);
     if (!added || !_petCommitMutation(snap)) return;
@@ -798,17 +807,17 @@ function petGearUnequip(uidv, key) {
     try { renderSquadPanel(); } catch (e) {}
 }
 
-// ---------- 六、經驗（玩家應得份額複製一份·出戰寵物均分·需求=玩家1/10；玩家滿等仍可養寵）----------
+// ---------- 六、經驗（每隻未倒地出戰寵物各得玩家完整份額·需求=玩家1/10；玩家滿等仍可養寵）----------
 function petsGainExp(playerGain) {
     if (!(playerGain > 0)) return;
     let outs = petsOutList().filter(p => !p._downed);
     if (!outs.length) return;
     let _cap = Math.min(100, (player.lv || 1));   // 🐾 v3.2.40 用戶指定：寵物等級不得超過玩家等級（達上限比照 Lv100 不累積經驗·玩家升級後恢復成長）
     outs.forEach(p => { if ((p.lv || 1) >= _cap) p.exp = 0; });   // 滿等者不囤經驗（原規則）
-    // 🐾 v3.2.69 用戶指定：已滿等（=玩家等級）寵物無法獲得的經驗 → 由其他尚未滿等的出戰寵物平分（＝全額只均分給未滿等者·滿等者不佔份額）
+    // 🐾 v3.7.62 經驗不再由寵物平分：每隻未滿等且未倒地的出戰寵物都拿完整份額。
     let elig = outs.filter(p => (p.lv || 1) < _cap);
     if (!elig.length) { petMarkDirty(); return; }
-    let each = Math.floor(playerGain / elig.length);
+    let each = Math.floor(playerGain);
     if (each <= 0) return;
     elig.forEach(p => {
         p.exp = (p.exp || 0) + each;
@@ -857,7 +866,7 @@ function petsTick() {
         // 每 5 秒恢復（比照規格 HP恢復/MP恢復）
         let def = PET_BOOK[p.form];
         if (state.ticks % 50 === 0) {
-            { if (p.hp < p.mhp && def.hpReg) p.hp = Math.min(p.mhp, p.hp + def.hpReg); }
+            { let _me = petMhpEff(p); if (p.hp < _me && def.hpReg) p.hp = Math.min(_me, p.hp + def.hpReg); }   // 🏺 v3.7.20 恢復上限含 petHpAll 光環
             let _mmpEff = p.mmp + (d.mmpBonus || 0);   // 🛡️ v3.2.37 寵物防具 精神：MP上限+5/點·MP恢復+1/點
             if (p.mp < _mmpEff && ((def.mpReg || 0) + (d.mpRegBonus || 0) > 0)) p.mp = Math.min(_mmpEff, p.mp + (def.mpReg || 0) + (d.mpRegBonus || 0));
         }
@@ -874,7 +883,8 @@ function petsTick() {
         if (d.castItv > 0 && def.sk.length && !((pst.silence || 0) > 0 || (pst.magicseal || 0) > 0)) {
             p._castCd = (p._castCd != null ? p._castCd : (d.castItv - 1)) - 1;
             if (p._castCd <= 0 && (p._actionCd || 0) <= 0) {
-                if (petCastSkill(p, d, tgt)) { p._castCd = d.castItv; p._actionCd = 4; }
+                let _ok; if (typeof threatWrap === 'function') threatWrap(p, () => { _ok = petCastSkill(p, d, tgt); }); else _ok = petCastSkill(p, d, tgt);   // 🎯 v3.7.97 仇恨：寵物技能傷害→記給該寵物
+                if (_ok) { p._castCd = d.castItv; p._actionCd = 4; }
                 else p._castCd = Math.min(10, d.castItv);
             }
         }
@@ -883,7 +893,7 @@ function petsTick() {
         p._stunCycle = false;
         if (p._atkCd <= 0 && (p._actionCd || 0) <= 0) {
             tgt = _petPickTarget(p);   // 技能可能已擊殺
-            if (tgt) { petAttackOnce(p, d, tgt); p._actionCd = 3; }
+            if (tgt) { if (typeof threatWrap === 'function') threatWrap(p, () => petAttackOnce(p, d, tgt)); else petAttackOnce(p, d, tgt); p._actionCd = 3; }   // 🎯 v3.7.97 仇恨：寵物普攻傷害→記給該寵物
             p._atkCd = Math.ceil(d.atkItv * ((pst.slowAtk || 0) > 0 ? 2 : 1));
         }
     });
@@ -946,6 +956,7 @@ function petAttackOnce(p, d, target, forceCrit, addDmg, skName) {
             let targetDr = Math.floor((target.dr || 0) * (1 - (d.drPierce || 0)));
             let dmg = (heavy ? d.dice : roll(1, d.dice)) + d.flat + cb.dmg + (addDmg || 0) + pg.dmg + (_ia ? _ia.ed : 0) + (petDevotionGuardOn(p) ? 8 : 0) - targetDr - (_pst.weaken > 0 ? 5 : 0);   // 🏺 v3.6.44 珍愛夥伴的執念：復活後 8 秒額外傷害 +8
             dmg = Math.max(1, Math.floor(dmg));
+            dmg += traumaPhysicalBonus(target);
             let atkMult = (d.damageMult || 1) * (d.attackMult || 1);
             dmg = Math.max(1, (d.attackMult || 1) > 1 ? Math.ceil(dmg * atkMult) : Math.floor(dmg * atkMult));   // 🦎 蜥蜴普攻以同級黃金龍為底再套角色倍率；其餘寵物維持原取整
             if (skName && typeof _relicPetSkillMult === 'function') dmg = Math.max(1, Math.floor(dmg * _relicPetSkillMult()));
@@ -1039,7 +1050,7 @@ function petCastSkill(p, d, target) {
                     m.st = m.st || newMobStatus(); m.st.freeze = Math.max(m.st.freeze || 0, 40); _fz = true;
                 }
                 texts.push(`<span class="${getMobColor(m.lv)}">${m.n}</span> ${dmg}${_fz ? '<span class="text-sky-300 font-bold">（冰凍！）</span>' : ''}`);
-                if (sk.drainHalf) { let heal = Math.floor(dmg / 2); if (heal > 0) p.hp = Math.min(p.mhp, p.hp + heal); }
+                if (sk.drainHalf) { let heal = Math.floor(dmg / 2); if (heal > 0) p.hp = Math.min(petMhpEff(p), p.hp + heal); }
             });
             logCombat(`寵物 [${p.form}] 施放 <span class="text-pink-300 font-bold">${sk.n}</span> → ${texts.join('、')}${sk.drainHalf ? '（吸收傷害一半 HP）' : ''}`, 'player-special');
             targets.forEach(m => _petAfterDamage(m));
@@ -1144,7 +1155,7 @@ function petTryPotion(p) {   // HP<X% 用治癒藥水（邏輯同傭兵 allyTryP
     if (typeof pvpArenaPotionBlocked === 'function' && pvpArenaPotionBlocked()) return;   // 🚫 v3.7.17 決鬥中禁治癒藥水（⚠️寵物不像傭兵會被移到場邊·決鬥時仍在場上→這道閘是真的會擋到東西的那一個）
     if (!(p.potPct > 0) || p._downed) return;
     if ((p._potCd || 0) > 0) { p._potCd--; return; }
-    if (p.hp <= 0 || p.hp > p.mhp * (p.potPct / 100)) return;
+    if (p.hp <= 0 || p.hp > petMhpEff(p) * (p.potPct / 100)) return;
     let potSel = (typeof document !== 'undefined') ? document.getElementById('set-pot') : null;
     let potId = potSel ? potSel.value : 'potion_heal';
     let pdef = DB.items[potId];
@@ -1166,14 +1177,14 @@ function petTryPotion(p) {   // HP<X% 用治癒藥水（邏輯同傭兵 allyTryP
     let h = Math.max(1, Math.floor(potionHealBase(pdef) * (1 + getConPotionPct((player.d && player.d.con) || 0) / 100)));
     if (p._statuses && p._statuses.potionFrost > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌅 藥水霜化：寵物也以自己的 MR/狀態判定，不再借用主角色結果
     if (p._statuses && p._statuses.foulWater > 0) h = Math.max(1, Math.floor(h * 0.5));   // 🌊 v3.6.20 汙濁之水：治癒藥水也減半
-    p.hp = Math.min(p.mhp, p.hp + h);
+    p.hp = Math.min(petMhpEff(p), p.hp + h);
     p._potCd = 10;
     logCombat(`寵物 <span class="text-emerald-300 font-bold">${p.form}</span> 飲用 ${pdef.n}，恢復 ${h} 點 HP。`, 'heal');
     petMarkDirty();
 }
 function _petReviveDone(p, via) {
     p._downed = false; p._reviveCd = 0;
-    p.hp = Math.max(1, Math.floor(p.mhp * 0.5)); p.mp = p.mmp + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);   // 🦴 v3.2.42 稽核修：復活 MP 補到含防具精神加成的有效上限（與 petsTick _mmpEff 一致）
+    p.hp = Math.max(1, Math.floor(petMhpEff(p) * 0.5)); p.mp = p.mmp + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);   // 🦴 v3.2.42 稽核修：復活 MP 補到含防具精神加成的有效上限（與 petsTick _mmpEff 一致）
     p._animAct = null; p._statuses = newMobStatus();
     logCombat(`<span class="text-green-300 font-bold">寵物 ${p.form} 復活了！</span>（${via}）`, 'heal');
     petDevotionGrant(p);   // 🏺 v3.6.44 珍愛夥伴的執念：復活後 8 秒受傷 −100%＋額外傷害 +8
@@ -1196,7 +1207,7 @@ function petsReviveAtTown() {
     let n = 0;
     outs.forEach(p => {
         if (p._downed) { p._downed = false; p._reviveCd = 0; p._animAct = null; n++; petDevotionGrant(p); }   // 🏺 v3.6.44 回村復活亦觸發珍愛夥伴 buff
-        p.hp = p.mhp;
+        p.hp = petMhpEff(p);   // 🏺 v3.7.20 回村補滿含 petHpAll 光環
         p.mp = (p.mmp || 0) + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);
         p._statuses = newMobStatus();
     });
@@ -1313,7 +1324,7 @@ function renderPetTeamHTML() {
     if (!outs.length) return '';
     return outs.map(p => {
         let _mmpEff = p.mmp + (((typeof petDerive === 'function' && petDerive(p)) || {}).mmpBonus || 0);   // 🦴 v3.2.42 稽核修：MP 條/浮標含防具精神加成（原本米索莉寵顯示 35/30 爆表）
-        let hpPct = Math.max(0, Math.min(100, Math.floor(p.hp / Math.max(1, p.mhp) * 100)));
+        let _mhpE = petMhpEff(p); let hpPct = Math.max(0, Math.min(100, Math.floor(p.hp / Math.max(1, _mhpE) * 100)));
         let mpPct = Math.max(0, Math.min(100, Math.floor(p.mp / Math.max(1, _mmpEff) * 100)));
         let expPct = Math.min(100, Math.floor((p.exp || 0) / petExpReq(p.lv) * 100));
         let thumb = 'assets/anim/' + encodeURIComponent(p.form) + '/d6/idle_0.png';
@@ -1336,7 +1347,7 @@ function renderPetTeamHTML() {
                 <span class="text-slate-400 whitespace-nowrap" style="font-size:10px;">HP&lt;<input type="number" min="0" max="95" value="${p.potPct || 0}" onchange="petSetPotPct('${p.uid}',this.value)" class="w-11 bg-slate-900 border border-slate-600 rounded px-1 text-center" style="font-size:10px;height:16px;padding-top:0;padding-bottom:0;">%喝水</span>
             </div>
             <div class="compact-dual-vitals" style="margin-top:2px;">
-                <div class="bar-bg compact-team-bar" title="HP ${p.hp}/${p.mhp}"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#dc2626,#f87171);"></div><div class="bar-text text-white">${p.hp}/${p.mhp}</div></div>
+                <div class="bar-bg compact-team-bar" title="HP ${p.hp}/${_mhpE}"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#dc2626,#f87171);"></div><div class="bar-text text-white">${p.hp}/${_mhpE}</div></div>
                 <div class="bar-bg compact-team-bar" title="MP ${p.mp}/${_mmpEff}"><div class="bar-fill" style="width:${mpPct}%;background:linear-gradient(90deg,#2563eb,#60a5fa);"></div><div class="bar-text text-white">${p.mp}/${_mmpEff}</div></div>
             </div>
         </div>`;
@@ -1434,6 +1445,7 @@ function _petAnimApply() {
         if (!host || !layer) return;
         let outs = (typeof player !== 'undefined' && player && player.cls) ? petsOutList() : [];
         if (typeof summonRenderList === 'function') outs = outs.concat(summonRenderList());   // 🧙 v3.2.19 召喚物 v2 共用寵物圖層（同欄位協定：uid/form/_px/_py/_dir/_animAct/_downed）
+        if (typeof guardRenderList === 'function') outs = outs.concat(guardRenderList());   // 🏰 城堡護衛 v2 共用寵物圖層（同欄位協定·八方向 assets/anim/<form>/d<dir>）
         let show = _petInWild() && !(bv && bv.classList.contains('hidden'));
         // 清掉不在場的
         layer.querySelectorAll('[data-pet]').forEach(el => { if (!show || !outs.some(p => p.uid === el.getAttribute('data-pet'))) el.remove(); });

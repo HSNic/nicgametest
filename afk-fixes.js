@@ -679,5 +679,64 @@
     } catch (e) { console.warn('[AFK-fixes] 離線補跑跳過召喚物面板重繪 安裝失敗,已略過:', e); }
   })();
 
+  /* --------------------------------------------------------------------------
+   * 修正#N:「⏩ 掛機補跑完成」摘要補上經驗值(2026-07-24 使用者回報)
+   *
+   * 問題:原作者這套「分頁還開著、被瀏覽器背景節流」的補跑摘要(js/03 _ffFinishCatchup)
+   *   只組了時間跟金幣兩項文字,完全沒提經驗值——不是經驗沒入帳,只是這則提示訊息沒講。
+   *   使用者看不到經驗數字容易誤以為「補跑沒有給經驗」,故補一則獨立訊息講清楚。
+   *
+   * 作法:monkey-patch 全域 gameLoop(在 _ffAcc 剛建立的當下記一筆起始等級/經驗快照)
+   *   + monkey-patch _ffFinishCatchup(原函式跑完、_ffAcc 被清空之前,用快照算出經驗差,
+   *   多印一行系統訊息)。expTotal 是「累積總經驗」寫法(比照 afk-offline.js 同名函式,
+   *   核心 getExpReq 逐級加總,升級時 player.exp 歸零直接相減會是負值,必須用累積值相減)。
+   *   完全不改本體檔案,只從外面包兩個全域函式;兩者缺一都會安靜停用。
+   * 移除條件:原作者若把經驗值也加進 _ffFinishCatchup 自己的摘要文字,這段就變多餘訊息
+   *   (使用者會看到經驗值出現兩次),屆時整段刪除即可。
+   * ------------------------------------------------------------------------ */
+  (function () {
+    if (typeof window.gameLoop !== 'function' || typeof window._ffFinishCatchup !== 'function') {
+      console.warn('[AFK-fixes] 找不到 gameLoop/_ffFinishCatchup,補跑經驗值提示停用。');
+      return;
+    }
+    function expTotal(lv, exp) {
+      var t = exp || 0;
+      try { if (typeof getExpReq === 'function') for (var i = 1; i < (lv || 1); i++) { var r = getExpReq(i); if (!isFinite(r)) break; t += r; } } catch (e) {}
+      return t;
+    }
+    var _origGameLoop = window.gameLoop;
+    window.gameLoop = function () {
+      var hadAcc = (typeof _ffAcc !== 'undefined') && !!_ffAcc;
+      var r = _origGameLoop.apply(this, arguments);
+      try {
+        if (!hadAcc && typeof _ffAcc !== 'undefined' && _ffAcc && !_ffAcc._expSnap && typeof player !== 'undefined' && player) {
+          _ffAcc._expSnap = { lv: player.lv, exp: player.exp };   // 剛建立的補跑批次,記下起點供結束時算差
+        }
+      } catch (e) {}
+      return r;
+    };
+    var _origFinish = window._ffFinishCatchup;
+    window._ffFinishCatchup = function () {
+      var acc = (typeof _ffAcc !== 'undefined') ? _ffAcc : null;
+      var snap = acc && acc._expSnap;
+      var longCatchup = !!(acc && acc.ticks >= 30);   // 同原函式 _longCatchup 門檻,短補跑不特別提示
+      var expGain = 0;
+      try {
+        if (snap && typeof player !== 'undefined' && player) {
+          expGain = expTotal(player.lv, player.exp) - expTotal(snap.lv, snap.exp);
+          if (expGain < 0) expGain = 0;
+        }
+      } catch (e) {}
+      var r = _origFinish.apply(this, arguments);
+      try {
+        if (longCatchup && expGain > 0 && typeof logSys === 'function') {
+          logSys('<span class="text-emerald-300 font-bold">✨ 補跑期間共獲得經驗 ' + Math.round(expGain).toLocaleString() + '。</span>');
+        }
+      } catch (e) {}
+      return r;
+    };
+    console.log('[AFK-fixes] 掛機補跑經驗值提示 已掛上');
+  })();
+
   console.log('[AFK-fixes] hooks OK — 通用修正外掛已啟用。');
 })();

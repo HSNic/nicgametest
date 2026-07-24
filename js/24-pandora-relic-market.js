@@ -16,6 +16,7 @@
     const RELIC_SEARCH_COST = 100;
     const WANDERER_CHANCE = 0.50;
     const GOLD_WANDERER_CHANCE = 0.30;
+    const WANDERER_CARD_CHANCE = 0.10;
 
     // 🚫 v3.5.53 出沒排除（用戶拍板）：攻城三城（限持城者進入·NPC 形同碰不到）＋炎魔謁見所＋席琳神殿；
     //    其餘安全區皆可出沒（含 傲慢之塔入口/時空裂痕入口/沉默洞穴/長老會議廳/希培利亞村莊/貝希摩斯）。
@@ -676,6 +677,29 @@
         });
     }
 
+    function _pickWeightedWandererItem(st, items, tag) {
+        let pool = (items || []).map(id => ({
+            id: id,
+            weight: Math.max(0, Number(DB.items[id] && DB.items[id].gachaWeight) || 0)
+        })).filter(entry => entry.weight > 0);
+        if (!pool.length) return null;
+        let roll = _rand(st, tag) * pool.reduce((sum, entry) => sum + entry.weight, 0);
+        for (let entry of pool) {
+            roll -= entry.weight;
+            if (roll < 0) return entry.id;
+        }
+        return pool[pool.length - 1].id;
+    }
+
+    function _pickWandererItem(st, currency) {
+        let items = _wandererItemPool(currency);
+        if (!items.length) return null;
+        let wantCard = _rand(st, 'wander-item-kind|' + currency) < WANDERER_CARD_CHANCE;
+        let categoryPool = items.filter(id => (DB.items[id] && DB.items[id].eff === 'card') === wantCard);
+        if (!categoryPool.length) categoryPool = items;
+        return _pickWeightedWandererItem(st, categoryPool, 'wander-item|' + currency + '|' + (wantCard ? 'card' : 'normal'));
+    }
+
     function _makeName(st) {
         let history = new Set(st.nameHistory || []);
         let made = '';
@@ -693,10 +717,10 @@
     function _makeWanderer(st, now, townId, currency) {
         let towns = _eligibleTowns();
         currency = currency === 'gold' ? 'gold' : 'diamond';
-        let items = _wandererItemPool(currency);
-        if (!towns.length || !items.length) return null;
+        if (!towns.length) return null;
         if (!townId || !towns.includes(townId)) townId = _pick(st, towns, 'wander-town');
-        let itemId = _pick(st, items, 'wander-item');
+        let itemId = _pickWandererItem(st, currency);
+        if (!itemId) return null;
         let d = DB.items[itemId];
         let en = null;
         if (_isEnhanceableDef(d)) {
@@ -778,6 +802,14 @@
 
     function _runWanderBroadcastQueue() {
         _wanderBroadcastTimer = null;
+        // 🐛 v3.7.70 補跑期間不要把佇列吃掉：_queuedLiveWanderer 在 state.ff 時對「所有人」都回 null，
+        //    下面的 while 會把整條佇列 shift 光卻一句都沒印 → 那批喊話直接消失（且 _announceWanderer
+        //    已先寫了 _lastBroadcastCycles，要等下一個 5 分鐘週期才會再喊）＝回到遊戲時世界頻道空空的。
+        //    改成「補跑中就延後重試」，等 ff 結束再照常輪播。
+        if (typeof state !== 'undefined' && state && state.ff) {
+            if (_wanderBroadcastQueue.length) _wanderBroadcastTimer = setTimeout(_runWanderBroadcastQueue, _wanderBroadcastGapMs());
+            return;
+        }
         let live = null;
         while (_wanderBroadcastQueue.length && !live) {
             let wandererId = _wanderBroadcastQueue.shift();
@@ -1571,7 +1603,7 @@
         let base = Object.keys(DB.items).filter(id => {
             let d = DB.items[id];
             let w = Math.floor(Number(d && d.gachaWeight) || 0);
-            return !!(d && d.n && !d.relic && id !== relicId && ((w >= 1 && w <= 50) || craftable.has(id)));
+            return !!(d && d.n && !d.relic && d.eff !== 'card' && id !== relicId && ((w >= 1 && w <= 50) || craftable.has(id)));
         });
         let p1 = base.filter(id => Math.floor(Number(DB.items[id].gachaWeight) || 0) === 1);
         let p2 = base.filter(id => {
@@ -1744,7 +1776,10 @@
                 return `<div class="pandora-relic-slot active">
                     <div class="pandora-relic-slot-no">布告 ${i + 1}・${category.short}</div>
                     <div class="pandora-relic-target" onmouseenter="pandoraRelicTipShow(event,'${_esc(c.relicId)}')" onmousemove="pandoraTipMove(event)" onmouseleave="pandoraTipHide()">
-                        <img src="${d ? _esc(getIconUrl(d)) : ''}" alt="">
+                        <div class="pandora-collection-icon pandora-relic-icon-wrap">
+                            <img src="${d ? _esc(getIconUrl(d)) : ''}" alt="">
+                            ${typeof pandoraUncollectedBadgeHTML === 'function' ? pandoraUncollectedBadgeHTML(c.relicId) : ''}
+                        </div>
                         <b class="${d ? getItemColor({ id: c.relicId }) : ''}">${_esc(d ? d.n : c.relicId)}</b>
                     </div>
                     <div class="pandora-relic-reqs">${reqHtml}</div>

@@ -28,6 +28,14 @@
         if (id === 'oblivion_travel') return '遺忘之島途中';
         if (id === 'rift_battle') return '時空裂痕';
         if (id === 'arena_pvp') return '決鬥競技場';   // ⚔️ 決鬥競技場(js/28 存檔PvP):出怪池刻意留空,不在 MAP_CATEGORIES 選單裡
+        // 🐉 v3.7.57 安塔瑞斯副本4區(js/05 ANTHARAS_AREA_NAMES,不在 MAP_CATEGORIES,動態讀取自動跟上原作改名)
+        if (typeof ANTHARAS_AREA_NAMES !== 'undefined' && ANTHARAS_AREA_NAMES[id]) return ANTHARAS_AREA_NAMES[id];
+        // ⚔️ v3.7.63 攻城戰V2肯特城5階段戰場(js/30 STAGES 是模組內部變數、外部讀不到,手動對照;不在 MAP_CATEGORIES)
+        if (id === 'siege_v2_kent_outer') return '肯特城外戰線';
+        if (id === 'siege_v2_kent_gate') return '肯特城正門';
+        if (id === 'siege_v2_kent_tower_guard') return '肯特守護塔防衛線';
+        if (id === 'siege_v2_kent_tower') return '肯特守護塔';
+        if (id === 'siege_v2_kent_lord') return '肯特內城';
         if (typeof SANCTUARY_MAP_NAMES !== 'undefined' && SANCTUARY_MAP_NAMES[id]) return SANCTUARY_MAP_NAMES[id];   // 🌑 黑暗妖精聖地系列(只能由NPC傳送進入,不在地圖選單)
         if (typeof HIDDEN_AREA_NAMES !== 'undefined' && HIDDEN_AREA_NAMES[id]) return HIDDEN_AREA_NAMES[id];   // 🏛️ 隱藏狩獵區域
         var pf = /^pride_f(\d+)$/.exec(id); if (pf) return '傲慢之塔 ' + pf[1] + ' 樓';

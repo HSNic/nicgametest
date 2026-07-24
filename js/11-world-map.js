@@ -192,133 +192,66 @@ const SIEGE_CITY = {
     windwood: { key:'windwood', name:'風木城', outer:'ww_outer',   outerName:'風木外門區', inner:'ww_inner',   innerName:'風木內城', castle:'town_windwood_castle', castleName:'風木城', gate:'風木城門', tower:'風木守護塔' },
     heine:    { key:'heine',    name:'海音城', outer:'heine_outer', outerName:'海音外門區', inner:'heine_inner', innerName:'海音內城', castle:'town_heine_castle', castleName:'海音城', gate:'海音城門', tower:'海音守護塔' }
 };
+// 城堡所有權只會在角色／模式切換與攻城事件時改變。讀檔後首次使用查一次，
+// 宣戰與勝敗結算再由事件刷新；補跑及一般戰鬥不再定時解壓、解析血盟共用資料。
+let _castleOwnerCache = { playerRef:null, mode:null, ready:false, city:null };
+let _castleOwnerChannel = null;
+function _castleOwnerContext() {
+    let p = (typeof player !== 'undefined') ? player : null;
+    return { playerRef:p, mode:p && p.classicMode ? 'classic' : 'normal' };
+}
+function _castleOwnerCacheReady() {
+    let ctx = _castleOwnerContext();
+    return _castleOwnerCache.ready && _castleOwnerCache.playerRef === ctx.playerRef && _castleOwnerCache.mode === ctx.mode;
+}
+function _castleOwnerApply(city) {
+    city = SIEGE_CITY[city] ? city : null;
+    // 🏰 v3.7.96 城堡歸屬變動 → 護衛實體立即失效（名冊由 castleGuardRosterActive 動態驗證·此處只清戰場暫存）
+    if (typeof player !== 'undefined' && player && player.guardsV2 && player.guardsV2.length) {
+        let r = (typeof castleGuardRosterActive === 'function') ? castleGuardRosterActive() : null;
+        if (!r || r.city !== city) player.guardsV2 = [];
+    }
+    return city;
+}
+function castleOwnerCity(force) {
+    let ctx = _castleOwnerContext();
+    if (!force && _castleOwnerCacheReady()) return _castleOwnerCache.city;
+    let city = (ctx.playerRef && typeof clanGetCastleCity === 'function') ? clanGetCastleCity(ctx.playerRef) : null;
+    _castleOwnerCache = { playerRef:ctx.playerRef, mode:ctx.mode, ready:true, city:_castleOwnerApply(city) };
+    return _castleOwnerCache.city;
+}
+function rememberCastleOwnerCity(city, broadcast) {
+    let ctx = _castleOwnerContext();
+    _castleOwnerCache = {
+        playerRef:ctx.playerRef,
+        mode:ctx.mode,
+        ready:true,
+        city:_castleOwnerApply(city)
+    };
+    if (broadcast !== false && _castleOwnerChannel) {
+        try { _castleOwnerChannel.postMessage({ type:'castle-owner', mode:ctx.mode, city:_castleOwnerCache.city }); } catch (e) {}
+    }
+    return _castleOwnerCache.city;
+}
+try {
+    if (typeof BroadcastChannel === 'function') {
+        _castleOwnerChannel = new BroadcastChannel('fb5-castle-owner-v1');
+        _castleOwnerChannel.onmessage = function(ev) {
+            let data = ev && ev.data, ctx = _castleOwnerContext();
+            if (!data || data.type !== 'castle-owner' || data.mode !== ctx.mode) return;
+            rememberCastleOwnerCity(data.city, false);
+        };
+    }
+} catch (e) { _castleOwnerChannel = null; }
 function siegeCityCfg() { return SIEGE_CITY[(player.siege && player.siege.city) || 'kent']; }   // 進行中攻城的城池
 function victoryCityCfg() {
-    let city = (typeof clanGetCastleCity === 'function') ? clanGetCastleCity(player) : null;
+    let city = castleOwnerCity();
     return SIEGE_CITY[city] || SIEGE_CITY.kent;
 }   // 血盟同模式共用的永久城堡
 const SIEGE_OUTER_INNER = ['kent_outer', 'kent_inner', 'ww_outer', 'ww_inner', 'heine_outer', 'heine_inner'];
 const SIEGE_CASTLES = ['town_kent_castle', 'town_windwood_castle', 'town_heine_castle'];
 
-// ===== 🏰 城堡護衛：肯特/風木城雇用；同時只能雇一名，承擔 10% 對應類型傷害（肯特=一般攻擊、風木=魔法攻擊） =====
-const CASTLE_GUARD_OPTS = {
-    kent:     { mode: 'absorb', type: 'phys',  label: '一般攻擊', list: [
-        { id: 'kent_g1', name: '肯特警衛', maxHp: 300,  regen: 15, cost: 0 },
-        { id: 'kent_g2', name: '肯特守衛', maxHp: 1000, regen: 50, cost: 1000000 },
-        { id: 'kent_g3', name: '肯特鐵衛', maxHp: 1500, regen: 75, cost: 5000000 } ] },
-    windwood: { mode: 'absorb', type: 'magic', label: '魔法攻擊', list: [
-        { id: 'ww_g1', name: '風木警衛', maxHp: 300,  regen: 15, cost: 0 },
-        { id: 'ww_g2', name: '風木守衛', maxHp: 1000, regen: 50, cost: 1000000 },
-        { id: 'ww_g3', name: '風木鐵衛', maxHp: 1500, regen: 75, cost: 5000000 } ] },
-    heine:    { mode: 'heal', label: '治療', list: [
-        { id: 'heine_g1', name: '海音僧侶', maxMp: 40,  regen: 2,  cost: 0,       heal: 'sk_heal1',    healName: '初級治癒術' },
-        { id: 'heine_g2', name: '海音神官', maxMp: 110, regen: 5,  cost: 1000000, heal: 'sk_heal_mid', healName: '中級治癒術' },
-        { id: 'heine_g3', name: '海音巫女', maxMp: 200, regen: 10, cost: 5000000, heal: 'sk_heal2',    healName: '高級治癒術' } ] }
-};
-function renderCastleGuard(div, city) {
-    _activePanel = null;
-    let cfg = CASTLE_GUARD_OPTS[city]; if (!cfg) return;
-    let heal = cfg.mode === 'heal';
-    let g = player.castleGuard;
-    let cur = '';
-    if (g) {
-        let _cur = heal ? Math.floor(g.mp) : Math.floor(g.hp), _max = heal ? g.maxMp : g.maxHp;
-        cur = `<div class="bg-slate-800/70 border border-amber-600 rounded p-3 text-sm mb-1">
-            <div class="font-bold text-amber-300 mb-1">目前雇用：${g.name}（${heal ? 'HP 低於門檻時每 5 秒治療' : '承擔 10% '+(g.absorbType==='magic'?'魔法':'一般')+'攻擊'}）</div>
-            <div class="text-slate-200">${heal?'MP':'HP'} ${_cur}/${_max}　門檻：HP ≤ ${g.threshold}%　${g.disabled?'<span class="text-red-400">'+(heal?'魔力耗盡':'力竭')+'（恢復至50%再起）</span>':'<span class="text-emerald-300">'+(heal?'待命治療':'護衛中')+'</span>'}</div>
-            <button onclick="cancelCastleGuard()" class="btn mt-2 px-3 py-1 text-sm bg-red-900 hover:bg-red-800 border-red-600 text-red-200 font-bold">取消雇用</button>
-        </div>`;
-    }
-    let rows = cfg.list.map((o, i) => {
-        let costTxt = o.cost === 0 ? '免費' : (o.cost / 10000) + ' 萬金幣';
-        let dis = !!g;
-        let stat = heal ? `MP ${o.maxMp}、每16秒恢復 ${o.regen} MP、施放 ${o.healName}` : `HP ${o.maxHp}、每16秒恢復 ${o.regen} HP`;
-        return `<div class="bg-slate-800/60 border border-slate-700 rounded p-3 text-sm flex flex-col gap-2">
-            <div><span class="font-bold text-white">${o.name}</span> <span class="text-slate-400">${stat}</span></div>
-            <div class="text-slate-400">費用：<span class="${o.cost===0?'text-emerald-300':'text-yellow-400'} font-bold">${costTxt}</span>（持續到城堡擁有時間結束）</div>
-            <div class="flex items-center gap-2 flex-wrap">
-                <button ${dis?'disabled':''} onclick="hireCastleGuard('${city}', ${i})" class="btn px-3 py-1 text-sm font-bold ${dis?'bg-slate-700 border-slate-600 text-slate-500 cursor-not-allowed':'bg-emerald-800 hover:bg-emerald-700 border-emerald-600 text-emerald-100'}">雇用</button>
-                <span class="text-slate-300 text-xs">HP ≤ <input id="cg-thr-${i}" type="number" value="50" min="1" max="100" class="w-14 bg-slate-900 border border-slate-600 text-center text-white rounded"> % 以下${heal?'發動治療':'發動護衛'}</span>
-            </div>
-        </div>`;
-    }).join('');
-    let intro = heal
-        ? `雇用一名神官：<b class="text-green-300">當你的 HP 低於設定門檻時，每 5 秒為你施放一次治癒術</b>（只計基礎值、不受魔法傷害加成）。同時只能雇一名，更換前需先取消。神官不會攻擊；魔力耗盡會停止治療，待自動恢復至 50% MP 或回城補滿後再次生效。`
-        : `雇用一名護衛替你承擔 <b class="text-amber-300">10% 的${cfg.label}傷害</b>（僅當你的 HP 低於設定門檻時發動）。同時只能雇一名，更換前需先取消。護衛不會攻擊；血量降到 1 會停止護衛，待自動恢復至 50% 或回城補滿後再次生效。`;
-    div.innerHTML = `<div class="flex flex-col gap-2 p-1"><div class="text-slate-300 text-sm leading-relaxed">${intro}</div>${cur}${rows}</div>`;
-}
-function hireCastleGuard(city, idx) {
-    if (!siegeVictoryActive()) { logSys('<span class="text-red-400">攻城獲勝（擁有城堡）期間才能雇用城堡護衛。</span>'); return; }
-    if (player.castleGuard) { logSys('<span class="text-red-400">已雇用護衛，請先取消現有雇用再更換。</span>'); return; }
-    let cfg = CASTLE_GUARD_OPTS[city]; if (!cfg) return;
-    let o = cfg.list[idx]; if (!o) return;
-    if ((player.gold || 0) < o.cost) { logSys(`<span class="text-red-400">金幣不足，雇用 ${o.name} 需要 ${o.cost.toLocaleString()} 金幣。</span>`); return; }
-    let thrEl = document.getElementById('cg-thr-' + idx);
-    let thr = Math.max(1, Math.min(100, parseInt(thrEl && thrEl.value) || 50));
-    player.gold -= o.cost;
-    if (cfg.mode === 'heal') {
-        player.castleGuard = { id: o.id, name: o.name, mode: 'heal', maxMp: o.maxMp, mp: o.maxMp, regen: o.regen, threshold: thr, healSkill: o.heal, city: city, disabled: false, _regenAcc: 0, _healAcc: 0 };
-        logSys(`<span class="text-emerald-300 font-bold">雇用了 ${o.name}（HP ≤ ${thr}% 時每 5 秒施放 ${o.healName}）。</span>`);
-    } else {
-        player.castleGuard = { id: o.id, name: o.name, mode: 'absorb', maxHp: o.maxHp, hp: o.maxHp, regen: o.regen, threshold: thr, absorbType: cfg.type, city: city, disabled: false, _regenAcc: 0 };
-        logSys(`<span class="text-emerald-300 font-bold">雇用了 ${o.name}（HP ≤ ${thr}% 時承擔 10% ${cfg.label}傷害）。</span>`);
-    }
-    saveGame(); updateUI();
-    let el = document.getElementById('interaction-content'); if (el) renderCastleGuard(el, city);
-}
-function cancelCastleGuard() {
-    if (!player.castleGuard) return;
-    let _c = player.castleGuard.city;
-    logSys(`<span class="text-slate-300">已取消雇用 ${player.castleGuard.name}。</span>`);
-    player.castleGuard = null;
-    saveGame(); updateUI();
-    let el = document.getElementById('interaction-content'); if (el) renderCastleGuard(el, _c);
-}
-// 受到對應類型傷害時，城堡護衛承擔 10%（玩家 HP 低於門檻、護衛未力竭時）；回傳玩家實際承受的傷害
-function castleGuardAbsorb(dmg, type) {
-    let g = player.castleGuard;
-    if (!g || g.absorbType !== type || !siegeVictoryActive()) return dmg;
-    if (g.disabled || g.hp <= 1) return dmg;
-    if (player.hp > player.mhp * (g.threshold / 100)) return dmg;   // 未低於門檻 → 不護衛
-    let share = Math.floor(dmg * 0.10);
-    if (share <= 0) return dmg;
-    g.hp -= share;
-    if (g.hp <= 1) { g.hp = 1; g.disabled = true; logCombat(`<span class="text-amber-300 font-bold">【${g.name}】</span>力竭倒下，暫停護衛（恢復至 50% 後再起）。`, 'enemy'); }
-    else logCombat(`<span class="text-amber-300">【${g.name}】</span>替你承擔了 ${share} 點傷害。`, 'magic');
-    return dmg - share;
-}
-// 每 tick：城堡擁有結束/換城 → 解散；每16秒回血；回血達 50% 解除力竭
-function castleGuardTick() {
-    let g = player.castleGuard; if (!g) return;
-    if (!siegeVictoryActive() || (typeof victoryCityCfg === 'function' && victoryCityCfg().key !== g.city)) { player.castleGuard = null; return; }
-    if (g.mode === 'heal') {
-        g._regenAcc = (g._regenAcc || 0) + 1;
-        if (g._regenAcc >= 160) { g._regenAcc = 0; if (g.mp < g.maxMp) g.mp = Math.min(g.maxMp, g.mp + g.regen); }
-        if (g.disabled && g.mp >= g.maxMp * 0.5) g.disabled = false;
-        g._healAcc = (g._healAcc || 0) + 1;
-        if (g._healAcc >= 50) {   // 每 5 秒嘗試治療
-            g._healAcc = 0;
-            let mhp = player.mhp;
-            if (!g.disabled && !player.dead && player.hp < mhp && player.hp <= mhp * (g.threshold / 100)) {
-                let sk = DB.skills[g.healSkill];
-                let cost = sk ? (sk.mp || 0) : 0;
-                if (g.mp >= cost) {
-                    g.mp -= cost;
-                    let amt = rollDice(sk.healDice[0], sk.healDice[1]) + (sk.healBase || 0);
-                    player.hp = Math.min(mhp, player.hp + amt);
-                    logSys(`<span class="text-green-300">${g.name} 施放 ${sk.n||'治癒術'}，恢復 ${amt} HP。</span>`);
-                } else {
-                    g.disabled = true;
-                    logSys(`<span class="text-red-400">${g.name} 魔力不足，暫停治療（恢復至 50% MP 後再起）。</span>`);
-                }
-            }
-        }
-        return;
-    }
-    g._regenAcc = (g._regenAcc || 0) + 1;
-    if (g._regenAcc >= 160) { g._regenAcc = 0; if (g.hp < g.maxHp) g.hp = Math.min(g.maxHp, g.hp + g.regen); }
-    if (g.disabled && g.hp >= g.maxHp * 0.5) g.disabled = false;
-}
+// 🏰 城堡護衛 v2（可招募協同角色·死亡30秒復活·血盟共用名冊）已移至 js/31-castle-guards.js（舊「承擔10%傷害」制 v3.7.96 移除）。
 const CASTLE_EXTRA = ['windwood_dungeon'];   // 🔧 風木地監歸入「城堡」分類（隨風木城一起，攻城獲勝後開放）
 // 🔧 城堡分類清單：依獲勝城池組成。肯特城＝僅肯特城；風木城＝風木城（安全）＋風木地監（狩獵）
 function getCastleAreas() {
@@ -357,6 +290,9 @@ function prideHasTalisman(tier, kinds) {
 }
 function mapOptDisabled(m) {
     if (m.disabled) return true;
+    // 🧑‍🤝‍🧑 v3.7.84 受僱為其他角色的傭兵期間＝只能停留在安全區 → 下拉中所有非 town_ 地圖一律灰階不可選
+    //    （與 changeMap 的 mercenaryRoleBattleBlocked 同一條規則·此處只是把它前推到 UI 上；快取版避免每個選項都掃 localStorage）
+    if (m.v && !String(m.v).startsWith('town_') && typeof mercRoleSafeAreaOnly === 'function' && mercRoleSafeAreaOnly()) return true;
     if (m.classicHide && player.classicMode) return true;   // 🔥 經典模式：席琳神殿不可進入（縱深防護，配合 populateMapSelect 隱藏選項）
     if (m.needKey && !player.inv.some(i => i.id === m.needKey && (i.cnt || 1) >= 1)) return true;   // 🔑 需鑰匙地圖：背包無鑰匙 → 灰色不可選
     // 🗼 傲慢之塔樓層門檻：2~10樓需曾擊敗潔尼斯女王；11樓以上需持有對應傳送符/支配符/移動卷軸
@@ -393,6 +329,8 @@ function onMapCategoryChange() {
         document.getElementById('map-select').value = target;
         changeMap();   // 實際移動（受控狀態時 changeMap 會擋下並還原兩個選單）
     }
+    // 🧑‍🤝‍🧑 v3.7.84 隊員期間切到「沒有安全區」的地區＝整區灰階、無可選目標 → 補一則提示，否則畫面毫無回應
+    else if (typeof mercRoleSafeAreaOnly === 'function' && mercRoleSafeAreaOnly() && typeof mercenaryRoleNotifySafeAreaOnly === 'function') mercenaryRoleNotifySafeAreaOnly();
 }
 function setMapSelectors(mapKey) {
     // 將「分類選單 + 地圖選單」同步到指定地圖
@@ -402,6 +340,14 @@ function setMapSelectors(mapKey) {
     populateMapSelect(cat);
     let sel = document.getElementById('map-select'); if (sel) sel.value = mapKey;
     updatePrideFloorIndicator();
+    updateMercRoleHint();
+}
+// 🧑‍🤝‍🧑 v3.7.84 地圖列右側「目前擔任隊員中」常駐提示：受僱期間非安全區全部灰階＝點不下去，
+//    所以改用一個常駐標籤說明原因（否則玩家只會看到一整排灰色而不知道為什麼）。setMapSelectors 與每輪 updateUI 各呼叫一次。
+function updateMercRoleHint() {
+    let el = document.getElementById('merc-role-hint'); if (!el) return;
+    let on = (typeof mercRoleSafeAreaOnly === 'function') && mercRoleSafeAreaOnly();
+    el.classList.toggle('hidden', !on);
 }
 function syncMapSelectors() { setMapSelectors(mapState.current); }
 // ===== 🖥️ 打包版自訂下拉選單（僅 pkg-build）=====
@@ -520,6 +466,11 @@ function updatePrideFloorIndicator() {
         ind.classList.remove('hidden');
         if (sel) sel.classList.add('hidden');
         if (cat) cat.classList.add('hidden');
+    } else if (state.antharas && typeof ANTHARAS_AREA_NAMES !== 'undefined' && ANTHARAS_AREA_NAMES[cur]) {
+        ind.textContent = '🐉 ' + ANTHARAS_AREA_NAMES[cur];   // 🐉 v3.7.57 侵蝕的安塔瑞斯巢穴：左右下拉全隱藏、只顯示目前區域名稱（離開走「回村」＝視同失敗不耗次數）
+        ind.classList.remove('hidden');
+        if (sel) sel.classList.add('hidden');
+        if (cat) cat.classList.add('hidden');
     } else if (cur === 'arena_pvp') {
         ind.textContent = '⚔️ 決鬥競技場';   // ⚔️ v3.7.13 決鬥競技場（不在 MAP_CATEGORIES·入口＝古魯丁巴魯特）：比照隱藏區域＝左右下拉全隱藏、只顯示地名（離場走「回村」或結果視窗的「回村莊」）
         ind.classList.remove('hidden');
@@ -568,6 +519,7 @@ function returnToTown() {
     let _wasKingRoom = !!KING_ROOMS[mapState.current];   // 🔧 記住離開前是否在軍王之室
     let _kingRegion = _wasKingRoom && typeof mapRegionOf === 'function' ? mapRegionOf(mapState.current) : null;   // 🗝️ 離場前先取得該軍王之室所屬地區（changeMap 後 mapState.current 已變）
     if (state.oblivion) { state.oblivion = null; state._oblivionAdvance = false; }   // 🏝️ 回村即結束遺忘之島旅程
+    if (state.antharas) { state.antharas = 0; state._antAdvance = false; logSys('你離開了侵蝕的安塔瑞斯巢穴（挑戰失敗不消耗每日次數，隨時可再次挑戰）。'); }   // 🐉 v3.7.57 回村＝中離副本（不耗次數）
     setMapSelectors(siegeVictoryActive() ? victoryCityCfg().castle : getLastTown());   // 持有城堡：回城＝血盟城堡；否則回上一個待過的安全區（無紀錄→家鄉）
     changeMap();   // 走既有切換流程（進入村莊：補滿 HP/MP、清狀態、渲染 NPC）
     // 🔧 自軍王之室手動回城／回村：同樣將「特殊」記憶位置改為新兵修練場（避免下次自動回到需鑰匙的軍王之室）
@@ -702,7 +654,7 @@ function openSiegeSelect(faction, targetEl) {
     if (typeof clanCanSiege === 'function' && !clanCanSiege(player)) { alert('此模式沒有創立血盟的王族，無法攻城。'); return; }
     if (s.active) { alert('攻城戰正在進行中！'); return; }
     faction = clan.faction;
-    let held = (typeof clanGetCastleCity === 'function') ? clanGetCastleCity(player) : null;
+    let held = rememberCastleOwnerCity(clan.castle);
     let choice = (city, label, style) => {
         let defender = typeof npcClanCastleDefender === 'function' ? npcClanCastleDefender(city, player) : null;
         let defenderText = defender ? `<span class="block text-xs font-normal mt-1">守城血盟：${typeof clanEsc === 'function' ? clanEsc(defender.name) : defender.name}</span>` : '';
@@ -729,14 +681,17 @@ function openSiegeSelect(faction, targetEl) {
 function startSiege(faction, city) {
     city = SIEGE_CITY[city] ? city : 'kent';
     let cfg = SIEGE_CITY[city];
+    if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(cfg.outer)) return;
     let s = player.siege || (player.siege = { active:false, city:'kent', gateKilled:false, towerKilled:false, endTime:0, kills:0, result:null, cooldownUntil:0, accCdUntil:0 });
     let clan = (typeof clanGetModeInfo === 'function') ? clanGetModeInfo(player) : null;
     if (!clan) { alert('你尚未加入血盟，無法宣布攻城戰。'); return; }
     if (typeof clanCanSiege === 'function' && !clanCanSiege(player)) { alert('此模式沒有創立血盟的王族，無法攻城。'); return; }
     if (s.active) { alert('攻城戰正在進行中！'); return; }
+    let held = rememberCastleOwnerCity(clan.castle);
     // ⚔️ v3.6.05 等級限制取消（用戶拍板·原 Lv40 門檻）：與 v3.6.01 的冷卻取消一致，攻城不再有任何前置條件
-    if (typeof clanGetCastleCity === 'function' && clanGetCastleCity(player) === city) { alert(`你的血盟目前已持有${cfg.name}。`); return; }
+    if (held === city) { alert(`你的血盟目前已持有${cfg.name}。`); return; }
     if (!confirm(`確定要對【${cfg.name}】宣戰嗎？限時 30 分鐘。`)) return;
+    if (typeof castleGuardsOnSiegeDeclared === 'function') castleGuardsOnSiegeDeclared();   // 🏰 v3.7.96 宣戰其他城堡 → 現有城堡護衛名冊立即失效（held===city 已於上方擋掉「宣戰自己的城」）
     let accCdUntil = Number(s.accCdUntil) || 0;
     let _defender = typeof npcClanCastleDefender === 'function' ? npcClanCastleDefender(city, player) : null;
     player.siege = { active:true, city:city, gateKilled:false, towerKilled:false, endTime: Date.now() + 30*60*1000, kills:0, result:null, cooldownUntil:0, accCdUntil:accCdUntil, npcDefenderClanId:_defender ? _defender.id : null };
@@ -759,13 +714,16 @@ function endSiege(result) {
     if (result === 'win') {
         let setResult = (typeof clanSetCastle === 'function') ? clanSetCastle(_cfg.key) : { ok:false };
         if (setResult && setResult.ok) {
+            rememberCastleOwnerCity(_cfg.key);   // 寫入成功後立即更新快取，不等待下一個 5 秒檢查
             if (typeof npcClanOnSiegeResult === 'function') npcClanOnSiegeResult(_cfg.key, 'win', _npcDefenderClanId);
             let replaced = setResult.previous && setResult.previous !== _cfg.key && SIEGE_CITY[setResult.previous] ? `，原有的${SIEGE_CITY[setResult.previous].castleName}已放棄` : '';
             logSys(`🏆🏰 <span class="text-yellow-300 font-bold">攻城獲勝！</span>血盟已永久佔領${_cfg.castleName}${replaced}。同模式所有角色可使用城堡、全商店 8 折，回村按鈕改為回城。`);
         } else {
+            rememberCastleOwnerCity(typeof clanGetCastleCity === 'function' ? clanGetCastleCity(player) : null);
             logSys('<span class="text-red-400 font-bold">攻城獲勝，但城堡共用資料寫入失敗。</span>攻城已無冷卻，可立即再次宣戰重試佔領。');
         }
     } else {
+        rememberCastleOwnerCity(typeof clanGetCastleCity === 'function' ? clanGetCastleCity(player) : null);
         if (typeof npcClanOnSiegeResult === 'function') npcClanOnSiegeResult(_cfg.key, 'lose', _npcDefenderClanId);
         logSys(`🏰 <span class="text-slate-300 font-bold">攻城失敗…</span>時間到，未能攻下${_cfg.tower}。`);
     }
@@ -823,7 +781,7 @@ function handleSiegeKill(mob) {
         endSiege('win');
     }
 }
-function siegeVictoryActive() { return !!(typeof clanGetCastleCity === 'function' && clanGetCastleCity(player)); }
+function siegeVictoryActive() { return !!castleOwnerCity(); }
 function shopPrice(base) { return siegeVictoryActive() ? Math.floor((base || 0) * 0.8) : (base || 0); }
 function ismaelAccCooldownMs() { return Math.max(0, Number(player.siege && player.siege.accCdUntil) - Date.now()); }
 function ismaelAccAvailable() { return ismaelAccCooldownMs() <= 0; }
@@ -1022,7 +980,7 @@ function ismaelCursedExchange(kind) {
 //   規則：只能用在「裝備中武器／副手武器(戰士限定)」；每次使用皆為獨立事件，成功率 7%；
 //   無屬性成功→1階、同屬性成功→+1階（最高5階）、不同屬性成功→變成該屬性1階；
 //   第5階同屬性卷軸：原生無攻擊觸發技能的非遺物武器可用 1% 機率附加／重抽屬性魔法；同技能升星、不同技能回1星，最高3星；
-//   衝第4階需武器+10以上、第5階需+11以上（不符不消耗卷軸）；失敗僅消耗卷軸，武器不會消失。
+//   衝第4階需武器+10以上、第5階需+11以上（不符不消耗卷軸；🗡️ v3.7.29 noEnhance 非遺物武器＝古老的劍/巨劍 豁免門檻）；失敗僅消耗卷軸，武器不會消失。
 //   🎲 純機率 Math.random（與武器強化同政策·可 save/load 重抽）。經典/一般/傳統模式皆適用。
 const ATTR_SCROLLS = {
     fire:  { id: 'scroll_attr_fire',  n: '火之武器強化卷軸', btn: 'bg-red-900 border-red-500 text-red-200 hover:bg-red-800' },
@@ -1069,8 +1027,10 @@ function doBianAttr(slotKey, ele) {
         return;
     }
     let en = Number(item.en) || 0;
-    if (nextTier === 4 && en < 10) { logSys('<span class="text-amber-300">武器需 +10 以上才能衝屬性第四階。</span>'); return; }   // 不消耗
-    if (nextTier === 5 && en < 11) { logSys('<span class="text-amber-300">武器需 +11 以上才能衝屬性第五階。</span>'); return; }   // 不消耗
+    // 🗡️ v3.7.29 無法強化的非遺物武器（古老的劍／古老的巨劍）豁免 +10/+11 門檻：noEnhance 永遠 +0，不豁免＝永遠封頂第3階（用戶指示：維持不能強化、但賦予屬性可用到滿）
+    let noEnhFree = !!d.noEnhance;   // 遺物已在上方 isRelic 擋掉，走到這裡的 noEnhance 只剩古老的系列
+    if (nextTier === 4 && en < 10 && !noEnhFree) { logSys('<span class="text-amber-300">武器需 +10 以上才能衝屬性第四階。</span>'); return; }   // 不消耗
+    if (nextTier === 5 && en < 11 && !noEnhFree) { logSys('<span class="text-amber-300">武器需 +11 以上才能衝屬性第五階。</span>'); return; }   // 不消耗
     sc.cnt--; if (sc.cnt <= 0) player.inv = player.inv.filter(i => i.uid !== sc.uid);
     if (Math.random() < 0.07) {   // 🎲 7% 獨立事件（純機率·可 save/load 重抽·同強化政策）
         let oldMagic = getAttrMagicProc(item);
@@ -1136,7 +1096,7 @@ function renderBianAttr(el) {
     el.innerHTML = `
         <div class="flex flex-col gap-2 p-1">
             <div class="text-slate-300 text-sm leading-relaxed">碧恩：我能將四大元素之力銘刻於你手中的武器。屬性提升成功率為 <b>7%</b>；第5階使用同屬性卷軸附加／重抽魔法的成功率為 <b>1%</b>。失敗僅消耗卷軸，武器不會消失。</div>
-            <div class="text-xs text-slate-400">無屬性成功→第1階；同屬性成功→提升1階（最高5階）；<b>不同屬性成功→變成該屬性第1階</b>。衝第4階需武器+10以上、第5階需+11以上。第1~5階：額外傷害/額外魔法點數 +1/+3/+5/+7/+9，一般攻擊轉為該屬性。</div>
+            <div class="text-xs text-slate-400">無屬性成功→第1階；同屬性成功→提升1階（最高5階）；<b>不同屬性成功→變成該屬性第1階</b>。衝第4階需武器+10以上、第5階需+11以上（<b>無法強化的武器如古老的劍／古老的巨劍免此門檻</b>）。第1~5階：額外傷害/額外魔法點數 +1/+3/+5/+7/+9，一般攻擊轉為該屬性。</div>
             <div class="text-xs text-slate-400">只有本身沒有攻擊／命中觸發技能的非遺物武器可附加魔法；成功時從該屬性5種魔法中抽選。同技能升1星並使觸發率乘上星數，最高3星；抽到不同技能則改為新技能1星。</div>
             <div class="text-xs text-slate-400">持有卷軸：<span class="c-attr-fr3">火 ${cnt('scroll_attr_fire')}</span>｜<span class="c-attr-wa3">水 ${cnt('scroll_attr_water')}</span>｜<span class="c-attr-wi3">風 ${cnt('scroll_attr_wind')}</span>｜<span class="c-attr-ea3">地 ${cnt('scroll_attr_earth')}</span></div>
             ${rows}
@@ -1165,6 +1125,10 @@ function changeMap(force) {
         return;
     }
     let _changeTarget = document.getElementById('map-select').value;
+    if (_changeTarget !== mapState.current && typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(_changeTarget)) {
+        syncMapSelectors();
+        return false;
+    }
     saveSiegeBossHp();   // 切換地圖前，保存攻城塔/門的剩餘血量
     // 🔥 進入閘門前的權限總驗證（業務邏輯層，非僅 UI 下拉禁用）：任何被 mapOptDisabled 擋下的地圖（如未完成試煉的魔族神殿、炎魔友好度不足的炎魔謁見所、潔尼斯門檻、傳送符不足的傲慢之塔）一律不可進入。
     //    僅在「主動切換到不同地圖」時檢查（force 內部流程／原地不動除外）；以「尚未消耗鑰匙/傳送符」的原始狀態判定，故下方各自的鑰匙/卷軸消耗不受影響（持有者此處 mapOptDisabled=false 會放行）。siege/castle 動態地圖不在 MAP_CATEGORIES，_def 為 null 自動略過。
@@ -1249,10 +1213,10 @@ function changeMap(force) {
         player.mp = player.mmp;
         try { if (typeof reviveDownedMercsAtTown === 'function') reviveDownedMercsAtTown(); } catch (e) {}   // 🤝 Phase 3：回村/回城免費復活全體倒地傭兵
         try { if (typeof petsReviveAtTown === 'function') petsReviveAtTown(); } catch (e) {}   // 🐾 v3.6.29 回村：出戰寵物倒地復活＋補滿 HP/MP＋清異常（比照傭兵·js/22）
-        try { if (typeof mercBankAlliesAtTown === 'function') mercBankAlliesAtTown(); } catch (e) {}   // 🤝 v2.6.68 隊長回村：上場傭兵各記一筆待領經驗（不解散·不改來源存檔）
+        try { if (typeof refreshAllAllies === 'function') refreshAllAllies(); } catch (e) {}   // 🔄 v3.7.87 隊長進安全區＝自動刷新一次隊員資料（結算待領經驗＋依來源存檔重建戰力快照·取代 v2.6.68 只結算的 mercBankAlliesAtTown、與舊「重新招募」按鈕同動作）。⚠️ loadGame 也走 getHomeTown()+changeMap(true) 進到這裡→「隊長登入自動刷新」共用此掛點，勿再另外掛一次
         try { if (typeof mercExpClaimPending === 'function') mercExpClaimPending(); } catch (e) {}     // 🤝 v2.6.68 本角色回村/載入（loadGame 一律回家鄉村莊）：自動領取自己的待領經驗
-        // 🏰 城堡護衛：回城/回村補滿血並解除力竭
-        if (player.castleGuard) { let _cg = player.castleGuard; if (_cg.mode === 'heal') { _cg.mp = _cg.maxMp; _cg._healAcc = 0; } else { _cg.hp = _cg.maxHp; } _cg.disabled = false; _cg._regenAcc = 0; }
+        // 🏰 城堡護衛 v2：回城/回村補滿全部護衛 HP、清死亡倒數（castleGuardSync 依名冊重建·此處只補血）
+        if (typeof player.guardsV2 !== 'undefined' && player.guardsV2) player.guardsV2.forEach(g => { if (g) { g.hp = g.mhp; g._downed = false; g._reviveAt = 0; g._diedAt = 0; } });
         // 協力角色：進村莊一併回滿 MP（與玩家一致）
         if (player.allies) player.allies.forEach(a => { if (a) a.mp = a.mmp; });
         // 進入村莊解除所有異常狀態（中毒/灼燒/燙傷/石化/麻痺/冰凍/暈眩/沉默/封印）
@@ -1547,6 +1511,7 @@ function _sanctConsume(id) {
 }
 function sanctuaryEnter(mapKey, costId) {
     let d0 = DB.items[costId];
+    if (typeof mercenaryRoleBattleBlocked === 'function' && mercenaryRoleBattleBlocked(mapKey)) return;
     if (!_sanctConsume(costId)) { logSys(`<span class="text-red-400">沒有 ${d0 ? d0.n : costId}，無法進入。</span>`); return; }
     logSys(`<span class="text-amber-300">你交出了 1 個 ${d0 ? d0.n : costId}，${mapKey === 'collapsed_elder_council_hall' ? '被傳送到了 崩壞的長老會議廳' : '踏入了 ' + (mapKey === 'dark_elf_sanctuary' ? '黑暗妖精聖地' : '受詛咒的黑暗妖精聖地')}……</span>`);
     closeNpcInteraction();
@@ -1719,6 +1684,10 @@ function interactNPC(npcId, townId) {
         renderPvpArenaNPC(contentDiv);
     } else if (npc.id === 'npc_arkata') {   // 🕊️ 聖使阿卡塔：死亡經驗買回（亞丁·經典限定）
         renderArkataBuyback(contentDiv);
+    } else if (npc.id === 'npc_doruga_bell') {   // 🐉 v3.7.57 多魯嘉貝爾：安塔瑞斯副本入口＋助戰者設定（威頓村·js/05）
+        renderDorugaBell(contentDiv);
+    } else if (npc.id === 'npc_riley_aide') {   // 🐉 v3.7.57 萊利的輔佐官：安塔瑞斯素材兌換積分＋傳家之寶抽獎（威頓村·js/05）
+        renderRileyAide(contentDiv);
     } else if (npc.id === 'npc_obel' || npc.id === 'npc_hert' || npc.id === 'npc_diren') {   // 🔧 赫特＝風木城、帝倫＝海音城的魔物追蹤（同奧貝勒）
         renderObelNPC(contentDiv);
     } else if (npc.id === 'npc_pandora') { 
@@ -1735,7 +1704,7 @@ function interactNPC(npcId, townId) {
         renderJoelCraft(contentDiv, npc.id);
     } else if (npc.id === 'npc_runde' || npc.id === 'npc_kang' || npc.id === 'npc_brudica') {   // 🔧 黑暗妖精限定試煉（仿瑞奇/甘特，而非製作）
         renderDarkTrial(contentDiv, npc.id);
-    } else if (['npc_nalien', 'npc_rekne', 'npc_narupa', 'npc_elfqueen', 'npc_elf', 'npc_ent', 'npc_pan', 'npc_moliya', 'npc_hector', 'npc_herbert', 'npc_lumiel', 'npc_ibelbin', 'npc_tas', 'npc_robinson', 'npc_kupu', 'npc_lentis', 'npc_upni', 'npc_bamut', 'npc_flame_shadow', 'npc_imp', 'npc_flame_smith', 'npc_norse', 'npc_keluya', 'npc_dytite', 'npc_bartel', 'npc_pir', 'npc_zeus_golem', 'npc_rabiani', 'npc_david', 'npc_flame_aide', 'npc_kororanz', 'npc_sebas', 'npc_mystic_mage', 'npc_atelier'].includes(npc.id)) {
+    } else if (['npc_nalien', 'npc_rekne', 'npc_narupa', 'npc_elfqueen', 'npc_elf', 'npc_ent', 'npc_pan', 'npc_moliya', 'npc_hector', 'npc_herbert', 'npc_lumiel', 'npc_ibelbin', 'npc_tas', 'npc_robinson', 'npc_kupu', 'npc_lentis', 'npc_upni', 'npc_bamut', 'npc_flame_shadow', 'npc_imp', 'npc_flame_smith', 'npc_norse', 'npc_keluya', 'npc_dytite', 'npc_bartel', 'npc_pir', 'npc_zeus_golem', 'npc_rabiani', 'npc_david', 'npc_flame_aide', 'npc_kororanz', 'npc_sebas', 'npc_mystic_mage', 'npc_atelier', 'npc_mimi'].includes(npc.id)) {
         renderUniversalCraft(contentDiv, npc.id);
     } else if (npc.id === 'npc_dantes_lord') {   // 🌑 真‧冥皇丹特斯：聖地入口三選項
         renderDantesGate(contentDiv);
@@ -1850,7 +1819,11 @@ const NPC_SPR = {
     '6690': { g: '6690', f: 12 }, '6804': { g: '6804', f: 12 },
     '5454': { g: '5454', f: 1 },   // 🌑 v3.3.33 真‧冥皇丹特斯＝骸骨王座坐像（NPC/真‧冥皇丹特斯 5454-0＋影子 5455-0·單幀 138×228）
     '2141': { g: '2141', f: 6 },   // 🕊️ v3.4.73 聖使阿卡塔（body 2141＋影 2142·6幀·29×59）
-    '10669': { g: '10669', f: 3 }   // 🏦 v3.4.74 朵琳＝倉庫NPC通用新外型（body 10669＋影 10670·3幀·67×44 帶雙寶箱·取代舊 54）
+    '10669': { g: '10669', f: 3 },   // 🏦 v3.4.74 朵琳＝倉庫NPC通用新外型（body 10669＋影 10670·3幀·67×44 帶雙寶箱·取代舊 54）
+    '7618': { g: '7618', f: 12 },   // 🐉 v3.7.60 多魯嘉貝爾（body 7618＋影 7619·breath 12幀·62×63）
+    // 🆕 v3.7.98 指定名稱 NPC 批次（用戶提供 Downloads/NPC·body＋真實影子 gfx+1）：
+    '1312': { g: '1312', f: 10 }, '2060': { g: '2060', f: 8 }, '2090': { g: '2090', f: 8 }, '4127': { g: '4127', f: 16 },
+    '1296': { g: '1296', f: 8 }, '1208': { g: '1208', f: 6 }, '2767': { g: '2767', f: 8 }
 };
 // 有名字的 NPC → 專屬 sprite（＋依功能固定共用者：魔物追蹤/城堡護衛已於下方 role 邏輯處理）
 const NPC_SPR_FIXED = {
@@ -1866,6 +1839,15 @@ const NPC_SPR_FIXED = {
     npc_dantes_lord: '5454', npc_atelier: '1768',   // 🌑 v3.3.33 長老會議廳：真‧冥皇丹特斯＝骸骨王座／亞提利歐＝矮人鐵匠（用戶指定·同炎魔鐵匠外型 1768）
     npc_arkata: '2141',   // 🕊️ v3.4.73 聖使阿卡塔（亞丁·經典限定·死亡經驗買回）
     npc_arena: '1305',    // ⚔️ v3.7.5 鬥技場管理者 巴魯特（古魯丁村莊·甲冑武人外型·決鬥競技場入口）
+    // 🐉 v3.7.60 威頓村安塔瑞斯三人組（Downloads/NPC 用戶指定素材）：多魯嘉貝爾＝新轉 7618；米米＝914（與妖精森林那翰同素材·異城不撞臉）；萊利的輔佐官＝460（與說話之島法林同素材·異城不撞臉）
+    npc_doruga_bell: '7618', npc_mimi: '914', npc_riley_aide: '460',
+    // 🆕 v3.7.98 指定名稱 NPC 批次（用戶提供 Downloads/NPC·專屬外型取代原通用池）：
+    //   新 gfx：哈巴特1312／塔拉斯2060／巴耶斯2090／希米哲4127／愛弗特1296／海克特1208／迪嘉勒廷2767。
+    //   ⚠️ v3.7.99 溫諾原＝海克特＝1208(用戶兩夾 byte-identical·同城奇岩雙生)→用戶拍板換 溫諾→1254(鬍鬚傭兵·武器商人「刀刀飲過血」·既有 sprite 免轉檔·奇岩未用)；海克特留 1208(赤膊鐵匠·完美對位)。
+    //   沿用既有 gfx（異城不撞臉）：伊賽馬利→460(=法林/萊利)、歐斯→916(=羅賓孫)、迪泰特→237(=吉倫)、莫麗雅→1307(=拉比安尼)。
+    npc_herbert: '1312', npc_taras: '2060', npc_bayes: '2090', npc_shimizhe: '4127',
+    npc_evert: '1296', npc_hector: '1208', npc_wino: '1254', npc_digallatin: '2767',
+    npc_ismael: '460', npc_os: '916', npc_dytite: '237', npc_moliya: '1307',
     // 魔物追蹤三兄弟共用 cray；港口/寵物保管等亦可指定
     npc_obel: '1049', npc_hert: '1049', npc_diren: '1049'
 };
@@ -1894,7 +1876,8 @@ const NPC_FEMALE_IDS = new Set([
     'npc_shenien', 'npc_yuria', 'npc_lachesis', 'npc_moliya', 'npc_moli', 'npc_saedia',
     'npc_brudica', 'npc_sherine', 'npc_io', 'npc_masha', 'npc_doll_merchant',
     'npc_lumiel',   // 🚺 v3.3.6 海音 琉米埃爾＝女性外型
-    'npc_lucy'      // 🚺 v3.7.7 古魯丁 露西（雜貨商人）＝女性外型
+    'npc_lucy',     // 🚺 v3.7.7 古魯丁 露西（雜貨商人）＝女性外型
+    'npc_mimi'      // 🚺 v3.7.57 威頓村 米米（安塔瑞斯裝備製作）＝女性外型
 ]);
 
 function _npcSpriteKey(npc, usedSet) {
@@ -1959,8 +1942,8 @@ const TOWN_NPC_SPOTS = {
     // 古魯丁村莊(港口村)：巴魯特=廣場中左空地｜凱倫=左側藍屋大宅前石板路｜露西=左下攤棚前路面｜傭兵公會=廣場中右｜奧斯丁=水井左下石地
     //   ⚠️[50,58] 是叫賣玩家固定點（TOWN_WANDERING_BUYER_SPOTS.town_gludin 同座標），NPC 一律避開。
     town_gludin: [[38, 58], [23, 46], [33, 81], [70, 55], [48, 36]],
-    // 威頓村莊(火山村)：馬沙=大宅階梯前｜漢=村中央｜客盧亞=左上屋簷攤棚｜宙斯之熔岩高崙=左下鍛造爐(自家熔爐)｜魔法娃娃商人=右下屋前｜艾斯倫=右側貨箱堆旁
-    town_witon: [[70, 37], [48, 52], [27, 40], [13, 72], [66, 79], [77, 48]],
+    // 威頓村莊(火山村)：馬沙=大宅階梯前｜漢=村中央｜客盧亞=左上屋簷攤棚｜宙斯之熔岩高崙=左下鍛造爐(自家熔爐)｜魔法娃娃商人=右下屋前｜艾斯倫=右側貨箱堆旁｜多魯嘉貝爾=下方村口(副本入口)｜米米=左中攤位｜萊利的輔佐官=右上宅邸前（🐉 v3.7.57·573×323 扁平圖·橫向間距≥10%≈57px）
+    town_witon: [[70, 37], [48, 52], [27, 40], [13, 72], [66, 79], [77, 48], [38, 84], [24, 57], [88, 30]],
     // 希培利亞(天空神殿)：倉管=左上殿門階梯｜史菲爾=上方大殿門前｜巴特爾=右側步道橋頭｜希蓮恩=中央圓形圖紋
     town_hyperia: [[15, 32], [48, 24], [68, 56], [48, 55]],
     // 象牙塔：帕羅=左階梯平台｜塔拉斯=上廳地磚(v3.3.32勿站上層平台)｜塔斯=星紋左側｜巴耶斯=右書牆前｜碧恩=右上水晶祭壇階下(賦屬)｜迪嘉勒廷=大階梯底｜迪泰特=中央星紋｜神秘的魔法師=閱讀角書桌右側地磚(v3.3.32勿站桌區)

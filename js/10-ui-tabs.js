@@ -154,7 +154,7 @@ function renderClassicSkillBook(sDiv) {
         + '</div>';
 }
 function renderTabs(force) {
-    if(state.ff) return; // 補跑期間不刷新畫面
+    if(state.ff || (typeof catchupActive === 'function' && catchupActive())) return; // 補跑全部完成前不刷新畫面
     // 🚀 使用者正按住分頁面板(點擊中)：延後非強制重建到放開後，避免按鈕被重繪掉而點擊失效
     if(!force && (_tabPointerDown || _tabWheelActive)) { _tabRebuildPending = true; return; }
     // 🚀 戰鬥 tick 內的高頻變動(扣箭/耗肉)：合併成一次重建(節流 250ms)，降低狩獵卡頓；使用者操作(非 tick)維持即時回饋
@@ -210,6 +210,7 @@ function renderTabs(force) {
     if(setCheck['icequeen_charm'] >= 3) activeSets.push('icequeen_charm');   // ❄️👸 冰之女王魅力套裝：3 件齊→欄位底色亮起
     if(setCheck['frost'] >= 3) activeSets.push('frost');   // ❄️ 寒冰套裝：3 件齊→欄位底色亮起
     if(setCheck['bluepirate'] >= 4) activeSets.push('bluepirate');   // 🏴‍☠️ 藍海賊套裝：4 件齊→欄位底色亮起
+    if(setCheck['priest'] >= 5) activeSets.push('priest');   // 🏺 v3.7.52 司祭苦行套裝：5 件齊→欄位底色亮起
 
     slots.forEach(s => {
         if (s.filler) {   // 🦴 v3.1.75 填充格：與 decorateClassicInventoryTab 尾端補的空格同款（無邊框互動·非 .list-item）
@@ -631,6 +632,12 @@ const WEAPON_TAGS = {
     relic_scorch_greatsword: ['雙手劍'], relic_bloodknight_dual: ['雙刀'], relic_elmo_spear: ['矛'],
     // 🏺 v3.6.47 遺物第二十批（鎖鏈劍 relic_lava_nozzle 靠 chainsword 旗標自判免 tag；雙手鈍器 tag 自帶貫穿）
     relic_crusher_hammer: ['雙手鈍器'],
+    // 🏺 v3.7.20 遺物第二十二批武器 tag：瞥視=雙手鈍器；漆黑之劍=反擊＋居合雙標籤（裝真盾→反擊、無盾→居合·黃金權杖先例）；巨劍/鐮刀=雙手劍（切割走 eff:cleave）
+    relic_maze_demon_glare: ['雙手鈍器'], relic_warrior_blackblade: ['單手劍', '武士刀'],
+    relic_elmore_greatsword: ['雙手劍'], relic_beheading_scythe: ['雙手劍'],
+    // 🏺 v3.7.52 遺物第二十三批武器 tag：邪惡利牙=雙刀（雙擊）；魔劍士之刀/死騎劍=反擊＋居合雙標籤（黃金權杖先例）；真‧屠龍劍=雙手劍（切割走 eff:cleave）
+    relic_serrated_fangs: ['雙刀'], relic_mageblade_knife: ['單手劍', '武士刀'],
+    relic_true_dragonslayer: ['雙手劍'], relic_flame_dk_sword: ['單手劍', '武士刀'],
     wpn_20: ['單手鈍器'], wpn_10: ['單手鈍器'], wpn_13: ['單手鈍器'], wpn_alien: ['單手鈍器'], wpn_1: ['單手鈍器'], wpn_2: ['單手鈍器'], wpn_ancient_axe: ['單手鈍器'], wpn_warrior_trial_axe: ['單手鈍器'], wpn_master_axe: ['單手鈍器'], wpn_demon_axehead: ['單手鈍器'], wpn_iron_axehead: ['單手鈍器'], wpn_giant_axehead: ['單手鈍器'],   // 🔧 古代神之斧／試煉斧頭／大匠的斧頭／魔物的斧頭／鐵斧頭／巨人的斧頭：單手鈍器（鈍擊）
     wpn_2hsword: ['雙手劍'], wpn_dragonslayer: ['雙手劍'], wpn_official_2h: ['雙手劍'],   // 🔧 雙手劍類型標註
     // 🔧 重擊特效武器標註為「雙手鈍器」
@@ -740,7 +747,7 @@ function weaponPurposeLabels(d) {
     if (d.mpRPerEn) out.push(`MP自然恢復每強化+${d.mpRPerEn}`);
     if (d.mdmgEnFrom7Max3) out.push('魔法傷害成長（+7起魔法傷害+1，之後每強化+1，最高+3）');
     if (d.equipHaste) out.push('裝備加速（常駐加速，與加速術／自我加速藥水不重疊）');
-    if (d.dragonStrike) out.push(`龍的一擊 ${d.dragonStrike}%（每次一般攻擊皆判定且不論命中；對全體造成1D力量+25固定物理傷害）`);
+    if (d.dragonStrike) out.push(`龍的一擊 ${d.dragonStrike}%（每次一般攻擊皆判定且不論命中；對全體造成3D力量+30固定物理傷害）`);
     if (d.procBurstPoison) {
         let p = d.procBurstPoison;
         out.push(`猛爆劇毒 ${p.rateBase == null ? 1 : p.rateBase}%＋每強化${p.ratePerEn == null ? 1 : p.ratePerEn}%（每秒100點真實傷害，持續5秒，最多1層）`);
@@ -791,6 +798,7 @@ function relicPurposeLabels(d) {
     if (d.hitstunReduce) out.push(`受擊硬直縮短${(d.hitstunReduce / 10).toFixed(1)}秒`);
     if (d.aggroHide) out.push('隱匿仇恨（較不容易成為敵人目標）');
     if (d.aggroWeight) out.push(`${d.aggroWeight > 0 ? '提高' : '降低'}仇恨（${d.aggroWeight > 0 ? '更' : '較不'}容易被攻擊）`);
+    if (d.aggroMin) out.push('被攻擊權重必定為 1（最低·無視職業與其他仇恨裝備）');   // 🫥 v3.7.88 隱身斗篷
 
     if (d.auraDmg) out.push(`傷害光環（每${((d.auraDmg.interval || 10) / 10).toFixed(1)}秒對全體敵人造成${d.auraDmg.dmg}點傷害）`);
     if (d.thorns) out.push(`受擊反傷（反彈${d.thorns}點傷害）`);
@@ -825,7 +833,7 @@ function relicPurposeLabels(d) {
     if (d.procPoisonPct) out.push(`附毒（一般攻擊命中附加每秒該次傷害${d.procPoisonPct.pct || 50}%的中毒，最多1層，持續${d.procPoisonPct.dur || 6}秒）`);
     if (d.statusHealHp) out.push(`受到異常狀態影響時，恢復${d.statusHealHp}HP`);
     if (d.potionBonus && !d.doll) out.push(`治癒藥水恢復量+${d.potionBonus}%`);
-    if (d.missGrazeRate) out.push(`擦傷補正（未命中時${d.missGrazeRate}%改判為擦傷，造成50%傷害且不會爆擊）`);
+    if (d.missGrazeRate) out.push(`擦傷補正（未命中時${d.missGrazeRate}%改判為擦傷，造成${d.grazeDmgPct || 50}%傷害且不會爆擊）`);
     if (d.hitEchoMagic) out.push(`元素爆破 ${d.hitEchoMagic.rate}%（命中後追加等同本次一般攻擊傷害的${eleName(d.hitEchoMagic.ele)}屬性魔法傷害）`);
     if (d.onHitWet) out.push('潮濕（命中後持續10秒；下一次風屬性傷害×2並解除）');
     if (d.onHitCastSkill) out.push(`命中施法（每${d.onHitCastSkill.cdSec || 5}秒觸發${skillName(d.onHitCastSkill.skId)}）`);
@@ -1090,6 +1098,7 @@ function buildItemDescHTML(item) {
             let _statusName = (DB.skills[d.procStatusSkill.skId] && DB.skills[d.procStatusSkill.skId].n) || '異常狀態';
             _eff.push(`異常攻擊 ${d.procStatusSkill.rate || 0}%（命中時造成${_statusName}）`);
         }
+        if (d.procStatus && d.procStatus.kind) _eff.push(`異常攻擊 ${d.procStatus.rate || 0}%（攻擊時使目標${(typeof STATUS_NAME !== 'undefined' && STATUS_NAME[d.procStatus.kind]) || '異常狀態'} ${d.procStatus.dur || 6} 秒）`);   // 🕸️ v3.7.75 深紅之弩：束縛
         if (d.procPoison)            _eff.push(`中毒 ${d.procPoison.rate || 0}%（命中時使目標中毒${d.procPoison.dur ? `，持續${d.procPoison.dur}秒` : ''}）`);
         else if (d.procPoisonRate)   _eff.push(`中毒 ${d.procPoisonRate}%（命中時使目標中毒）`);
         if (d.procInstakill) {
@@ -1161,7 +1170,11 @@ function buildItemDescHTML(item) {
     if(d.magicHit) statsArr.push(`魔法命中${formatBonus(d.magicHit)}`);
     if(d.extraDmg) statsArr.push(`額外傷害${formatBonus(d.extraDmg)}`);
     if(d.extraHit) statsArr.push(`額外命中${formatBonus(d.extraHit)}`);
-    if(d.dr) statsArr.push(`傷害減免${formatBonus(d.dr)}`);
+    if(d.dr) {
+        // 🐉 v3.7.69 安塔瑞斯四防具：傷害減免隨強化成長（+7 起每 +1 再 +1・最高 +3）→ 顯示「該實體當前實際值」，不是死的基礎值
+        let _drGrow = d.drEnFrom7Max3 ? Math.min(3, Math.max(0, (typeof capEn === 'function' ? capEn(item && item.en, d) : (item && item.en) || 0) - 6)) : 0;
+        statsArr.push(`傷害減免${formatBonus(d.dr + _drGrow)}` + (d.drEnFrom7Max3 ? `（強化 +7 起每 +1 再增加 1，最高 +${d.dr + 3}）` : ''));
+    }
     if(d.er) statsArr.push(`迴避(ER)${formatBonus(d.er)}`);
     if(d.weightCap) statsArr.push(`負重上限${formatBonus(d.weightCap)}`);
     if(d.potionBonus) statsArr.push(`藥水恢復量+${d.potionBonus}%`);
@@ -1223,7 +1236,9 @@ function buildItemDescHTML(item) {
     let _attrMagic = getAttrMagicProc(item);
     if (_attrMagic) {
         let _attrMagicName = (DB.skills[_attrMagic.skId] && DB.skills[_attrMagic.skId].n) || _attrMagic.skId;
-        desc += `<br><span class="text-yellow-300 font-bold">★ 屬性附加魔法：攻擊時 ${_attrMagic.rate}% 機率觸發${_attrMagicName}。</span>`;
+        let _attrMagicStars = '★'.repeat(_attrMagic.star);
+        let _attrMagicRateNote = _attrMagic.star > 1 ? `（基礎 ${_attrMagic.baseRate}% × ${_attrMagic.star}）` : '';
+        desc += `<br><span class="text-yellow-300 font-bold">${_attrMagicStars} 屬性附加魔法：攻擊時 ${_attrMagic.rate}% 機率觸發${_attrMagicName}${_attrMagicRateNote}。</span>`;
     }
 
     // 🪄 授予技能（力量／敏捷／治癒魔法頭盔等 grantSkills 裝備）：列出可額外使用的魔法。
@@ -1231,7 +1246,7 @@ function buildItemDescHTML(item) {
     if (d.grantSkills && d.grantSkills.length) {
         let _gsk = d.grantSkills.map(sk => (DB.skills[sk] && DB.skills[sk].n) || sk).join('、');
         desc += `<br><span class="text-emerald-300 font-bold">可額外使用魔法：${_gsk}</span>`;
-        desc += `<br><span class="text-slate-400 text-xs">騎士／王族／戰士放在背包即可使用；其他職業需裝備。</span>`;
+        desc += `<br><span class="text-slate-400 text-xs">${d.grantSkillsEquipOnly ? '必須裝備才可使用。' : '騎士／王族／戰士放在背包即可使用；其他職業需裝備。'}</span>`;
     }
 
     // 🛡️ 適用職業：以職業 logo 顯示可裝備此裝備的職業（騎士/妖精/法師/黑暗妖精/幻術士；黑暗妖精走 darkEquipOk 真實規則）
@@ -1889,6 +1904,7 @@ const invSortCmp=function(a,b){
 function setInventorySortMode(mode){
     if(!player||!['category','quality','name'].includes(mode))return;
     player[INV_SORT_MODE_KEY]=mode; player.inv.sort(invSortCmp);
+    if(typeof resetCatchupGainItemIndex==='function')resetCatchupGainItemIndex();
     if(typeof saveGame==='function')saveGame(); renderTabs(true);
 }
 function toggleInventoryAutoSort(on){ if(!player)return;player.inventoryAutoSort=!!on;if(typeof saveGame==='function')saveGame(); }
@@ -1900,12 +1916,14 @@ function autoSortInventory() {
     if (state.ticks - _autoSortAt < 100) return;   // ⏲️ 10 秒節流（100 ticks）
     _autoSortAt = state.ticks;
     player.inv.sort(invSortCmp);
+    if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
     renderTabs(true);
 }
 // 🔧 v2.6.80 規則視窗「立即一鍵排列」：純排序＋提示·不 saveGame（避免把視窗草稿規則一併落地·排序結果隨其他存檔點落地）·視窗保持開啟
 function sortInventoryNow() {
     if (!player || !Array.isArray(player.inv)) return;
     player.inv.sort(invSortCmp);
+    if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
     renderTabs(true);
     logSys('<span class="text-cyan-300 font-bold">背包已重新排列。</span>');
 }
@@ -2151,15 +2169,16 @@ function toggleLock(uid) {
     if (item) {
         item.lock = !item.lock;
         if (item.lock) item.junk = false;   // 鎖定自動解除廢品勾選
-        // 🔓 v3.6.57 解鎖後自動併回同簽章的未鎖定堆疊：
-        //    gainItem 期間刻意「不併入鎖定堆疊」(v3.5.84)，同一物品因此會分裂成「鎖定一疊＋未鎖定一疊」；
-        //    解鎖＝玩家放行這疊，若不合併就會永遠留著兩格同名物品（且之後每次獲得又只進其中一疊）。
-        //    合併方向比照 gainItem：併入既有的未鎖定堆疊、只加數量、不更動對方的廢品狀態。
+        // 🔒 v3.6.92 上鎖／解鎖後都併回同簽章的另一疊（取代 v3.6.57 的「僅解鎖時併回未鎖疊」）：
+        //    現行不變量＝同簽章永遠只有一格（gainItem／倉庫／載入合併同口徑），舊存檔留下的分裂在此收斂。
+        //    ⚠️ 剛「解鎖」時只找未鎖定的對象——若併進鎖定疊會被 _whStackAbsorb 式的保護擴散重新鎖回去，
+        //       玩家的解鎖動作等於當場失效；剛「上鎖」則可併入任何一疊（結果本來就是整疊鎖定）。
         //    ⚠️ 巨靈的三個願望(gw)每只戒指的願望各自獨立，永不合併（sameItemSig 不含 gw，須顯式排除）。
-        if (!item.lock && !item.gw) {
-            let host = player.inv.find(i => i !== item && !i.lock && !i.gw && sameItemSig(i, item));
+        if (!item.gw) {
+            let host = player.inv.find(i => i !== item && !i.gw && (item.lock || !i.lock) && sameItemSig(i, item));
             if (host) {
                 host.cnt = (host.cnt || 1) + (item.cnt || 1);
+                if (item.lock) { host.lock = true; host.junk = false; }   // 保護狀態只會擴散、不會遺失
                 player.inv.splice(player.inv.indexOf(item), 1);
                 item = host;
             }
@@ -2495,6 +2514,10 @@ function _allyAutoBuffChips(a) {
 }
 
 function renderSquadPanel() {
+    // 🩹 v3.8.1 補跑期間不重建隊伍面板：傭兵/寵物/召喚物/城堡護衛 的 HP 變動都經由此函式（22 處呼叫·多為每 tick/每擊），
+    //    而它會整區重建 team 分頁 DOM——補跑上千 tick 時是主要拖慢來源（比照 renderMobs/flushTickRender 已有的 catchupActive 閘）。
+    //    補跑結束後由下一個 tick 的各實體 render 或 js/23 的 500ms interval 自動刷新（補跑中面板不可見·無感）。
+    if (typeof catchupActive === 'function' && catchupActive()) return;
     let panel = document.getElementById('squad-panel');
     if (!panel) return;
     if (!_autoCollapseInit) { _autoCollapseInit = true; }   // 🔧 v2.6.76 收合偏好停用：自動化設定已改分頁內嵌(v2.6.74)、傭兵隊伍面板取消收合恆展開（舊 fb5_*_collapsed 偏好不再套用·防「收合過就永遠展不開」）
@@ -2503,12 +2526,14 @@ function renderSquadPanel() {
     let _summons = (typeof summonV2List === 'function' && player && player.cls) ? summonV2List().filter(s => s && !s._downed && (s.hp || 0) > 0) : [];
     let _summonSk = (typeof summonV2ActiveSk === 'function') ? summonV2ActiveSk() : '';
     let _summonVisible = _summons.length > 0 || !!(player && player._summonV2On && _summonSk && typeof summonV2Knows === 'function' && summonV2Knows(_summonSk));
-    if (!allies.length && !_pets.length && !_summonVisible) { panel.style.display = 'none'; _squadSigTeam = ''; _squadSigSkill = ''; return; }
+    let _guards = (typeof guardV2List === 'function' && player && player.cls) ? guardV2List() : [];   // 🏰 城堡護衛（可招募的協同角色）
+    if (!allies.length && !_pets.length && !_summonVisible && !_guards.length) { panel.style.display = 'none'; _squadSigTeam = ''; _squadSigSkill = ''; return; }
     panel.style.display = '';
     let _sigAllies = allies.map(a => a._slot + ':' + (a._allyName || '') + ':' + (a._downed ? 'D' : '') + ':' + (a.lv || 1)).join('|');
     let sigTeam = _sigAllies
         + '||P:' + _pets.map(p => p.uid + ':' + p.lv + ':' + (p._downed ? 'D' : '') + ':' + Math.round(p.hp / Math.max(1, p.mhp) * 20) + ':' + Math.round(p.mp / Math.max(1, p.mmp) * 20) + ':' + Math.round((p.exp || 0) / Math.max(1, petExpReq(p.lv)) * 20) + ':' + (p.potPct || 0) + ':' + Math.ceil((p._reviveCd || 0) / 10)).join('|')
-        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '');   // team 分頁：名單/倒地/等級＋寵物/召喚血量(5%階)變動才重建
+        + '||S:' + ((typeof summonTeamSignature === 'function') ? summonTeamSignature() : '')   // team 分頁：名單/倒地/等級＋寵物/召喚血量(5%階)變動才重建
+        + '||G:' + ((typeof guardTeamSignature === 'function') ? guardTeamSignature() : '');   // 🏰 城堡護衛血量/倒地/復活倒數變動才重建
     let sigSkill = _sigAllies;   // 🩹 v3.2.74 skill 分頁只看傭兵名單/等級→戰鬥中寵物/召喚掉血不重建·開啟的技能下拉不被關
     let _squadRebuilt = false;
     if (sigTeam !== _squadSigTeam) {
@@ -2539,7 +2564,8 @@ function renderSquadPanel() {
         }).join('')
             + ((typeof renderPetTeamHTML === 'function') ? renderPetTeamHTML() : '')
             + ((typeof renderSummonTeamHTML === 'function') ? renderSummonTeamHTML() : '')
-            + ((typeof renderMercSummonTeamHTML === 'function') ? renderMercSummonTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 玩家召喚物 → 🧱 v3.4.51 傭兵召喚物(血條比照玩家)
+            + ((typeof renderMercSummonTeamHTML === 'function') ? renderMercSummonTeamHTML() : '')
+            + ((typeof renderGuardTeamHTML === 'function') ? renderGuardTeamHTML() : '');   // 隊伍排列：傭兵 → 寵物 → 玩家召喚物 → 傭兵召喚物 → 🏰 城堡護衛
         _squadRebuilt = true;
     }
     if (sigSkill !== _squadSigSkill) {

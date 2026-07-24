@@ -180,6 +180,7 @@ function _dpsCreditDot(src, amt) {   // DoT 依施加者標記歸因：'player'/
 }
 
 function gameLoop() {
+    if (_ffResumeTimer !== null && _tickDebt >= TICK_MS) return;   // 快速續跑已排程時，忽略一般 100ms 計時器插隊
     // 🛡️ 反盜用：非官方網域時橫幅若被移除則自動重掛（官方/本機為快取布林值判定，成本可忽略）
     if (typeof _origEnforce === 'function') _origEnforce();
     let now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -190,38 +191,290 @@ function gameLoop() {
     }
     let elapsed = now - _loopLast;
     _loopLast = now;
+    let _hidden = typeof document !== 'undefined' && document.hidden;
 
-    // 背景分頁、尚未進行或角色死亡時直接丟棄經過時間。
-    if ((typeof document !== 'undefined' && document.hidden) || !state.running || player.dead) {
+    // 🔀 背景分頁能跑多少先跑多少：Chrome 即使降低 setInterval 頻率，每次喚醒仍逐 tick 償還已經過的時間。
+    //    瀏覽器完全凍結的尾段由 visibilitychange 只補「距離最後一次 gameLoop」的差額，不會重複入帳。
+    if (!state.running || player.dead) {
+        _ffCancelScheduledLoop();
         _tickDebt = 0;
+        if (_ffAcc && !_hidden) _ffFinishCatchup();
+        else {
+            _ffAcc = null;
+            if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
+            _ffProgressHide();
+        }
+        _ffErrorStreak = 0;
+        state.ff = false;
+        state.ffSmall = false;
+        state.inTick = false;
+        if (typeof takeCatchupSaveRequest === 'function') takeCatchupSaveRequest();
         return;
     }
 
     if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = 0;
-    _tickDebt += Math.min(elapsed, TICK_MS);
-    if (_tickDebt < TICK_MS) return;
-
-    // 每次排程最多吸收並執行一個 tick；前次不足 100ms 的正常計時餘量仍保留。
-    // 即使瀏覽器節流數分鐘或主執行緒長時間卡頓，也不會在恢復後高速追跑。
-    _tickDebt -= TICK_MS;
-    state.inTick = true;
-    try {
-        tick();
-    } finally {
-        state.inTick = false;
-        settleDeadMobs();
+    _tickDebt += _hidden ? elapsed : Math.min(elapsed, FF_MAX_ELAPSED_MS);   // 背景凍結可能超過 5 分鐘：全額保留在債務中，不能因單次上限遺失收益
+    if (_tickDebt < TICK_MS) {
+        if (!_hidden && _ffAcc) _ffFinishCatchup();
+        return;
     }
-    flushTickRender();
+
+    let owed = Math.floor(_tickDebt / TICK_MS);
+    if (owed <= 1 && !_hidden && !_ffAcc) {   // 即時路徑：背景／既有補跑摘要一律走下方靜音路徑
+        _tickDebt -= TICK_MS;
+        state.inTick = true;
+        try { tick(); } finally { state.inTick = false; settleDeadMobs(); }
+        flushTickRender();
+        return;
+    }
+
+    // ⏩ 補跑路徑（v3.6.95 重建 v3.2.78 時間預算榨乾制）：每次呼叫最多吃 FF_BUDGET_MS 計算時間就讓步，
+    //    未還完的債留待下次呼叫（每 4 tick 量一次 performance.now·FF_HARD_CAP 保底防單次過量）。
+    //    state.ff＝全域補跑閘（VFX/動畫/音效/日誌/逐次重繪與存檔全部受抑制）；ffSmall 保留相容但固定 false。
+    if (!_ffAcc) {
+        if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
+        _ffAcc = { t0: Date.now(), ticks: 0, gold: (player.gold || 0), invStart: _ffInventoryCounts() };   // ⏩ 整段補跑只在起點與終點各掃一次背包
+        try { if (typeof _vfxClearAll === 'function') _vfxClearAll(); } catch (e) {}   // 補跑只保留最終收益，立即釋放尚未播完的戰鬥特效
+    }
+    // 長補跑先讓瀏覽器畫出進度提示再開始重運算；只做一次，不增加每批額外等待。
+    if (!_hidden && !_ffAcc.progressPrimed && (_ffAcc.ticks * TICK_MS + _tickDebt) >= FF_PROGRESS_MIN_MS) {
+        _ffAcc.progressPrimed = true;
+        _ffProgressUpdate(_ffAcc, _tickDebt);
+        _ffScheduleNext();
+        return;
+    }
+    // 真實補跑固定每次只抵 1 tick，不抽樣放大任何收益。
+    if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();   // 每批重建，隔離 8ms 讓步期間可能發生的背包操作
+    state.ff = true;
+    state.ffSmall = false;   // 真實補跑一律略過動畫；小補跑也只保留最終畫面與收益
+    let ran = 0, budget0 = now;
+    let _burstMax = owed;
+    try {
+        while (ran < _burstMax && ran < FF_HARD_CAP) {
+            let tickError = null;
+            state.inTick = true;
+            try {
+                tick();
+            } catch (e) {
+                tickError = e;
+            } finally {
+                state.inTick = false;
+                try { settleDeadMobs(); } catch (e) { if (!tickError) tickError = e; }
+                ran++;   // 無論 tick／死亡結算是否丟例外，這一個時間單位都已嘗試過，必須扣帳
+            }
+            if (tickError) {
+                _ffErrorStreak++;
+                _ffAcc.failed = true;
+                try { console.error('[catchup] tick failed', tickError); } catch (e) {}
+                break;
+            }
+            if (player.dead) break;   // 真實補跑戰敗即停止；死亡後的背景時間不得繼續產生收益
+            _ffErrorStreak = 0;
+            if ((ran & 3) === 0) {
+                let t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                if (t - budget0 >= FF_BUDGET_MS) break;
+            }
+        }
+    } finally {
+        _tickDebt = Math.max(0, _tickDebt - ran * TICK_MS);
+        _ffAcc.ticks += ran;
+        if (_ffErrorStreak >= FF_ERROR_STREAK_MAX) {
+            _tickDebt = 0;
+            _ffAcc.aborted = true;
+        }
+        state.ff = false;
+        state.ffSmall = false;
+    }
+    if (player.dead) _tickDebt = 0;   // 進入下方統一收尾與最終重繪，不留下死亡後的補跑債務
+    if (!_hidden) _ffProgressUpdate(_ffAcc, _tickDebt);
+    if (_tickDebt < TICK_MS) {   // 補跑完畢
+        if (!_hidden) _ffFinishCatchup();   // 背景已追平也先保留摘要；回到前景後才重繪、存檔與顯示一次
+    } else {
+        _ffScheduleNext();   // 尚未還清：讓出短暫時間後立即續跑，不等待下一次 100ms 主迴圈
+    }
 }
 
+function _ffFinishCatchup() {
+    let _acc = _ffAcc;
+    if (!_acc) { flushTickRender(); return; }
+    let _longCatchup = _acc.ticks >= 30;
+    let _deferredSave = typeof takeCatchupSaveRequest === 'function' && takeCatchupSaveRequest();
+    if (_longCatchup) {   // ≥3 秒的補跑（回前景補幀）：統一刷新＋存檔＋摘要
+        try { renderMobs(); updateUI(); renderTabs(true); } catch (e) {}
+    } else {
+        flushTickRender();
+    }
+    let _needsSave = _longCatchup || _deferredSave || _acc.failed;
+    let _saveOk = false;
+    if (_needsSave) {
+        try { _saveOk = saveGame() === true; } catch (e) {}
+    }
+    // 🗑️ v3.7.94 移除 offlineCatchupSaveCommitted 呼叫：那是 js/27 離線掛機的「待結算補跑憑證」提交點，整套已刪除。
+    if (_longCatchup) {
+        try {
+            let _gd = (player.gold || 0) - _acc.gold;
+            let _sec = Math.round(_acc.ticks / 10);
+            let _dur = _sec >= 60 ? Math.floor(_sec / 60) + ' 分 ' + (_sec % 60) + ' 秒' : _sec + ' 秒';
+            logSys('<span class="text-cyan-300 font-bold">⏩ 掛機補跑完成：</span>已補上 ' + _dur + ' 的進度' + (_gd > 0 ? ('，金幣 +' + _gd.toLocaleString()) : '') + '。');
+            // 🎁 v3.6.86 前舊格式（用戶指示恢復）：補跑期間獲得物品彙整輸出（物品名依稀有度上色·頓號串接·只列淨正值）
+            let _gains = [];
+            let _invAfter = _ffInventoryCounts();
+            new Set([...Object.keys(_acc.invStart || {}), ...Object.keys(_invAfter)]).forEach(id => {
+                let n = (_invAfter[id] || 0) - ((_acc.invStart || {})[id] || 0);
+                if (n > 0 && DB.items[id]) _gains.push({ id: id, n: n });
+            });
+            if (_gains.length) {
+                logSys(`<span class="sys-item-gain">掛機期間獲得：` + _gains
+                    .map(g => `<span class="${getItemColor({ id: g.id, en: 0 })} font-bold">${DB.items[g.id].n} ×${g.n}</span>`)
+                    .join('、') + `</span>`);
+            }
+        } catch (e) {}
+    }
+    if (_acc.aborted && typeof logSys === 'function') {
+        logSys('<span class="text-red-400 font-bold">補跑連續發生錯誤，已停止剩餘補跑，避免進度卡在重複補跑；請重新整理後確認。</span>');
+    }
+    _ffAcc = null;
+    if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
+    _ffErrorStreak = 0;
+    _ffProgressHide();
+}
+// ⏩ 補跑專用快速排程：每批最多運算 80ms、讓出 8ms 後續跑；仍逐 tick 真實結算。
+const FF_BUDGET_MS = 80;
+const FF_YIELD_MS = 8;
+const FF_HARD_CAP = 6000;
+const FF_MAX_ELAPSED_MS = 300000;
+const FF_ERROR_STREAK_MAX = 3;
+const FF_PROGRESS_MIN_MS = 3000;
+let _ffAcc = null;   // 補跑摘要累計（跨多次 gameLoop 呼叫·還清時歸零）
+let _ffErrorStreak = 0;
+let _ffResumeTimer = null;
+let _ffProgressEl = null;
+
+function _ffProgressEnsure() {
+    if (typeof document === 'undefined' || !document.body) return null;
+    if (_ffProgressEl && _ffProgressEl.isConnected) return _ffProgressEl;
+    if (!document.getElementById('ff-progress-style')) {
+        let style = document.createElement('style');
+        style.id = 'ff-progress-style';
+        style.textContent = `
+            @keyframes ffProgressSpin { to { transform: rotate(360deg); } }
+            #ff-progress-indicator { position:fixed; left:50%; bottom:max(18px, env(safe-area-inset-bottom)); z-index:90; width:min(360px, calc(100vw - 28px)); transform:translate(-50%, 12px); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; padding:10px 12px; border:1px solid rgba(180,140,62,.72); border-radius:6px; color:#f5e7bd; background:rgba(20,18,24,.94); box-shadow:0 6px 22px rgba(0,0,0,.5); font-size:14px; }
+            #ff-progress-indicator.is-visible { opacity:1; transform:translate(-50%, 0); }
+            #ff-progress-indicator .ff-progress-head { display:flex; align-items:center; gap:9px; min-width:0; }
+            #ff-progress-indicator .ff-progress-spinner { width:16px; height:16px; flex:0 0 16px; border:2px solid rgba(245,231,189,.28); border-top-color:#e5bd63; border-radius:50%; animation:ffProgressSpin .75s linear infinite; }
+            #ff-progress-indicator .ff-progress-title { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-weight:700; }
+            #ff-progress-indicator .ff-progress-percent { flex:0 0 auto; color:#f8d477; font-variant-numeric:tabular-nums; font-weight:700; }
+            #ff-progress-indicator .ff-progress-track { height:5px; margin-top:8px; overflow:hidden; border-radius:3px; background:#34303a; }
+            #ff-progress-indicator .ff-progress-fill { height:100%; width:0; border-radius:inherit; background:linear-gradient(90deg, #9b6e27, #e4bd62); transition:width .12s linear; }
+            @media (prefers-reduced-motion: reduce) { #ff-progress-indicator, #ff-progress-indicator .ff-progress-fill { transition:none; } #ff-progress-indicator .ff-progress-spinner { animation:none; } }
+        `;
+        document.head.appendChild(style);
+    }
+    let el = document.createElement('div');
+    el.id = 'ff-progress-indicator';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-atomic', 'true');
+    el.innerHTML = '<div class="ff-progress-head"><span class="ff-progress-spinner" aria-hidden="true"></span><span class="ff-progress-title">補跑中</span><span class="ff-progress-percent">0%</span></div><div class="ff-progress-track"><div class="ff-progress-fill"></div></div>';
+    document.body.appendChild(el);
+    _ffProgressEl = el;
+    return el;
+}
+
+function _ffProgressDuration(ms) {
+    let seconds = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+    if (seconds >= 60) return Math.floor(seconds / 60) + ' 分 ' + (seconds % 60) + ' 秒';
+    return seconds + ' 秒';
+}
+
+function _ffProgressUpdate(acc, remainingMs) {
+    if (!acc || typeof document === 'undefined' || document.hidden) return;
+    let doneMs = Math.max(0, Number(acc.ticks) || 0) * TICK_MS;
+    let remainMs = Math.max(0, Math.floor((Number(remainingMs) || 0) / TICK_MS) * TICK_MS);
+    let totalMs = doneMs + remainMs;
+    if (totalMs < FF_PROGRESS_MIN_MS) { _ffProgressHide(); return; }
+    let el = _ffProgressEnsure();
+    if (!el) return;
+    let percent = remainMs < TICK_MS ? 100 : Math.max(1, Math.min(99, Math.floor(doneMs * 100 / Math.max(TICK_MS, totalMs))));
+    let title = el.querySelector('.ff-progress-title');
+    let pct = el.querySelector('.ff-progress-percent');
+    let fill = el.querySelector('.ff-progress-fill');
+    if (title) title.textContent = remainMs >= TICK_MS ? '補跑中，剩餘 ' + _ffProgressDuration(remainMs) : '補跑完成，正在整理收益';
+    if (pct) pct.textContent = percent + '%';
+    if (fill) fill.style.width = percent + '%';
+    el.classList.add('is-visible');
+}
+
+function _ffProgressHide() {
+    if (_ffProgressEl) _ffProgressEl.classList.remove('is-visible');
+}
+
+function _ffScheduleNext() {
+    if (_ffResumeTimer !== null || _tickDebt < TICK_MS || !state || !state.running || !player || player.dead) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    _ffResumeTimer = setTimeout(function () {
+        _ffResumeTimer = null;
+        if (_tickDebt >= TICK_MS && state && state.running && player && !player.dead) gameLoop();
+    }, FF_YIELD_MS);
+}
+function _ffCancelScheduledLoop() {
+    if (_ffResumeTimer !== null) clearTimeout(_ffResumeTimer);
+    _ffResumeTimer = null;
+}
+
+function resetCatchupForRoleSwitch() {
+    _ffCancelScheduledLoop();
+    _ffAcc = null;
+    _ffErrorStreak = 0;
+    if (typeof resetCatchupGainItemIndex === 'function') resetCatchupGainItemIndex();
+    _ffProgressHide();
+    if (typeof state !== 'undefined' && state) {
+        state.ff = false;
+        state.ffSmall = false;
+        state.inTick = false;
+    }
+}
+function _ffInventoryCounts() {
+    let counts = {};
+    try { (player.inv || []).forEach(i => { counts[i.id] = (counts[i.id] || 0) + (Number(i.cnt) || 0); }); } catch (e) {}
+    return counts;
+}
+
+// 經驗「總累積進度」（exp＋已升等級需求總和）：跨升級仍單調，前後差＝實得經驗（升級瞬間也算得對）
+function _ffExpProgress() {
+    let lv = Math.max(1, Math.min(100, Math.floor(Number(player.lv) || 1)));
+    let total = Math.max(0, Number(player.exp) || 0);
+    if (typeof getExpReq !== 'function') return total;
+    for (let n = 1; n < lv; n++) { let r = Number(getExpReq(n)); if (Number.isFinite(r) && r > 0) total += r; }
+    return total;
+}
+function _ffAllyProgress(a) {
+    let lv = Math.max(1, Math.min(100, Math.floor(Number(a.lv) || 1)));
+    let total = Math.max(0, Number(a.exp) || 0);
+    if (typeof getExpReq !== 'function') return total;
+    for (let n = 1; n < lv; n++) { let r = Number(getExpReq(n)); if (Number.isFinite(r) && r > 0) total += r; }
+    return total;
+}
+function _ffPetProgressSum() {
+    if (typeof petsOutList !== 'function' || typeof petExpReq !== 'function') return 0;
+    let sum = 0;
+    try {
+        petsOutList().forEach(p => {
+            let t = Math.max(0, Number(p.exp) || 0);
+            for (let n = 1; n < (p.lv || 1); n++) { let r = Number(petExpReq(n)); if (Number.isFinite(r) && r > 0) t += r; }
+            sum += t;
+        });
+    } catch (e) {}
+    return sum;
+}
 // 🛡️ 絕對屏障：與世界隔絕——無法攻擊/施法/用道具、不自然恢復、不受任何傷害（持續期間 player.buffs.sk_abs_barrier>0）
 function inAbsBarrier() { return !!(player.buffs && player.buffs.sk_abs_barrier > 0); }
 // 🚀 重繪合併：tick 進行中(state.inTick)時 updateUI/renderMobs 只標記 dirty，於 tick 結尾 flushTickRender() 統一重繪一次，
 //   避免單一 tick 內(玩家＋多傭兵＋持續傷害＋特效＋擊殺)重複重繪十數次；tick 外(點擊/裝備/用道具/開面板)維持立即重繪、體感不變。
 let _uiDirty = false, _mobsDirty = false;
-function updateUI() { if (state.inTick) { _uiDirty = true; return; } _uiDirty = false; _updateUIImpl(); }
-function renderMobs() { if (state.inTick) { _mobsDirty = true; return; } _mobsDirty = false; _renderMobsImpl(); }
-function flushTickRender() { if (_uiDirty) { _uiDirty = false; _updateUIImpl(); } if (_mobsDirty) { _mobsDirty = false; _renderMobsImpl(); } }
+function updateUI() { if (state.inTick || (typeof catchupActive === 'function' && catchupActive())) { _uiDirty = true; return; } _uiDirty = false; _updateUIImpl(); }
+function renderMobs() { if (state.inTick || (typeof catchupActive === 'function' && catchupActive())) { _mobsDirty = true; return; } _mobsDirty = false; _renderMobsImpl(); }
+function flushTickRender() { if (typeof catchupActive === 'function' && catchupActive()) return; if (_uiDirty) { _uiDirty = false; _updateUIImpl(); } if (_mobsDirty) { _mobsDirty = false; _renderMobsImpl(); } }
 // 🚀 怪物卡互動穩定：① 滑鼠所在怪的 uid 以 JS 追蹤(_hoverMobUid)、每次重繪都重新套用「顯示名字」class→避免重繪(每 tick 換掉 #mob-list 內容)使 :hover 瞬間失效造成名字一直閃；② 按住怪物卡期間(_mobPointerDown)延後重繪→避免 mousedown↔mouseup 之間整列被換掉使點擊切換目標失效。
 let _hoverMobUid = null, _mobPointerDown = false, _mobRebuildPending = false;
 function _applyHoverName() {   // 依 _hoverMobUid 即時切換各卡名字顯示(不整列重繪)
@@ -282,16 +535,19 @@ function tick() {
     if(!state.running || player.dead) return;
     state.ticks++;
     // 🪄 吉爾塔斯魔杖：擊殺增益到期即重算，避免額外魔法點數停留在衍生能力中。
+    // 🏺 v3.7.52 同型到期重算：_golemMrDebuffUntil（高崙印記 MR-100）／_fangFuryUntil（邪惡利牙攻速+30%）／_spellbladeUntil（魔劍士之刀施法增益）
     let _giltasWandExpired = [];
-    if (player._giltasWandFuryUntil && state.ticks >= player._giltasWandFuryUntil) { player._giltasWandFuryUntil = 0; _giltasWandExpired.push(player); }
-    if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && a._giltasWandFuryUntil && state.ticks >= a._giltasWandFuryUntil) { a._giltasWandFuryUntil = 0; _giltasWandExpired.push(a); } });
+    let _tickExpireFields = ['_giltasWandFuryUntil', '_golemMrDebuffUntil', '_fangFuryUntil', '_spellbladeUntil', '_eyePetrifyUntil'];   // 🐉 v3.7.57 +地龍之魔眼增益到期
+    _tickExpireFields.forEach(f => {
+        if (player[f] && state.ticks >= player[f]) { player[f] = 0; if (!_giltasWandExpired.includes(player)) _giltasWandExpired.push(player); }
+        if (player.allies && player.allies.length) player.allies.forEach(a => { if (a && a[f] && state.ticks >= a[f]) { a[f] = 0; if (!_giltasWandExpired.includes(a)) _giltasWandExpired.push(a); } });
+    });
     if (_giltasWandExpired.length) {
         if (_giltasWandExpired.includes(player)) calcStats();
         _giltasWandExpired.forEach(a => { if (a !== player && typeof _allyLevelRecompute === 'function') _allyLevelRecompute(a); });
     }
     _combatSrc = null;   // ⚔️ 戰鬥日誌來源：每 tick 起始重置（玩家攻擊/施法/DoT 等預設依顏色type推定；友方派發點會各自設定）
     _dpsAllyTurn = false; let _dpsPlayerSnap = _dpsSnap();   // 🎯 DPS：玩家階段起點快照（至怪物行動前的所有掉血＝玩家輸出·含自動施法/持續增益）
-    castleGuardTick();   // 🏰 城堡護衛：回血/力竭恢復/城堡擁有結束自動解散
     for(let k in player.manualCd) if(player.manualCd[k] > 0) player.manualCd[k]--;
     
     let canAct = true;
@@ -334,6 +590,7 @@ function tick() {
             updateUI();
         } else {
             player.hp -= _pdmg;
+            if (typeof dotMpRefundTo === 'function') dotMpRefundTo(player, _pdmg);   // 🏺 v3.7.52 受困幽魂的淚滴：DoT 損血回 MP
             logCombat(`你受到劇毒傷害 ${_pdmg} 點。`, 'enemy');
             if(player.hp <= 0) { killPlayer(); return; }
             updateUI();
@@ -341,18 +598,21 @@ function tick() {
     }
     if(player.statuses.burn > 0 && state.ticks % player.statuses.burnTick === 0 && !inAbsBarrier()) {
         player.hp -= player.statuses.burnDmg;
+        if (typeof dotMpRefundTo === 'function') dotMpRefundTo(player, player.statuses.burnDmg);   // 🏺 v3.7.52 淚滴
         logCombat(`你受到灼燒傷害 ${player.statuses.burnDmg} 點。`, 'enemy');
         if(player.hp <= 0) { killPlayer(); return; }
         updateUI();
     }
     if(player.statuses.scald > 0 && state.ticks % player.statuses.scaldTick === 0 && !inAbsBarrier()) {
         player.hp -= player.statuses.scaldDmg;
+        if (typeof dotMpRefundTo === 'function') dotMpRefundTo(player, player.statuses.scaldDmg);   // 🏺 v3.7.52 淚滴
         logCombat(`你受到燙傷傷害 ${player.statuses.scaldDmg} 點。`, 'enemy');
         if(player.hp <= 0) { killPlayer(); return; }
         updateUI();
     }
     if(player.statuses.bleed > 0 && state.ticks % player.statuses.bleedTick === 0 && !inAbsBarrier()) {
         player.hp -= player.statuses.bleedDmg;
+        if (typeof dotMpRefundTo === 'function') dotMpRefundTo(player, player.statuses.bleedDmg);   // 🏺 v3.7.52 淚滴
         logCombat(`你受到出血傷害 ${player.statuses.bleedDmg} 點。`, 'enemy');
         if(player.hp <= 0) { killPlayer(); return; }
         updateUI();
@@ -366,6 +626,7 @@ function tick() {
     if(player.statuses.freeze > 0) alerts.push("冰凍中");
     if(player.statuses.stone > 0) alerts.push("石化中");
     if(player.statuses.paralyze > 0) alerts.push("麻痺中");
+    if(player.statuses.bind > 0) alerts.push(isRangedArmed(player) ? "束縛中（遠距離不受影響）" : "束縛中（無法一般攻擊）");   // 🕸️ v3.7.75 束縛
     if(player.statuses.silence > 0) alerts.push("沉默中");
     if(player.statuses.magicseal > 0) alerts.push("魔法封印中");
     if(player.statuses.poison > 0) alerts.push("中毒");
@@ -439,6 +700,8 @@ function tick() {
                     delay = 50;                                                 // 🔧 純BOSS房(三龍窟)：BOSS死亡後固定 5 秒(50 tick)才刷新，不受日光術/席琳的世界加速影響（2026-06 用戶調整 3 分鐘→5 秒）
                 } else if(KING_ROOMS[mapState.current]) {
                     delay = 50;                                                 // 🔧 軍王之室：固定 5 秒復活，不受日光術/席琳的世界加速影響
+                } else if(mapState.current === 'antharas_lair') {
+                    delay = 50;                                                 // 🐉 v3.7.57 侵蝕的安塔瑞斯棲息地（BOSS房）：固定 5 秒重生
                 } else {
                     // 🐾 重生延遲＝基準 50 tick(5秒) × 玩家有效移動延遲倍率。
                     // 變身(wlk·16=100%)、加速、勇敢／餅乾、行走加速、裝備移速與資訊面板共用 playerMoveDelayMultiplier()。
@@ -480,7 +743,7 @@ function tick() {
         state._pAtkIntervalTicks = aspdTicks;
         state.pDmgTick = attackProgress + 1;
         if(state.pDmgTick >= aspdTicks) {
-            playerAttack();
+            if (!bindSelfBlocked(player)) playerAttack();   // 🕸️ v3.7.75 束縛：非遠距離武器時打不出一般攻擊（攻擊節奏照跑·施法/技能不受影響）
             state.pDmgTick = Math.max(0, state.pDmgTick - aspdTicks);   // 保留小數餘額，長期平均攻速才正確
             state._pStunCycle = false;   // ⚔️ 硬直：每次攻擊後重置「本週期已硬直」旗標（下週期被擊可再延遲一次）
         }
@@ -499,13 +762,14 @@ function tick() {
             state.pOffDmgTick = offProgress + 1;
             if (state.pOffDmgTick >= offTicks) {
                 let _ot = getTarget();   // 副手自行取目標（不依賴主手這一拍有沒有攻擊）
-                if (_ot) dualWieldOffhandAttack(_ot);
+                if (_ot && !bindSelfBlocked(player)) dualWieldOffhandAttack(_ot);   // 🕸️ v3.7.75 束縛：副手必為近戰→被束縛時同樣打不出去
                 state.pOffDmgTick = Math.max(0, state.pOffDmgTick - offTicks);
             }
         } else { state.pOffDmgTick = 0; state._pOffAtkIntervalTicks = 0; }   // 卸下副手：歸零，避免下次裝上時瞬間觸發
     }
     
     { let _pd = _dpsDealt(_dpsPlayerSnap); if (_pd > 0) _dps.player += _pd; }   // 🎯 DPS：結算玩家階段輸出（攻擊／自動施法／持續增益）；怪物中毒/出血 DoT 於 processMobStatusTick 另計入玩家
+    if (typeof threatCommitDiff === 'function') threatCommitDiff(_dpsPlayerSnap, player);   // 🎯 v3.7.97 仇恨制：玩家階段整段掉血→記給玩家（threatMult＝職業×武器·同快照差分）
     for(let i=0; i<mapState.mobs.length; i++) {   // 🆕 含後排(3,4)：所有在場怪皆會行動攻擊
         let m = mapState.mobs[i];
         if(!m) continue;
@@ -619,7 +883,7 @@ function tick() {
     }
 
     if(!player.dead) { let _auraSnap = _dpsSnap(); try { relicAuraTick(); } catch(e){} let _auraDealt = _dpsDealt(_auraSnap); if(_auraDealt > 0) _dps.player += _auraDealt; }   // 🏺 蠅災的詛咒等 auraDmg：玩家階段週期全體固定魔傷（自帶快照→正確計入玩家 DPS·修 code-review#1）
-    if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
+    if(!player.dead) { _combatSrc = 'summon'; let _dpsSumSnap = _dpsSnap(); summonTick(player.summon, () => { player.summon = null; }); summonTick(player.charmed, () => { player.charmed = null; }); if (typeof summonV2Tick === 'function') { try { summonV2Tick(); } catch (e) {} }   /* 🧙 v3.2.19 召喚術 v2（多實體·js/23） */ if (typeof castleGuardTick === 'function') { try { castleGuardTick(); } catch (e) {} }   /* 🏰 城堡護衛 v2（可招募協同角色·js/31）：與召喚同階段·輸出計入 summon 桶 */ if(player.cls === 'illusion') { cubeTick(); illuSummonTick(); } { let _sd = _dpsDealt(_dpsSumSnap); if (_sd > 0) _dps.summon += _sd; }   /* 🎯 DPS：召喚（玩家召喚/迷魅/幻術立方/城堡護衛）輸出 */ _combatSrc = 'mercenary'; alliesTick(); _combatSrc = null; }   // ⚔️ 召喚(含迷魅)/傭兵 戰鬥訊息來源情境；🔮 幻術士立方週期效果＋幻術精通幻象
     if(!player.dead) pledgeBlessTick();   // 生命的祝福：場上血盟怪物持續治療
     // HoT 持續回復（體力回復術 / 生命的祝福）
 // 💤 【休眠機制】團隊 HoT（持續回復）：整條鏈路目前不可達——DB.skills 內已無任何技能宣告 hot/autoBuff
@@ -1066,10 +1330,13 @@ function pvpRandomAlignment() {
 function pvpRandomLevelOffset() {
     return Math.floor(Math.random() * 21) - 10;
 }
+function pvpClampLevelOffset(offset) {
+    return Math.max(-10, Math.min(10, Math.round(offset)));
+}
 function pvpResolveLevelOffset(entry) {
     let offset = Number(entry && entry.levelOffset);
     if (!Number.isFinite(offset)) offset = pvpRandomLevelOffset();
-    offset = Math.max(-10, Math.min(10, Math.round(offset)));
+    offset = pvpClampLevelOffset(offset);
     if (entry) entry.levelOffset = offset;
     return offset;
 }
@@ -1116,16 +1383,28 @@ function pvpMarkForChase(entry) {
     player.trollPlayers = player.trollPlayers.filter(t => t && t.n !== rec.n);
     player.trollPlayers.push(rec);
 }
+function pvpOpponentLevel(siegeConfigured, siegeLevel, playerLevel, levelOffset, revengeCount, revengeMax, clanAtWar, groupBattle) {
+    let normalizedPlayerLevel = Math.max(1, Math.round(Number(playerLevel) || 1));
+    let normalizedRevengeCount = Math.max(0, Math.min(revengeMax, Math.floor(Number(revengeCount) || 0)));
+    let baseLevel = siegeConfigured
+        ? siegeLevel
+        : normalizedPlayerLevel + levelOffset + normalizedRevengeCount * 3;
+    return Math.max(1, baseLevel + (clanAtWar ? 5 : 0) + (groupBattle ? 3 : 0));
+}
 function pvpTrollLevelOverride(entry) {
     let siegeLevel = Number(entry && entry.siegeLevel);
-    let revengeCount = Math.max(0, Math.min(PVP_KILL_WHISPER_REVENGE_MAX, Math.floor(Number(entry && entry.revengeCount) || 0)));
-    let playerLevel = Math.max(1, Math.round(Number(player.lv) || 1));
-    let baseLevel = Number.isFinite(siegeLevel)
-        ? siegeLevel
-        : playerLevel + pvpResolveLevelOffset(entry) + revengeCount * 3;
-    let clanWarBonus = entry && entry.clanAtWar ? 5 : 0;
-    let groupBattleBonus = entry && entry._npcClanBattle ? 3 : 0;
-    return Math.max(1, baseLevel + clanWarBonus + groupBattleBonus);
+    let siegeConfigured = Number.isFinite(siegeLevel);
+    let levelOffset = siegeConfigured ? 0 : pvpResolveLevelOffset(entry);
+    return pvpOpponentLevel(
+        siegeConfigured,
+        siegeLevel,
+        Number(player.lv),
+        levelOffset,
+        Number(entry && entry.revengeCount),
+        PVP_KILL_WHISPER_REVENGE_MAX,
+        !!(entry && entry.clanAtWar),
+        !!(entry && entry._npcClanBattle)
+    );
 }
 function pvpRegisterKillWhisper(mob) {
     if (!mob || !mob.trollPlayer || mob._siegePlayer || !mob.n || !player || !player.cls) return;
@@ -1207,6 +1486,7 @@ function pvpOnPlayerDeath(killers) {
 function pvpOnKillMob(mob) {
     if (!mob || !player || !player.cls) return;
     pvpEnsureState();
+    if (mob.trollPlayer && mob._wcMassTauntBattle && typeof wcMassTauntGroupBattleOnKill === 'function') wcMassTauntGroupBattleOnKill(mob);
     if (mob.trollPlayer && mob._npcClanId && typeof npcClanOnNpcKilled === 'function') npcClanOnNpcKilled(mob);
     if (mob.pledgeEnemy || mob.siegeEnemy || mob.race === '血盟' || (typeof isSiegeArea === 'function' && typeof mapState !== 'undefined' && mapState && isSiegeArea(mapState.current))) return;
     if (mob.trollPlayer) {
@@ -1508,7 +1788,7 @@ function _trollCurveGearedAC(L) {
 function _trollCurveStretchHv(raw) { if (raw >= 8) return Math.min(20, raw); let e = Math.min(30, 8 - raw), f = e / 30, h = 2 * f - f * f; return 8 - 7 * h; }
 // 第三參 mult（😤 v3.6.24 用戶拍板）：曲線解出的每擊傷害 B「套完單擊帽後」整體倍率——一模板 2.0／二模板 2.5（v3.6.26·首設1.5/2.0）／法師兩模板皆 1（不掛 dmgMult）。
 // 倍率放帽後＝刻意允許超出標準怪單擊上限；骰/db 比例與取整沿用同一套推導。
-function trollCurveDmg(lv, atkSpd, mult) {
+function _trollCurveDmgRaw(lv, atkSpd, mult) {
     lv = Math.max(1, Math.round(lv)); atkSpd = +atkSpd || 0.67;
     mult = (Number(mult) > 0) ? Number(mult) : 1;
     let fast = atkSpd < 2, sd = fast ? 5 / 6 : 2 / 3, n = fast ? 1 : 2;
@@ -1535,15 +1815,44 @@ function trollCurveDmg(lv, atkSpd, mult) {
     while (sides > 99) { n++; sides = Math.max(2, Math.round(2 * eRoll / n - 1)); }
     return { dmg: [n, sides], db: db };
 }
+function trollCurveDmgJson(lv, atkSpd, mult) {
+    return JSON.stringify(_trollCurveDmgRaw(lv, atkSpd, mult));
+}
+function trollCurveDmg(lv, atkSpd, mult) {
+    try {
+        let parsed = JSON.parse(trollCurveDmgJson(lv, atkSpd, mult));
+        if (parsed && Array.isArray(parsed.dmg) && parsed.dmg.length === 2
+            && parsed.dmg.every(Number.isFinite) && Number.isFinite(parsed.db)) return parsed;
+    } catch (e) {}
+    return _trollCurveDmgRaw(lv, atkSpd, mult);
+}
+function scaledEnemyHp(level, coefficient) {
+    return coefficient * level;
+}
+function scaledEnemyArmorClass(level, baseArmorClass, divisor) {
+    return baseArmorClass - Math.floor(level / divisor);
+}
+function scaledEnemyMagicResistance(level, baseResistance, divisor) {
+    return baseResistance + Math.floor(level / divisor);
+}
+function scaledEnemyDamageBonus(level, halfLevel, extra) {
+    return (halfLevel ? Math.floor(level / 2) : level) + extra;
+}
+function scaledEnemyHit(level, baseHit) {
+    return baseHit + Math.floor(level / 2);
+}
+function scaledEnemyThresholdValue(level, threshold, lowValue, highValue) {
+    return level >= threshold ? highValue : lowValue;
+}
 function applyTrollScaling(mob, levelOverride) {
     let requested = Number(levelOverride);
     let L = Number.isFinite(requested) ? Math.round(requested) : Math.round(Number(player.lv) || 1) + pvpRandomLevelOffset();
     L = Math.max(1, L);
     let s = mob.scale || {};
     mob.lv = L;
-    mob.hp = (s.hpC || 12) * L; mob.curHp = mob.hp;
-    mob.ac = (s.acBase !== undefined ? s.acBase : -10) - Math.floor(L / (s.acDiv || 4));
-    mob.mr = (s.mrBase || 0) + Math.floor(L / (s.mrDiv || 5));
+    mob.hp = scaledEnemyHp(L, s.hpC || 12); mob.curHp = mob.hp;
+    mob.ac = scaledEnemyArmorClass(L, s.acBase !== undefined ? s.acBase : -10, s.acDiv || 4);
+    mob.mr = scaledEnemyMagicResistance(L, s.mrBase || 0, s.mrDiv || 5);
     mob.exp = 0; mob.goldMin = 0; mob.goldMax = 0;
     mob.atkSpd = s.atkSpd || 0.67;
     if (s.curveDmg) {   // 🎲 v3.6.22 玩家NPC：普攻骰＝同等級怪物曲線（依本模板攻速）×模板倍率(dmgMult·v3.6.24)＋常駐額外傷害(dbPlus)
@@ -1552,10 +1861,10 @@ function applyTrollScaling(mob, levelOverride) {
         mob.db = _cv.db + (s.dbPlus || 0);
     } else {
         mob.dmg = [1, s.dmgSides || 10];
-        mob.db = (s.dbHalf ? Math.floor(L / 2) : L) + (s.dbPlus || 0);
+        mob.db = scaledEnemyDamageBonus(L, !!s.dbHalf, s.dbPlus || 0);
     }
-    mob.hit = (s.hitBase || 0) + Math.floor(L / 2);
-    mob.regenHp = mob.regenFix || ((L >= 50) ? 60 : 40);
+    mob.hit = scaledEnemyHit(L, s.hitBase || 0);
+    mob.regenHp = mob.regenFix || scaledEnemyThresholdValue(L, 50, 40, 60);
     mob.regenEvery = 20;
     if (s.er) mob.er = s.er;
 }
@@ -1564,19 +1873,19 @@ function applyPledgeEnemyScaling(mob) {
     let L = Math.max(1, player.lv);
     let s = mob.scale || {};
     mob.lv = L;
-    mob.hp = (s.hpC || 20) * L;
+    mob.hp = scaledEnemyHp(L, s.hpC || 20);
     mob.curHp = mob.hp;
-    mob.ac = (s.acBase !== undefined ? s.acBase : -10) - Math.floor(L / (s.acDiv || 2));
-    mob.mr = (s.mrBase || 0) + Math.floor(L / (s.mrDiv || 10));
+    mob.ac = scaledEnemyArmorClass(L, s.acBase !== undefined ? s.acBase : -10, s.acDiv || 2);
+    mob.mr = scaledEnemyMagicResistance(L, s.mrBase || 0, s.mrDiv || 10);
     mob.exp = 0;        // 🔧 血盟敵人：經驗值設為 0
     mob.goldMin = 0;    // 🔧 血盟敵人：金錢設為 0
     mob.goldMax = 0;
     mob.dmg = [1, s.dmgSides || 10];
-    mob.db = s.dbHalf ? Math.floor(L / 2) : L;   // 一般攻擊傷害加成：+(玩家等級)；喬/賽尼斯(dbHalf) 為 +(玩家等級/2)
-    mob.hit = (s.hitBase || 0) + Math.floor(L / 2);      // 額外命中：基底 +(玩家等級/2)
+    mob.db = scaledEnemyDamageBonus(L, !!s.dbHalf, 0);   // 一般攻擊傷害加成：+(玩家等級)；喬/賽尼斯(dbHalf) 為 +(玩家等級/2)
+    mob.hit = scaledEnemyHit(L, s.hitBase || 0);      // 額外命中：基底 +(玩家等級/2)
     mob.atkSpd = s.atkSpd || 0.67;
-    mob.regenHp = (L >= 50) ? 40 : 15;            // 常駐被動：HP 未滿時的回復量
-    mob.regenEvery = (L >= 50) ? 20 : 10;        // 50~100：每2秒回40；50以下：每1秒回15
+    mob.regenHp = scaledEnemyThresholdValue(L, 50, 15, 40);            // 常駐被動：HP 未滿時的回復量
+    mob.regenEvery = scaledEnemyThresholdValue(L, 50, 10, 20);        // 50~100：每2秒回40；50以下：每1秒回15
 }
 
 // 生命的祝福：每 tick 推進；達到間隔時為場上所有血盟怪物（HP 未滿）回復，持續期滿自動結束
@@ -1603,6 +1912,23 @@ function spawnMob(idx) {
     if (mapState.current === 'rift_battle') { spawnRiftMob(idx); return; }   // 🌀 時空裂痕：自訂動態出怪（不靠 DB.maps）
     let pool = DB.maps[mapState.current];
     if(!pool) return;
+    // 🐉 v3.7.57 侵蝕的安塔瑞斯巢穴：棲息地=中央「被侵蝕的安塔瑞斯」+其餘「大地荒龍」；入口/通道/深處=中央固定區域頭目（場上無王時）、其餘格走 DB.maps 池
+    //    ⚠️ 刻意不掛 KING_ROOMS/PURE_BOSS_MAPS：前者會觸發 _kbVictory 傳送與非頭目掉落封鎖、後者只生中央格，皆與副本規格衝突。
+    let _antharasDungeon = typeof ANTHARAS_AREA_BOSS !== 'undefined' && !!ANTHARAS_AREA_BOSS[mapState.current];
+    if (_antharasDungeon) {
+        let _aid = null;
+        if (mapState.current === 'antharas_lair') _aid = (idx === 1) ? ANTHARAS_AREA_BOSS.antharas_lair : 'ant_earth_wild_dragon';
+        else if (idx === 1 && !mapState.mobs.some(m => m && m.boss && !m._dead)) _aid = ANTHARAS_AREA_BOSS[mapState.current];
+        if (_aid) {
+            let _ab = DB.mobs[_aid]; if (!_ab) return;
+            mapState.mobs[idx] = { ..._ab, curHp: _ab.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
+            applySherineBuff(idx);   // 🐉 v3.7.61 初始區域頭目也套用席琳世界，與後續變身階段一致
+            if (_ab.hard) initHardSkin(mapState.mobs[idx]);
+            if (_ab.boss && typeof vfxBossEntrance === 'function') vfxBossEntrance(mapState.mobs[idx]);
+            renderMobs(); return;
+        }
+        // 其餘格落到下方一般出怪（喀瑪/荒龍池）
+    }
     // 🔧 軍王之室：中央(1)固定 BOSS、其餘四格固定指定小怪（不走一般出怪/席琳強化/追蹤邏輯）
     if(KING_ROOMS[mapState.current]) {
         let _kr = KING_ROOMS[mapState.current];
@@ -1610,7 +1936,7 @@ function spawnMob(idx) {
         if(_kr.dual) { _id = _kr.bosses[idx]; if(!_id) { mapState.mobs[idx] = null; return; } }   // 🏛️ 雙BOSS祭壇：0,1 兩格各一隻BOSS（第三格留空）
         else _id = (idx === 1) ? _kr.boss : _kr.minion;
         let _b = DB.mobs[_id]; if(!_b) return;
-        mapState.mobs[idx] = { ..._b, curHp: _b.hp, uid: uid(), _born: ++_mobBornSeq, _magCd: {}, justHit: false, st: newMobStatus() };
+        mapState.mobs[idx] = { ..._b, curHp: _b.hp, uid: uid(), _born: ++_mobBornSeq, _bornMs: Date.now(), _magCd: {}, justHit: false, st: newMobStatus() };
         applySherineBuff(idx);   // 🔮 軍王之室／底比斯歐西里斯祭壇也吃「席琳的世界」強化＋_sherine（與一般出怪一致；不含恩賜 grace；須在 initHardSkin 之前）
         if(mapState.mobs[idx].hard) initHardSkin(mapState.mobs[idx]);
         if (_b.boss && typeof vfxBossEntrance === 'function') { try { vfxBossEntrance(mapState.mobs[idx]); } catch (e) {} }   // 🐉 v3.4.95 軍王之室／祭壇頭目也播出場特效
@@ -1622,7 +1948,8 @@ function spawnMob(idx) {
     let normalPool = pool.filter(id => DB.mobs[id] && !DB.mobs[id].boss);
     let mobId;
     let siegeArea = isSiegeArea(mapState.current);
-    let npcClanBattle = typeof npcClanGroupBattleActive === 'function' && npcClanGroupBattleActive();
+    let npcClanBattle = !_antharasDungeon && typeof npcClanGroupBattleActive === 'function' && npcClanGroupBattleActive();
+    let wcMassTauntBattle = !_antharasDungeon && typeof wcMassTauntGroupBattleActive === 'function' && wcMassTauntGroupBattleActive();
     let allowMultiBoss = backSlotsActive() && !siegeArea;   // 🆕 一般5格地圖可同時出現多隻頭目；攻城雖改為5格，仍維持單一城門／守護塔
     // 🏛️ 長老之室 BOSS 節流：場上最多同時 2 隻長老 BOSS；已有 1 隻時須該 BOSS 存活滿 3 分鐘才可能出現第 2 隻
     let _elderRoom = mapState.current === 'elder_room';
@@ -1632,7 +1959,7 @@ function spawnMob(idx) {
         if (_ab.length >= 2) _elderBossOk = false;
         else if (_ab.length === 1) _elderBossOk = (Date.now() - (_ab[0]._bornMs || Date.now())) >= 180000;
     }
-    let wantBoss = !npcClanBattle && (allowMultiBoss || !bossInBattle) && bossPool.length > 0 && (!_elderRoom || _elderBossOk) && (mapState.forceBoss || (siegeArea ? (!mapState.suppressSiegeBoss && Math.random() < 0.10) : (_elderRoom ? Math.random() < 0.05 : Math.random() < 0.01)));
+    let wantBoss = !npcClanBattle && !wcMassTauntBattle && (allowMultiBoss || !bossInBattle) && bossPool.length > 0 && (!_elderRoom || _elderBossOk) && (mapState.forceBoss || (siegeArea ? (!mapState.suppressSiegeBoss && Math.random() < 0.10) : (_elderRoom ? Math.random() < 0.05 : Math.random() < 0.01)));
     if(mapState.forceBoss) mapState.forceBoss = false;   // 強制旗標只作用於下一次生怪
     if(wantBoss) {
         // 🔧 同名BOSS限制：場上已有同名BOSS時不再抽到該名→需地圖池有 2 種以上「不同名」BOSS 才可能同時出現多隻；若無不同名可出則退回一般怪
@@ -1661,13 +1988,13 @@ function spawnMob(idx) {
             mobId = trollPickClassMob(_siegePvp.avatar);   // 😤 v3.6.20 70%/30% 模板抽選
             mapState._trollSpawn = _siegePvp;
         }
-        // PVP／NPC 血盟宣戰：依宣戰方向決定野外遭遇率與敵盟占比。
-        if (typeof pvpEnsureState === 'function') pvpEnsureState();
         // 🩹 [FB5-CUSTOM] 離線快算(state.ff)期間跳過「野外PVP遭遇」與「白目玩家復仇遭遇」這兩段整段判定：
         //    這兩段是每次生怪都會重算的機率演出(呼叫 npcClanEncounterProfile/pvpCreateRandomOpponent/多次 Math.random)，
         //    離線快算單一角色生怪動輒上萬次，玩家離線時看不到這些遭遇、也不影響經驗/金幣/掉落，跳過純屬效能優化。
         //    範圍限定：只包住這兩段，不動同函式內攻城區PVP守衛生成、軍王之室、BOSS、追蹤、試煉限定怪等其他既有出怪分支。
         if (!state.ff) {
+        // PVP／NPC 血盟宣戰：依宣戰方向決定野外遭遇率與敵盟占比。
+        if (typeof pvpEnsureState === 'function') pvpEnsureState();
         let _clanEncounter = typeof npcClanEncounterProfile === 'function'
             ? npcClanEncounterProfile(player)
             : null;
@@ -1692,7 +2019,7 @@ function spawnMob(idx) {
             }
         }
         // 😤 v3.5.59 白目玩家：被記仇(player.trollPlayers·js/24 嗆聲觸發)→野外(非BOSS房/非攻城)重生 5% 機率遭遇；同名不同時出現；逾期(2小時)自動移除
-        if (player.trollPlayers && player.trollPlayers.length) {
+        if (!_antharasDungeon && player.trollPlayers && player.trollPlayers.length) {
             let _now = Date.now();
             let _tl = player.trollPlayers.filter(t => t && (t.noExpire || t.pvpRevenge || t.until > _now));
             if (_tl.length !== player.trollPlayers.length) {
@@ -1737,16 +2064,24 @@ function spawnMob(idx) {
         && Math.random() < 0.01) {
         mobId = 'demon_assassin';
     }
-    // 🐉 林德拜爾（BOSS）：持有「幼龍蛋」於任一野外地圖時，1% 機率改為刷出林德拜爾
-    //    （場上無其他 BOSS 時才出現、同時最多一隻；賣掉幼龍蛋即不再遭遇）
+    // 🐉 林德拜爾（BOSS）：身上持有任意「幼龍蛋」（頑皮／淘氣）於任一野外地圖時，1% 機率改為刷出林德拜爾
+    //    （場上無其他 BOSS 時才出現、同時最多一隻；蛋全數賣出或存入倉庫即不再遭遇）
     if (!bossInBattle
         && MAP_CATEGORIES.wild.some(m => m.v === mapState.current)
         && !mapState.mobs.some(m => m && m.n === '林德拜爾')
-        && player.inv.some(i => i.id === 'item_dragon_egg' && i.cnt > 0)
+        && player.inv.some(i => (i.id === 'item_dragon_egg' || i.id === 'item_dragon_egg2') && i.cnt > 0)
         && Math.random() < 0.01) {
         mobId = 'lindvior';
     }
-    if (npcClanBattle && typeof npcClanCreateGroupBattleOpponent === 'function') {
+    let _actualPlayerEncounter = mapState._trollSpawn && DB.mobs[mobId] && DB.mobs[mobId].trollPlayer;
+    if (!npcClanBattle && !wcMassTauntBattle && _actualPlayerEncounter && typeof wcMassTauntMaybeStartGroupBattle === 'function' &&
+        wcMassTauntMaybeStartGroupBattle(mapState._trollSpawn)) wcMassTauntBattle = true;
+    if (wcMassTauntBattle && typeof wcMassTauntGroupBattleNextOpponent === 'function') {
+        let _massPvp = wcMassTauntGroupBattleNextOpponent();
+        if (!_massPvp) { delete mapState._trollSpawn; mapState.mobs[idx] = null; return; }
+        mobId = trollPickClassMob(_massPvp.avatar);
+        mapState._trollSpawn = _massPvp;
+    } else if (npcClanBattle && typeof npcClanCreateGroupBattleOpponent === 'function') {
         let _battle = mapState.npcClanBattle;
         let _groupPvp = npcClanCreateGroupBattleOpponent(_battle && _battle.clanId);
         if (_groupPvp) {
@@ -1787,6 +2122,8 @@ function spawnMob(idx) {
             mapState.mobs[idx]._npcClanConflict = !!_t.clanConflict;
             mapState.mobs[idx]._npcClanHasCastle = !!_t.clanHasCastle;
             mapState.mobs[idx]._npcClanBattle = !!_t._npcClanBattle;
+            mapState.mobs[idx]._wcMassTauntBattle = !!_t._wcMassTauntBattle;
+            mapState.mobs[idx]._wcMassTauntBattleKey = _t._wcMassTauntBattleKey || '';
             if (_t.siegePlayer) {
                 mapState.mobs[idx].siegeEnemy = true;
                 mapState.mobs[idx]._siegePlayer = true;
@@ -1805,7 +2142,7 @@ function spawnMob(idx) {
                 MOB_ANIM_NAMES.add(_t.n);
                 if (typeof MOB_ANIM_SPRITE_SHADOW !== "undefined") MOB_ANIM_SPRITE_SHADOW.add(_t.n);   // 16 職業資料夾皆含 _s 影子層
             }
-            logTrollEncounterTrashTalk(_t);
+            if (!_t._wcMassTauntBattle) logTrollEncounterTrashTalk(_t);
         }
         delete mapState._trollSpawn;
     }
@@ -1828,7 +2165,8 @@ function spawnMob(idx) {
 
     applySherineGrace(idx);   // 🔮 席琳的恩賜：1% 機率場上一隻一般怪變恩賜怪（與時空裂痕共用 applySherineGrace）
     if (base.boss && typeof vfxBossEntrance === 'function') { try { vfxBossEntrance(mapState.mobs[idx]); } catch (e) {} }   // 🐉 頭目出場特效＋螢幕震動（cosmetic·v3.4.95 起全頭目通用：名單有專屬配色/稱號·未註冊者依屬性配色·吃 __vfxOff/補跑）
-    renderMobs();
+    if (mapState.mobs[idx]._wcMassTauntBattle && typeof wcMassTauntGroupBattleFill === 'function') wcMassTauntGroupBattleFill();
+    if (!state.ff && !mapState._wcMassTauntBattleFilling) renderMobs();
 }
 
 function getMobColor(mobLv) {
@@ -1877,7 +2215,7 @@ function setTarget(idx) {
 // 命中判定值重塑：rawHitValue >= 8(約 40% 命中)以上維持原樣；低於此不再急墜到地板，
 // 而是把「剩下到地板(hitValue=1)的命中差」用遞減方式分配到接下來 30 點 AC，逐步逼近地板，
 // 保留 5% 必中(nat20)＋5% 擦傷(nat19，僅玩家打怪)的命中地板。小數判定值以隨機進位實現期望值。
-function stretchHitValue(raw) {
+function stretchedHitExpectedValue(raw) {
     let hv;
     if (raw >= 8) hv = Math.min(20, raw);
     else {
@@ -1886,6 +2224,10 @@ function stretchHitValue(raw) {
         let h = 2 * frac - frac * frac;     // 凹函數：前段增量大、後段小 → 遞減分配
         hv = 8 - 7 * h;                     // 由 8 遞減到 1（可為小數）
     }
+    return hv;
+}
+function stretchHitValue(raw) {
+    let hv = stretchedHitExpectedValue(raw);
     let lo = Math.floor(hv);
     let hvInt = lo + ((Math.random() < (hv - lo)) ? 1 : 0);
     return Math.max(1, Math.min(20, hvInt));
@@ -1966,6 +2308,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     let _ignHard = !!(_cw && _cw.ignHardSkin);   // 🗡️ 貫穿（暗黑十字弓）：攻擊無視硬皮額外減傷（主攻擊與連射皆走本函式 → 一併涵蓋）
     let inner = Math.floor(nearFar * critMult) + player.d.extraDmg - ((target.dr || 0) + (_ignHard ? 0 : mobHardSkin(target)) + ((target._siegeDrEnd > state.ticks) ? (target._siegeDrVal || 0) : 0));   // 堅固防護：怪物傷害減免；🔧 硬皮：額外物理減傷（貫穿時不扣）
     inner = Math.max(1, inner);
+    if (target._trauma && target._trauma.until > state.ticks) inner += (target._trauma.dmg || 5) * (target._trauma.s || 1);   // 🏺 v3.7.20 創傷（戰士的漆黑之劍）：目標受到的所有物理傷害 +5×層數（玩家物理樞紐·傭兵側 allyStrikeRoll 另掛）
 
     // 固定傷害（屬性/特效，於最低1之後加上）
     let fixed = 0;
@@ -1997,7 +2340,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     if (player._giltasFuryUntil > state.ticks && _swingId === 'wpn_giltas_sword') fixed += (typeof pvpEvilBonus === 'function' ? pvpEvilBonus(10) : 0);
 
     let _outDmg = inner + fixed;
-    if (graze) _outDmg = Math.max(1, Math.floor(_outDmg * 0.5));   // 擦傷：最終傷害剩 50%
+    if (graze) _outDmg = Math.max(1, Math.floor(_outDmg * (((_cw && _cw.grazeDmgPct) || 50) / 100)));   // 擦傷：最終傷害剩 50%；🏺 v3.7.20 迷宮惡魔的瞥視 grazeDmgPct:30 → 挫傷剩 30%
     _outDmg = Math.max(1, Math.floor(_outDmg * fragileMult(target)));   // 🔮 脆弱（白鳥5）：受所有來源傷害 +20%
     _outDmg = Math.max(1, Math.floor(_outDmg * wpnEnFinalMult(wpnInst || player.eq.wpn)));   // 🔧 武器強化最終傷害倍率；🛡️ v2.6.69 審計#14：有傳 wpnInst（如迅猛雙斧副手揮擊傳 offwpn）就用「該武器自身」的強化與分級，不再硬吃主手倍率
     _outDmg = Math.max(1, Math.floor(_outDmg * rlFuryMult()));   // 🔮 紅獅5/5(×1.2)＋😡狂怒5/5：最終傷害（普攻及所有走本函式的物理攻擊：反擊/居合/看破/連擊/連射/穿透/魔擊/物理技能）
@@ -2014,6 +2357,7 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     if (player.statuses && player.statuses.broken > 0) _outDmg = Math.max(1, Math.floor(_outDmg * 0.8));   // 🐍 壞物術（特產易碎泥偶自傷）：期間玩家一般攻擊物理傷害 -20%
     let _dualX2 = false;   // ⚔️ 雙刀內建特性：一般攻擊命中(非擦傷) 5% 機率最終傷害×2（🎮 經典模式停用）
     if (_natRoll && !graze && !player.classicMode && getWeaponTags(_swingId).includes('雙刀') && Math.random() < 0.05) { _dualX2 = true; _outDmg = Math.max(1, _outDmg * 2); }
+    if (_natRoll && !graze && _cw && _cw.dblStrikeRate && Math.random() * 100 < _cw.dblStrikeRate) { _dualX2 = true; _outDmg = Math.max(1, _outDmg * 2); }   // 🏺 v3.7.20 艾爾摩古戰場巨劍：一般攻擊 3% 機率 2 倍傷害（沿用 dualx2 標記顯示「×2」·非一般限定=經典亦觸發）
     markBossPhysicalHit(target);
     return { dmg: _outDmg, hit: true, heavy: heavy, crit: isCrit, graze: graze, crush: crush, dualx2: _dualX2, ranged: isRanged };
 }
@@ -2065,7 +2409,7 @@ function consumeArrow() {
 }
 
 // ===== 法杖共鳴：裝備指定魔法杖時，一般攻擊(不論命中與否)有 智力/60 機率免費施展光箭 =====
-const WAND_LIGHTARROW_IDS = ['wpn_oakwand', 'wpn_38', 'wpn_witchwand', 'wpn_manawand', 'wpn_crystalwand', 'wpn_baless', 'wpn_wand_rasta', 'wpn_red_crystalwand', 'wpn_laia_wand', 'wpn_icequeen_wand', 'wpn_demon_scythe', 'wpn_darkmage_wand', 'wpn_baphomet_wand', 'wpn_illu_wand', 'wpn_demon_wand_hidden', 'wpn_dark_crystalball', 'wpn_steel_manawand_blue', 'relic_amp_staff', 'relic_elder_thunder', 'relic_cerberus_wand', 'relic_evillizard_eye', 'relic_lightbeam_wand', 'relic_warlock_grimoire', 'relic_windking_roar', 'relic_rockmage_secret', 'wpn_onmyoji_fan', 'relic_sr_kyuubi_wand', 'relic_water_orb'];   // 🏺 v3.5.27 水靈的魔力珠亦共鳴（一般限定＝wandLightArrowProc 開頭 classicMode 早退）   // 🌅 日出之國：陰陽師的扇子（傳說）＋九尾妖狐的怒火（遺物）亦共鳴   // 🏺 遺物 安普長老的拐杖／長老的雷電能量／三頭犬魔杖／邪惡蜥蜴的眼瞳／光束強化魔杖／風精靈王的狂嘯／破岩法師的秘術亦共鳴 // 🔮 幻術士魔杖：共鳴（👹 隱藏的魔族魔杖亦共鳴；🏴‍☠️ 漆黑水晶球亦共鳴）   // 🏅 共鳴：含蕾雅魔杖／冰之女王魔杖／惡魔鐮刀／黑法師之杖／🔧巴風特魔杖（👑惡魔王魔杖已改為魔爆 eff:magicburst）
+const WAND_LIGHTARROW_IDS = ['wpn_oakwand', 'wpn_38', 'wpn_witchwand', 'wpn_manawand', 'wpn_crystalwand', 'wpn_baless', 'wpn_wand_rasta', 'wpn_red_crystalwand', 'wpn_laia_wand', 'wpn_icequeen_wand', 'wpn_demon_scythe', 'wpn_darkmage_wand', 'wpn_baphomet_wand', 'wpn_illu_wand', 'wpn_demon_wand_hidden', 'wpn_dark_crystalball', 'wpn_steel_manawand_blue', 'relic_amp_staff', 'relic_elder_thunder', 'relic_cerberus_wand', 'relic_evillizard_eye', 'relic_lightbeam_wand', 'relic_warlock_grimoire', 'relic_windking_roar', 'relic_rockmage_secret', 'wpn_onmyoji_fan', 'relic_sr_kyuubi_wand', 'relic_water_orb', 'relic_unsealed_baphomet_wand', 'wpn_angel_wand'];   // 😇 v3.7.74 天使魔杖亦共鳴   // 🏺 v3.7.20 解除封印的巴風特魔杖亦共鳴   // 🏺 v3.5.27 水靈的魔力珠亦共鳴（一般限定＝wandLightArrowProc 開頭 classicMode 早退）   // 🌅 日出之國：陰陽師的扇子（傳說）＋九尾妖狐的怒火（遺物）亦共鳴   // 🏺 遺物 安普長老的拐杖／長老的雷電能量／三頭犬魔杖／邪惡蜥蜴的眼瞳／光束強化魔杖／風精靈王的狂嘯／破岩法師的秘術亦共鳴 // 🔮 幻術士魔杖：共鳴（👹 隱藏的魔族魔杖亦共鳴；🏴‍☠️ 漆黑水晶球亦共鳴）   // 🏅 共鳴：含蕾雅魔杖／冰之女王魔杖／惡魔鐮刀／黑法師之杖／🔧巴風特魔杖（👑惡魔王魔杖已改為魔爆 eff:magicburst）
 function wandLightArrowProc(target) {
     if (player.classicMode) return;   // 🎮 經典模式：停用共鳴
     let wpn = player.eq.wpn;
@@ -2199,7 +2543,17 @@ function relicAuraTick() {
     let _auraSrcs = [{ eq: player.eq, tag: '' }];
     (player.allies || []).forEach(a => { if (a && !a._downed && (a.curHp || 0) > 0 && a.eq) _auraSrcs.push({ eq: a.eq, tag: `協力·${a._allyName}·` }); });
     for (let _s of _auraSrcs) for (let k in _s.eq) {
-        let e = _s.eq[k]; if (!e) continue; let d = DB.items[e.id]; if (!d || !d.auraDmg) continue;
+        let e = _s.eq[k]; if (!e) continue; let d = DB.items[e.id];
+        // 🏺 v3.7.20 俯瞰大地的雷電（auraSkill）：每 interval tick 免費施放一次指定法術（procFreeMagicSkill 走玩家魔傷係數·
+        //    target:'all' 技能自動掃全場；傭兵持有亦觸發但傷害仍以玩家衍生值結算、計入玩家 DPS——與 auraDmg 光環同口徑）。
+        if (d && d.auraSkill && d.auraSkill.skId && (state.ticks % (d.auraSkill.interval || 100)) === 0) {
+            let _fm = mapState.mobs.find(m => m && m.curHp > 0 && !m._dead);
+            if (_fm && typeof procFreeMagicSkill === 'function') {
+                logCombat(`<span class="font-bold" style="color:#facc15;text-shadow:0 0 6px #ca8a04;">【${_s.tag}${d.n}】</span>雷雲翻湧，${DB.skills[d.auraSkill.skId] ? DB.skills[d.auraSkill.skId].n : ''}傾瀉而下！`, 'player-special');
+                procFreeMagicSkill(_fm, d.auraSkill.skId, 0, false, d);
+            }
+        }
+        if (!d || !d.auraDmg) continue;
         let a = d.auraDmg, iv = a.interval || 20, dmg = a.dmg || 0;
         if (dmg <= 0 || (state.ticks % iv) !== 0) continue;
         let names = [];
@@ -2373,8 +2727,9 @@ function procCombo(t, fullDmg) {
     if (!t || t.curHp <= 0 || t._dead) return;
     let wpn = player.eq.wpn ? DB.items[player.eq.wpn.id] : null;
     let dice = wpn ? (t.s === 'L' ? wpn.dmgL : wpn.dmgS) : 2;
-    let res = getPhysicalDmg(dice, t, wpn, null, false, false, false);   // 獨立命中判定（可未命中）
+    let res = getPhysicalDmg(dice, t, wpn, null, false, false, false, fullDmg && !!(wpn && wpn.comboForceCrit));   // 獨立命中判定（可未命中）；🏺 v3.7.52 邪惡利牙：雙擊追加攻擊必定爆擊（forceCrit·爆擊精通額外攻擊(!fullDmg)不套）
     if (!res.hit) { if (typeof vfxMiss === 'function') vfxMiss(t); logCombat(`<span class="font-bold" style="color:#c4b5fd;">【雙擊】</span>追擊 <span class="${getMobColor(t.lv)}">${t.n}</span> 未命中。`, 'miss'); return; }
+    if (res.crit && typeof grantCritFuryHaste === 'function') grantCritFuryHaste(player, wpn);   // 🏺 v3.7.52 邪惡利牙：雙擊爆擊亦觸發攻速 buff
     // 🔧 黑暗妖精：連擊亦獨立觸發燃燒鬥志(30%×1.5)、雙重破壞(雙刀/鋼爪 45級起10%×2，每5級+1%)，兩者可疊加；先套用於本擊傷害，再依連擊倍率（暗影5/5→100%，否則50%）結算
     let _cdmg = res.dmg;
     if (player.buffs && player.buffs.sk_dark_burn > 0 && Math.random() < 0.30) _cdmg = Math.floor(_cdmg * 1.5);
@@ -2447,8 +2802,7 @@ function dualWieldOffhandAttack(t) {
 function syncDualWield() {
     if (player.eq.offwpn && (!dualWieldOffhandOk() || !warriorDualWieldWpnOk(player.eq.offwpn.id))) {
         let e = player.eq.offwpn;
-        let ex = player.inv.find(i => sameItemSig(i, e) && !i.lock && !i.junk);
-        if (ex) ex.cnt += e.cnt; else player.inv.push(e);
+        if (!invMergeBack(e)) player.inv.push(e);   // 🔒 v3.6.92 單一真相 invMergeBack（js/01）
         player.eq.offwpn = null;
         logSys('副手武器已卸下（不符迅猛雙斧雙持條件）。');
     }

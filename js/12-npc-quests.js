@@ -8,7 +8,7 @@ function whKey(p){ let _p = (p !== undefined) ? p : player; return WH_KEY + mode
 const WH_MAX = 5000;   // 倉庫格數上限（🔧 100 → 200 → 500 → 5000）
 const WH_NO_STORE = ['item_dk_insignia','item_mastery_proof',   // 🚫 v3.2.17 舊項圈 id 已隨項圈系統移除
     'item_pride_pass_11','item_pride_pass_21','item_pride_pass_31','item_pride_pass_41','item_pride_pass_51','item_pride_pass_61','item_pride_pass_71','item_pride_pass_81','item_pride_pass_91',
-    'item_dantes_letter','item_elf_whisper','item_ancient_book','item_sealed_intel','item_spy_report','item_chaos_key','item_royal_order','wpn_shaha_arrow','item_dragon_egg',   // 🗑️ v3.5.87 移除 item_card_book/item_equip_book：收集冊本體已無取得管道且 DB 定義移除（ensureCardBook/ensureEquipBook 仍會濾除舊存檔殘留）
+    'item_dantes_letter','item_elf_whisper','item_ancient_book','item_sealed_intel','item_spy_report','item_chaos_key','item_royal_order','wpn_shaha_arrow',   // 🗑️ v3.5.87 移除 item_card_book/item_equip_book：收集冊本體已無取得管道且 DB 定義移除（ensureCardBook/ensureEquipBook 仍會濾除舊存檔殘留）；🐉 v3.7.56 移除 item_dragon_egg：幼龍蛋開放存倉
     // 🔥 v3.0.78 試煉接取制：所有試煉道具禁止存入倉庫（既有倉庫存量仍可取出）
     'new_item_196','new_item_198','new_item_206','new_item_144','new_item_208','item_nightvision','item_ancientkey',
     'new_item_204','new_item_205','new_item_203','new_item_214','new_item_212','new_item_240',
@@ -17,7 +17,7 @@ const WH_NO_STORE = ['item_dk_insignia','item_mastery_proof',   // 🚫 v3.2.17 
     'item_ant_fruit','item_ant_branch','item_ant_bark','item_elmore_heart','item_time_orb','item_wyvern_blood',
     'new_item_207','new_item_226','new_item_225','item_cyclops_blood','new_item_219','new_item_234',
     'item_demon_search','item_demon_spy','item_yeti_heart','item_soulfire_ash',
-    'new_item_197','new_item_211','item_lost_soul','mat_flame_sword','mat_flame_eye','mat_flame_claw','mat_flame_heart'];   // 🚫 禁止存入倉庫（現行陣列內容）：死亡騎士之印記、精通之證、傲慢之塔傳送符(11~91F)、各村莊搜索狀/信件等劇情道具、沙哈之箭、頑皮幼龍蛋、🔥50級試煉任務道具＋全部試煉道具。
+    'new_item_197','new_item_211','item_lost_soul','mat_flame_sword','mat_flame_eye','mat_flame_claw','mat_flame_heart'];   // 🚫 禁止存入倉庫（現行陣列內容）：死亡騎士之印記、精通之證、傲慢之塔傳送符(11~91F)、各村莊搜索狀/信件等劇情道具、沙哈之箭、🔥50級試煉任務道具＋全部試煉道具。
     //    （🗑️ 已不在此列：四種項圈＝v3.2.17 隨項圈系統移除、🎴卡片/裝備收集冊＝v3.5.87 移除 DB 定義、潘朵拉抽獎卷＝v3.5.49 隨舊抽獎機移除）
 // 倉庫分類過濾（武器 / 防具 / 道具）：存入、取出共用同一個下拉清單
 let _whFilter = 'weapon';
@@ -352,7 +352,13 @@ function _syncSharedFromStorage(ev){
     if (mergeSharedIntoPlayer(ev.key === ck ? 'card' : (ev.key === ek ? 'equip' : (ev.key === rk ? 'relic' : 'misc')))) _refreshAfterDexSync();
 }
 if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('storage', _syncSharedFromStorage);
-function _whStackFind(arr, it){ return ((it.en||0)===0 && !it.lock) ? arr.find(x => !x.lock && (x.en||0)===0 && sameItemSig(x, it)) : null; }   // 🔧 架構#3：統一簽章比對
+// 🔧 架構#3：統一簽章比對。
+// 🔒 v3.6.92 改為「可併入鎖定堆疊」（與背包端 gainItem 同口徑·用戶拍板「再次獲得直接合併同一格」）：
+//    同簽章永遠只有一格，任一方鎖定→合併後整疊鎖定（旗標傳遞統一走 _whStackAbsorb）。
+// ⚠️ 巨靈願望戒指(gw)每只的三個願望各自獨立，而 itemSig 不含 gw → 必須顯式排除，
+//    否則存入/取出會把兩只不同願望的戒指併成一疊、其中一份願望資料就此消失。
+function _whStackFind(arr, it){ return ((it.en||0)===0 && !it.gw) ? arr.find(x => (x.en||0)===0 && !x.gw && sameItemSig(x, it)) : null; }
+function _whStackAbsorb(stack, src, n){ stack.cnt += n; if(src && src.lock){ stack.lock = true; stack.junk = false; } }   // 合併時保護狀態只會擴散、不會遺失
 // 🗑️ 自動販賣暫態旗標不屬於倉庫（那是每次背包工作階段的狀態）。存入與取出都清掉，否則
 //    帶著早已過期 junkSince 的物品一回到背包就會被下一次 10 秒掃描直接賣掉＝零寬限期。
 //    取出時一併清，可順便治好既有存檔中已經帶著舊旗標躺在倉庫裡的物品。
@@ -401,7 +407,7 @@ function whOneClickDeposit(){
         let stack = _whStackFind(w.items, cur);
         if(!stack && w.items.length >= WH_MAX){ full = true; break; }
         player.inv.splice(idx, 1);
-        if(stack){ stack.cnt += cur.cnt; } else { w.items.push(_whClearJunkState(cur)); whSigs.add(whSig(cur)); }
+        if(stack){ _whStackAbsorb(stack, cur, cur.cnt); } else { w.items.push(_whClearJunkState(cur)); whSigs.add(whSig(cur)); }
         deposited++;
     }
     if(!whTxnCommit(w, _txn)){ renderTabs(true); updateUI(); renderWarehouseNPC(document.getElementById('interaction-content')); return; }
@@ -438,10 +444,10 @@ function whDeposit(uidv, qty){
     if(!stack && w.items.length >= WH_MAX){ logSys(`<span class="text-red-400">倉庫已滿（上限 ${WH_MAX} 格）。</span>`); return; }
     if(qty >= total){          // 全部存入
         player.inv.splice(idx, 1);
-        if(stack) stack.cnt += total; else w.items.push(_whClearJunkState(it));
+        if(stack) _whStackAbsorb(stack, it, total); else w.items.push(_whClearJunkState(it));
     } else {                   // 部分存入：背包留下剩餘
         it.cnt = total - qty;
-        if(stack) stack.cnt += qty; else w.items.push(_whClearJunkState({ ...it, uid: uid(), cnt: qty }));
+        if(stack) _whStackAbsorb(stack, it, qty); else w.items.push(_whClearJunkState({ ...it, uid: uid(), cnt: qty }));
     }
     if(!whTxnCommit(w, _txn)){ renderTabs(true); updateUI(); renderWarehouseNPC(document.getElementById('interaction-content')); return; }
     renderTabs(true); updateUI();
@@ -464,12 +470,12 @@ function whWithdraw(uidv, qty){
         if(!it.uid || player.inv.some(x => x.uid === it.uid)) it.uid = uid();
         _whClearJunkState(it);
         let stack = _whStackFind(player.inv, it);
-        if(stack) stack.cnt += total; else player.inv.push(it);
+        if(stack) _whStackAbsorb(stack, it, total); else player.inv.push(it);
     } else {                   // 部分取出：倉庫留下剩餘
         it.cnt = total - qty;
         let moved = _whClearJunkState({ ...it, uid: uid(), cnt: qty });
         let stack = _whStackFind(player.inv, moved);
-        if(stack) stack.cnt += qty; else player.inv.push(moved);
+        if(stack) _whStackAbsorb(stack, moved, qty); else player.inv.push(moved);
     }
     if(!whTxnCommit(w, _txn)){ renderTabs(true); updateUI(); renderWarehouseNPC(document.getElementById('interaction-content')); return; }
     // 🗡️🧰 收集冊：只有角色與倉庫都成功寫入後才登錄，避免失敗交易留下未實際取得的圖鑑進度。
