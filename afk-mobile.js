@@ -1934,6 +1934,15 @@
       'body.m-mobile .load-slot-card{display:none !important;position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;align-items:center !important;justify-content:center !important;}',
       'body.m-mobile .load-slot-card.selected{display:flex !important;}',
       'body.m-mobile .load-slot-card img{max-width:60% !important;max-height:74% !important;object-fit:contain !important;}',
+      /* 🩹 2026-07-24 使用者回報:原作 v3.7.85 新增的「擔任傭兵」徽章(.load-slot-badge)手機版看不到。
+         根因:徽章原本用「離卡片頂端 2.2%」定位,是配合原作小張桌機拱門卡片設計的;我們手機版把
+         .load-slot-card 整個撐滿版(inset:0,見上),同一個 2.2% 換算到撐滿版的高度,會落在畫面最
+         頂端——那個位置被 #m-load-arch-overlay(z-index:5 的拱門雕花疊圖裝飾框)不透明的雕花邊框
+         蓋住,徽章雖然有畫出來,視覺上被完全擋住看不到。改成:①拉高 .load-slot-status 的 z-index
+         蓋過拱門疊圖,②把徽章位置從「頂端2.2%」改成貼齊立繪頭頂上方(立繪本身是 max-height:74% 置中,
+         頭頂大約落在容器 13% 高度處,徽章疊圖放再高一點點的 9% 剛好卡在頭頂正上方、不會被拱門邊框蓋住)。 */
+      'body.m-mobile .load-slot-status{z-index:6 !important;}',
+      'body.m-mobile .load-slot-badge{top:9% !important;}',
       /* 🎨 2026-07-12 使用者第三輪回饋:拿掉左右‹›切換箭頭,改成素質表下方「8 顆存檔位按鈕」
          (4個一排、兩排),按鈕顯示角色名稱(空存檔顯示「空」),點哪顆就預覽哪一格——比「一格一格翻」
          更快能跳到想看的存檔位。見 ensureLoadSelectSlotPicker()。 */
